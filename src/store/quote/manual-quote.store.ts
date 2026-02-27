@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { User } from "../../interfaces/user.interface";
 import type { Client } from "../../modules/clients/types/client.types";
 import type { ErpProduct, ErpProductCurrency } from "../../modules/products/types/erp-product.types";
+import type { ExtractedQuoteItem } from "../../modules/quote-extraction/types/quote-extraction-job.types";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
@@ -10,6 +11,8 @@ export interface ManualQuoteItem {
   id: string;
   erpCode: string;
   ean: string;
+  customerDescription: string;
+  customerUnit: string;
   erpDescription: string;
   unit: string;
   qty: number;
@@ -20,6 +23,7 @@ export interface ManualQuoteItem {
   marginPct: number;
   unitPrice: number;
   subtotal: number;
+  sourceRequiresReview: boolean;
   requiresReview: boolean;
 }
 
@@ -68,6 +72,8 @@ interface ManualQuoteState {
   setCurrency: (currency: QuoteCurrency) => void;
   setExchangeRate: (exchangeRate: number) => void;
   addProductFromErp: (product: ErpProduct) => void;
+  assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
+  setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
   removeItem: (itemId: string) => void;
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
@@ -126,7 +132,7 @@ const computeItem = (
   const costInQuoteCurrency = getCostInQuoteCurrency(item, currency, exchangeRate);
   const unitPrice = round(costInQuoteCurrency * (1 + item.marginPct / 100));
   const subtotal = round(unitPrice * item.qty);
-  const requiresReview = item.qty <= 0 || !item.unit.trim();
+  const requiresReview = item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
 
   return {
     ...item,
@@ -143,6 +149,8 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         id: item.id,
         erpCode: item.erpCode,
         ean: item.ean,
+        customerDescription: item.customerDescription,
+        customerUnit: item.customerUnit,
         erpDescription: item.erpDescription,
         unit: item.unit,
         qty: item.qty,
@@ -151,6 +159,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
+        sourceRequiresReview: item.sourceRequiresReview,
       },
       currency,
       exchangeRate
@@ -217,6 +226,8 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         id: `itm_${Math.random().toString(36).slice(2, 10)}`,
         erpCode: product.code,
         ean: product.ean,
+        customerDescription: "",
+        customerUnit: "",
         erpDescription: product.description,
         unit: product.unit,
         qty: 1,
@@ -225,6 +236,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         costUsd: product.costUsd,
         costCurrency: product.costCurrency,
         marginPct: 15,
+        sourceRequiresReview: false,
       };
 
       const nextItem = computeItem(base, state.draft.currency, state.draft.exchangeRate);
@@ -233,6 +245,69 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         draft: {
           ...state.draft,
           items: [...state.draft.items, nextItem],
+        },
+      };
+    }),
+
+  assignErpProductToItem: (itemId, product) =>
+    set((state) => {
+      const nextItems = state.draft.items.map((item) => {
+        if (item.id !== itemId) return item;
+
+        return {
+          ...item,
+          erpCode: product.code,
+          ean: product.ean,
+          erpDescription: product.description,
+          unit: product.unit,
+          stock: product.stock,
+          deliveryTime: deliverySuggestion(product.stock, product.costUsd),
+          costUsd: product.costUsd,
+          costCurrency: product.costCurrency,
+          marginPct: item.marginPct > 0 ? item.marginPct : 15,
+          sourceRequiresReview: false,
+        };
+      });
+
+      return {
+        draft: {
+          ...state.draft,
+          items: recalcItems(nextItems, state.draft.currency, state.draft.exchangeRate),
+        },
+      };
+    }),
+
+  setItemsFromExtraction: (items) =>
+    set((state) => {
+      const nextItems = items.map((item) =>
+        computeItem(
+          {
+            id: `itm_${Math.random().toString(36).slice(2, 10)}`,
+            erpCode: "",
+            ean: "",
+            customerDescription: (item.description_normalizada || item.description_original || "").toString().trim(),
+            customerUnit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
+            erpDescription: "",
+            unit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
+            qty: item.cantidad ?? 0,
+            stock: 0,
+            deliveryTime: "Por definir",
+            costUsd: 0,
+            costCurrency: "USD",
+            marginPct: 0,
+            sourceRequiresReview: item.requiere_revision,
+          },
+          state.draft.currency,
+          state.draft.exchangeRate
+        )
+      );
+
+      return {
+        draft: {
+          ...state.draft,
+          savedQuoteId: null,
+          status: "BORRADOR",
+          items: nextItems,
         },
       };
     }),
@@ -255,7 +330,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
           state.draft.exchangeRate
         ),
       },
-      })),
+    })),
 
   setItemMargin: (itemId, marginPct) =>
     set((state) => ({
@@ -321,7 +396,11 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
     const normalizedItems = stored.items.map((item) => ({
       ...item,
       ean: item.ean || item.erpCode,
+      customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+      customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
+      erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
+      sourceRequiresReview: item.sourceRequiresReview || false,
     }));
 
     const loadedItems = recalcItems(normalizedItems, stored.currency, stored.exchangeRate);

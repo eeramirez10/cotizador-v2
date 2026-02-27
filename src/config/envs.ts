@@ -19,5 +19,11 @@ export const envs = {
     import.meta.env.VITE_ERP_API_URL,
     import.meta.env.PROD ? import.meta.env.VITE_ERP_PROD : import.meta.env.VITE_ERP_DEV
   ),
-  ERP_PRODUCTS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_PRODUCTS_BASE_PATH, "/erp/products")),
+  ERP_PRODUCTS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_PRODUCTS_BASE_PATH, "/api/erp/products")),
+  AI_API_URL: pickFirst(
+    import.meta.env.VITE_AI_API_URL,
+    import.meta.env.VITE_QUOTE_EXTRACTOR_API_URL,
+    import.meta.env.VITE_EXTRACTOR_API_URL,
+    "http://localhost:4500"
+  ),
 };

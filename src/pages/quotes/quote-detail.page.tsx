@@ -41,6 +41,9 @@ export const QuoteDetailPage = () => {
   }
 
   const badgeClass = statusClass[quote.status] ?? "bg-gray-100 text-gray-700";
+  const showCustomerExtractionColumns = quote.items.some(
+    (item) => (item.customerDescription || "").trim().length > 0 || (item.customerUnit || "").trim().length > 0
+  );
 
   const handleCancelQuote = async () => {
     const confirmCancel = window.confirm("¿Seguro que quieres cancelar esta cotización?");
@@ -162,7 +165,13 @@ export const QuoteDetailPage = () => {
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción</th>
+              {showCustomerExtractionColumns && (
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción cliente</th>
+              )}
+              {showCustomerExtractionColumns && (
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM cliente</th>
+              )}
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción ERP</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Entrega</th>
@@ -177,10 +186,12 @@ export const QuoteDetailPage = () => {
           <tbody className="divide-y divide-gray-200 bg-white">
             {quote.items.map((item) => (
               <tr key={item.id}>
-                <td className="px-3 py-2 text-xs font-semibold text-gray-700">{item.erpCode}</td>
-                <td className="px-3 py-2 text-xs text-gray-700">{item.ean}</td>
-                <td className="px-3 py-2 text-xs text-gray-700">{item.erpDescription}</td>
-                <td className="px-3 py-2 text-xs text-gray-700">{item.unit}</td>
+                <td className="px-3 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
+                <td className="px-3 py-2 text-xs text-gray-700">{item.ean || "-"}</td>
+                {showCustomerExtractionColumns && <td className="px-3 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>}
+                {showCustomerExtractionColumns && <td className="px-3 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
+                <td className="px-3 py-2 text-xs text-gray-700">{item.erpDescription || "-"}</td>
+                <td className="px-3 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.stock}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.deliveryTime}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.qty}</td>

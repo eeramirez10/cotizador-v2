@@ -40,11 +40,13 @@ const getMarginVisual = (marginPct: number) => {
 
 export const ManualQuotePage = () => {
   const [openModal, setOpenModal] = useState(false);
+  const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
+  const fromFileSource = searchParams.get("source") === "file";
 
   const user = useAuthStore((state) => state.user);
   const clients = useClientsStore((state) => state.clients);
@@ -55,6 +57,7 @@ export const ManualQuotePage = () => {
   const setCurrency = useManualQuoteStore((state) => state.setCurrency);
   const setExchangeRate = useManualQuoteStore((state) => state.setExchangeRate);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
+  const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
   const removeItem = useManualQuoteStore((state) => state.removeItem);
   const setItemQty = useManualQuoteStore((state) => state.setItemQty);
   const setItemMargin = useManualQuoteStore((state) => state.setItemMargin);
@@ -81,14 +84,19 @@ export const ManualQuotePage = () => {
       return;
     }
 
+    if (fromFileSource) return;
+
     clearDraft();
     initializeDraft(user);
-  }, [clearDraft, initializeDraft, loadQuoteForEdit, navigate, quoteIdFromQuery, seedClients, user]);
+  }, [clearDraft, fromFileSource, initializeDraft, loadQuoteForEdit, navigate, quoteIdFromQuery, seedClients, user]);
 
   const quoteCurrency = draft.currency;
 
   const totalRequiresReview = useMemo(() => {
     return draft.items.filter((item) => item.requiresReview).length;
+  }, [draft.items]);
+  const showCustomerExtractionColumns = useMemo(() => {
+    return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
 
   const commitQtyDraft = (itemId: string, rawValue: string, fallbackQty: number) => {
@@ -96,7 +104,7 @@ export const ManualQuotePage = () => {
     const parsed = raw === "" ? 0 : Number(raw);
 
     if (Number.isFinite(parsed)) {
-      const safeQty = Math.max(0, Math.floor(parsed));
+      const safeQty = Math.max(0, parsed);
       setItemQty(itemId, safeQty);
     }
 
@@ -182,7 +190,10 @@ export const ManualQuotePage = () => {
           </button>
 
           <button
-            onClick={() => setOpenModal(true)}
+            onClick={() => {
+              setErpTargetItemId(null);
+              setOpenModal(true);
+            }}
             className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
           >
             <Plus className="h-4 w-4" />
@@ -295,6 +306,12 @@ export const ManualQuotePage = () => {
             <tr>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
+              {showCustomerExtractionColumns && (
+                <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción cliente</th>
+              )}
+              {showCustomerExtractionColumns && (
+                <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM cliente</th>
+              )}
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción ERP</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
@@ -312,7 +329,7 @@ export const ManualQuotePage = () => {
           <tbody className="divide-y divide-gray-200 bg-white">
             {draft.items.length === 0 && (
               <tr>
-                <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={13}>
+                <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={showCustomerExtractionColumns ? 15 : 13}>
                   No hay partidas. Usa "Agregar productos" para comenzar la cotización manual.
                 </td>
               </tr>
@@ -323,10 +340,14 @@ export const ManualQuotePage = () => {
 
               return (
                 <tr key={item.id}>
-                  <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode}</td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{item.ean}</td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{item.erpDescription}</td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{item.unit}</td>
+                  <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
+                  <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>
+                  {showCustomerExtractionColumns && (
+                    <td className="px-4 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>
+                  )}
+                  {showCustomerExtractionColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
+                  <td className="px-4 py-2 text-xs text-gray-700">{item.erpDescription || "-"}</td>
+                  <td className="px-4 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.stock}</td>
                   <td className="px-4 py-2">
                     {item.stock > 0 ? (
@@ -349,7 +370,7 @@ export const ManualQuotePage = () => {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.01"
                       value={qtyDrafts[item.id] ?? `${item.qty}`}
                       onChange={(event) =>
                         setQtyDrafts((state) => ({
@@ -410,13 +431,24 @@ export const ManualQuotePage = () => {
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button
-                      onClick={() => removeItem(item.id)}
-                      className="rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"
-                      aria-label="Eliminar partida"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setErpTargetItemId(item.id);
+                          setOpenModal(true);
+                        }}
+                        className="rounded-md border border-blue-300 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        {item.erpCode ? "Cambiar ERP" : "Buscar ERP"}
+                      </button>
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"
+                        aria-label="Eliminar partida"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -448,10 +480,25 @@ export const ManualQuotePage = () => {
 
       <AddErpProductsModal
         open={openModal}
-        onClose={() => setOpenModal(false)}
-        onSelect={(product) => {
-          addProductFromErp(product);
+        onClose={() => {
           setOpenModal(false);
+          setErpTargetItemId(null);
+        }}
+        title={erpTargetItemId ? "Vincular partida con producto ERP" : "Agregar productos desde ERP"}
+        subtitle={
+          erpTargetItemId
+            ? "Busca por EAN y selecciona el producto ERP correcto para esta partida extraída."
+            : "Busca por EAN exacto y agrega partidas a la cotización."
+        }
+        actionLabel={erpTargetItemId ? "Seleccionar" : "Agregar"}
+        onSelect={(product) => {
+          if (erpTargetItemId) {
+            assignErpProductToItem(erpTargetItemId, product);
+          } else {
+            addProductFromErp(product);
+          }
+          setOpenModal(false);
+          setErpTargetItemId(null);
         }}
       />
     </section>

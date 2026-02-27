@@ -9,9 +9,19 @@ interface AddErpProductsModalProps {
   open: boolean;
   onClose: () => void;
   onSelect: (product: ErpProduct) => void;
+  title?: string;
+  subtitle?: string;
+  actionLabel?: string;
 }
 
-export const AddErpProductsModal = ({ open, onClose, onSelect }: AddErpProductsModalProps) => {
+export const AddErpProductsModal = ({
+  open,
+  onClose,
+  onSelect,
+  title = "Agregar productos desde ERP",
+  subtitle = "Busca por EAN exacto y agrega partidas a la cotización.",
+  actionLabel = "Agregar",
+}: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
   const debouncedTerm = useDebouncedValue(term, 300);
   const user = useAuthStore((state) => state.user);
@@ -29,8 +39,8 @@ export const AddErpProductsModal = ({ open, onClose, onSelect }: AddErpProductsM
       <div className="relative w-full max-w-5xl rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div>
-            <h3 className="text-sm font-semibold text-gray-700">Agregar productos desde ERP</h3>
-            <p className="text-xs text-gray-500">Busca por EAN exacto y agrega partidas a la cotización.</p>
+            <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+            <p className="text-xs text-gray-500">{subtitle}</p>
           </div>
 
           <button onClick={onClose} className="rounded-md p-1 text-gray-500 hover:bg-gray-100" aria-label="Cerrar">
@@ -116,7 +126,7 @@ export const AddErpProductsModal = ({ open, onClose, onSelect }: AddErpProductsM
                           onClick={() => onSelect(product)}
                           className="rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
                         >
-                          Agregar
+                          {actionLabel}
                         </button>
                       </td>
                     </tr>

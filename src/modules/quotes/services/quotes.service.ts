@@ -34,6 +34,8 @@ export interface SavedQuoteRecord {
     id: string;
     erpCode: string;
     ean?: string;
+    customerDescription?: string;
+    customerUnit?: string;
     erpDescription: string;
     unit: string;
     qty: number;
@@ -44,6 +46,7 @@ export interface SavedQuoteRecord {
     marginPct: number;
     unitPrice: number;
     subtotal: number;
+    sourceRequiresReview?: boolean;
     requiresReview: boolean;
   }>;
 }
@@ -119,7 +122,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
     : undefined,
   items: stored.items.map((item) => ({
     id: item.id,
-    description: item.erpDescription,
+    description: item.erpDescription || item.customerDescription || "",
     ean: item.ean || item.erpCode,
     um: item.unit,
     qty: item.qty,
