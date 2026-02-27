@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+@layer components {
+  .btn {
+    @apply flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-gray-300 px-2 py-2 text-gray-600 transition-colors hover:shadow-lg;
+  }
+
+  .btn-primary {
+    @apply hover:border-amber-400 hover:bg-amber-400 hover:text-white;
+  }
+}
