@@ -24,6 +24,15 @@ export class QuoteExtractionJobsService {
     return data;
   }
 
+  static async createTextJob(payload: { text: string; source?: "email" | "whatsapp" | "manual" }): Promise<ExtractionJobCreateResponse> {
+    const { data } = await aiHttpClient.post<ExtractionJobCreateResponse>("/api/extract/jobs/text", {
+      text: payload.text,
+      source: payload.source ?? "manual",
+    });
+
+    return data;
+  }
+
   static async getStatus(jobId: string): Promise<ExtractionJobStatusResponse> {
     const { data } = await aiHttpClient.get<ExtractionJobStatusResponse>(`/api/extract/jobs/${jobId}/status`);
     return data;
@@ -51,14 +60,14 @@ export class QuoteExtractionJobsService {
       options?.onStatus?.(status);
 
       if (status.status === "failed") {
-        throw new Error(status.error || "El procesamiento del archivo falló.");
+        throw new Error(status.error || "El procesamiento de la extracción falló.");
       }
 
       if (status.status === "completed") {
         const result = await this.getResult(jobId);
 
         if (result.status === "failed") {
-          throw new Error(result.error || "El procesamiento del archivo falló.");
+          throw new Error(result.error || "El procesamiento de la extracción falló.");
         }
 
         if (result.result) {
@@ -69,6 +78,6 @@ export class QuoteExtractionJobsService {
       await sleep(pollIntervalMs);
     }
 
-    throw new Error("Tiempo de espera agotado al procesar el archivo.");
+    throw new Error("Tiempo de espera agotado al procesar la extracción.");
   }
 }

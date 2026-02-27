@@ -46,7 +46,8 @@ export const ManualQuotePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
-  const fromFileSource = searchParams.get("source") === "file";
+  const sourceParam = searchParams.get("source");
+  const fromExtractionSource = sourceParam === "file" || sourceParam === "text";
 
   const user = useAuthStore((state) => state.user);
   const clients = useClientsStore((state) => state.clients);
@@ -84,11 +85,11 @@ export const ManualQuotePage = () => {
       return;
     }
 
-    if (fromFileSource) return;
+    if (fromExtractionSource) return;
 
     clearDraft();
     initializeDraft(user);
-  }, [clearDraft, fromFileSource, initializeDraft, loadQuoteForEdit, navigate, quoteIdFromQuery, seedClients, user]);
+  }, [clearDraft, fromExtractionSource, initializeDraft, loadQuoteForEdit, navigate, quoteIdFromQuery, seedClients, user]);
 
   const quoteCurrency = draft.currency;
 
