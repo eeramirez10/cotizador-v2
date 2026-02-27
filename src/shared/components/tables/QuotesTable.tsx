@@ -18,10 +18,13 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
         <thead className="bg-gray-50">
           <tr>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              N° Cotización
+              N° Cotizacion
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Cliente
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Vendedor
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Fecha
@@ -38,8 +41,8 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
         <tbody className="divide-y divide-gray-200 bg-white">
           {(!quotes || quotes.length === 0) && (
             <tr>
-              <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500">
-                Aún no has generado cotizaciones.
+              <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                Aun no has generado cotizaciones.
               </td>
             </tr>
           )}
@@ -62,6 +65,7 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                   </div>
                 </div>
               </td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.createdByName || "-"}</td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{quote.createdAt}</td>
               <td className="whitespace-nowrap px-6 py-4 text-xs">
                 <span
@@ -70,9 +74,9 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                       ? "bg-emerald-100 text-emerald-700"
                       : quote.status === "BORRADOR"
                         ? "bg-slate-100 text-slate-700"
-                      : quote.status === "CANCELADA"
-                        ? "bg-rose-100 text-rose-700"
-                        : "bg-amber-100 text-amber-700"
+                        : quote.status === "CANCELADA"
+                          ? "bg-rose-100 text-rose-700"
+                          : "bg-amber-100 text-amber-700"
                   }`}
                 >
                   {quote.status}
@@ -101,8 +105,9 @@ const QuotesTableSkelleton: React.FC<QuotesTableSkelletonProps> = (props) => {
   return (
     <div className="min-w-full animate-pulse divide-y divide-gray-200 overflow-x-auto">
       <div className="flex justify-between bg-gray-50">
-        <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">N° Cotización</div>
+        <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">N° Cotizacion</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Cliente</div>
+        <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Vendedor</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Fecha</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estatus</div>
         <div className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</div>
@@ -122,6 +127,9 @@ const QuotesTableSkelleton: React.FC<QuotesTableSkelletonProps> = (props) => {
                   <div className="h-2 w-10 bg-gray-300"></div>
                 </div>
               </div>
+            </div>
+            <div className="px-6 py-4 ">
+              <div className="mb-2 h-2 w-20 bg-gray-300"></div>
             </div>
             <div className="px-6 py-4 ">
               <div className="mb-2 h-2 w-20 bg-gray-300"></div>

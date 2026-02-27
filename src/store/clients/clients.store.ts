@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Client, ClientInput } from "../../modules/clients/types/client.types";
+import type { Client, ClientActor, ClientInput } from "../../modules/clients/types/client.types";
 
 interface ClientsState {
   clients: Client[];
   seedClients: () => void;
-  addClient: (input: ClientInput) => void;
-  updateClient: (clientId: string, input: ClientInput) => void;
+  addClient: (input: ClientInput, actor: ClientActor) => void;
+  updateClient: (clientId: string, input: ClientInput, actor: ClientActor) => void;
   deleteClient: (clientId: string) => void;
   getById: (clientId: string) => Client | undefined;
 }
@@ -25,6 +25,10 @@ const defaultClients = (): Client[] => [
     phone: "8112345678",
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    createdByUserId: "system",
+    createdByName: "Sistema",
+    updatedByUserId: "system",
+    updatedByName: "Sistema",
   },
   {
     id: "cl_002",
@@ -37,8 +41,20 @@ const defaultClients = (): Client[] => [
     phone: "8187654321",
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    createdByUserId: "system",
+    createdByName: "Sistema",
+    updatedByUserId: "system",
+    updatedByName: "Sistema",
   },
 ];
+
+const normalizeClient = (client: Client): Client => ({
+  ...client,
+  createdByUserId: client.createdByUserId ?? "system",
+  createdByName: client.createdByName?.trim() || "Sistema",
+  updatedByUserId: client.updatedByUserId ?? client.createdByUserId ?? "system",
+  updatedByName: client.updatedByName?.trim() || client.createdByName?.trim() || "Sistema",
+});
 
 export const useClientsStore = create<ClientsState>()(
   persist(
@@ -47,11 +63,13 @@ export const useClientsStore = create<ClientsState>()(
 
       seedClients: () =>
         set((state) => {
-          if (state.clients.length > 0) return state;
+          if (state.clients.length > 0) {
+            return { clients: state.clients.map((client) => normalizeClient(client)) };
+          }
           return { clients: defaultClients() };
         }),
 
-      addClient: (input) =>
+      addClient: (input, actor) =>
         set((state) => ({
           clients: [
             {
@@ -65,12 +83,16 @@ export const useClientsStore = create<ClientsState>()(
               phone: input.phone?.trim() ?? "",
               createdAt: nowIso(),
               updatedAt: nowIso(),
+              createdByUserId: actor.userId,
+              createdByName: actor.fullName,
+              updatedByUserId: actor.userId,
+              updatedByName: actor.fullName,
             },
             ...state.clients,
           ],
         })),
 
-      updateClient: (clientId, input) =>
+      updateClient: (clientId, input, actor) =>
         set((state) => ({
           clients: state.clients.map((client) => {
             if (client.id !== clientId) return client;
@@ -85,6 +107,8 @@ export const useClientsStore = create<ClientsState>()(
               companyName: input.companyName.trim(),
               phone: input.phone?.trim() ?? "",
               updatedAt: nowIso(),
+              updatedByUserId: actor.userId,
+              updatedByName: actor.fullName,
             };
           }),
         })),

@@ -2,6 +2,7 @@ import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import { Form, useActionData, useNavigation } from "react-router";
 import type { LoginActionData } from "../../app/actions/auth.actions";
+import { MOCK_LOGIN_PASSWORD, MOCK_USERS } from "../../modules/auth/mocks/mock-users";
 
 export const LoginPage = () => {
   const [show, setShow] = useState(false);
@@ -82,6 +83,23 @@ export const LoginPage = () => {
             </div>
           </button>
         </Form>
+
+        <div className="mt-4 rounded-md border border-gray-700 bg-gray-900/60 p-3 text-xs text-gray-300">
+          <p className="font-semibold text-gray-200">Usuarios mock disponibles</p>
+          <p className="mt-1">
+            Password para todos: <span className="font-semibold text-yellow-300">{MOCK_LOGIN_PASSWORD}</span>
+          </p>
+          <ul className="mt-2 space-y-1">
+            {MOCK_USERS.map((user) => (
+              <li key={user.id} className="flex items-center justify-between gap-2">
+                <span>{user.email}</span>
+                <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-200">
+                  {user.branch.name}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Pencil, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ClientInput } from "../../modules/clients/types/client.types";
+import { useAuthStore } from "../../store/auth/auth.store";
 import { useClientsStore } from "../../store/clients/clients.store";
 
 const EMPTY_FORM: ClientInput = {
@@ -14,6 +15,7 @@ const EMPTY_FORM: ClientInput = {
 };
 
 export const ClientsPage = () => {
+  const user = useAuthStore((state) => state.user);
   const clients = useClientsStore((state) => state.clients);
   const seedClients = useClientsStore((state) => state.seedClients);
   const addClient = useClientsStore((state) => state.addClient);
@@ -34,6 +36,12 @@ export const ClientsPage = () => {
   const sortedClients = useMemo(() => {
     return [...clients].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }, [clients]);
+
+  const actorName = `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim() || "Usuario";
+  const actor = {
+    userId: user?.id ?? null,
+    fullName: actorName,
+  };
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -60,13 +68,13 @@ export const ClientsPage = () => {
     }
 
     if (editingId) {
-      updateClient(editingId, form);
+      updateClient(editingId, form, actor);
       window.alert("Cliente actualizado.");
       resetForm();
       return;
     }
 
-    addClient(form);
+    addClient(form, actor);
     window.alert("Cliente creado.");
     resetForm();
   };
@@ -155,13 +163,14 @@ export const ClientsPage = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">WhatsApp</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Correo</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">RFC</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Creado por</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {sortedClients.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-500">
                     No hay clientes registrados.
                   </td>
                 </tr>
@@ -176,6 +185,7 @@ export const ClientsPage = () => {
                   <td className="px-3 py-2 text-xs text-gray-700">{client.whatsappPhone}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{client.email}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{client.rfc}</td>
+                  <td className="px-3 py-2 text-xs text-gray-700">{client.createdByName || "Sistema"}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex gap-1">
                       <button

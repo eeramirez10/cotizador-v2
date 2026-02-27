@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { User } from "../../interfaces/user.interface";
+import { findMockUserByCredentials } from "../../modules/auth/mocks/mock-users";
 
 export type AuthStatus = "authorized" | "unauthorized" | "pending";
 
@@ -47,33 +48,6 @@ const clearStorage = (): void => {
   window.localStorage.removeItem(STORAGE_KEY);
 };
 
-const createUser = (email: string): User => {
-  const base = email.split("@")[0] || "usuario";
-  const isAdmin = email.includes("admin");
-  const isManager = email.includes("manager");
-
-  return {
-    id: `usr_${Math.random().toString(36).slice(2, 10)}`,
-    name: base,
-    lastname: "Tuvansa",
-    username: base,
-    email,
-    phone: "",
-    role: isAdmin ? "admin" : isManager ? "manager" : "seller",
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    branchId: isAdmin ? "global" : "mty-01",
-    branch: {
-      id: isAdmin ? "global" : "mty-01",
-      name: isAdmin ? "Global" : "Monterrey",
-      address: "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  };
-};
-
 const initialPersisted = readStorage();
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -94,8 +68,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     await sleep(500);
 
+    const user = findMockUserByCredentials(normalizedEmail, normalizedPassword);
+    if (!user) {
+      set({ fetching: false });
+      throw new Error("Credenciales invalidas para entorno mock.");
+    }
+
     const token = `mock_${Date.now()}`;
-    const user = createUser(normalizedEmail);
 
     writeStorage({ token, user });
 

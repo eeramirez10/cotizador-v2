@@ -39,6 +39,7 @@ export interface Quote {
   id: string;
   quoteNumber?: string;
   status: "DRAFT" | "FINAL" | "PENDING" | "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
+  createdByName?: string;
   branch?: string;
   currency: Currency;
   taxRate: number;

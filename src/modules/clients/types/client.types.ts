@@ -9,6 +9,10 @@ export interface Client {
   phone?: string;
   createdAt: string;
   updatedAt: string;
+  createdByUserId?: string | null;
+  createdByName?: string;
+  updatedByUserId?: string | null;
+  updatedByName?: string;
 }
 
 export interface ClientInput {
@@ -19,4 +23,9 @@ export interface ClientInput {
   rfc: string;
   companyName: string;
   phone?: string;
+}
+
+export interface ClientActor {
+  userId: string | null;
+  fullName: string;
 }

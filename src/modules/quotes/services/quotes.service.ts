@@ -107,6 +107,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   id: stored.quoteId,
   quoteNumber: stored.quoteId.replace("COT-", ""),
   status: stored.status,
+  createdByName: stored.createdByName,
   branch: stored.branchName ?? "Monterrey",
   currency: stored.currency,
   taxRate: stored.taxRate ?? 0.16,
