@@ -11,6 +11,7 @@ import { QuotesPage } from "../pages/quotes/quotes.page";
 import { ManualQuotePage } from "../pages/quotes/manual-quote.page";
 import { UserPage } from "../pages/user/user.page";
 import { ClientsPage } from "../pages/clients/clients.page";
+import { ProductsPage } from "../pages/products/products.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -74,6 +75,11 @@ export const appRouter = createBrowserRouter([
         path: "clients",
         handle: { title: "Clientes" },
         Component: ClientsPage,
+      },
+      {
+        path: "products",
+        handle: { title: "Productos" },
+        Component: ProductsPage,
       },
     ],
   },

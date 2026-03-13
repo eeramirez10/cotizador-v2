@@ -1,10 +1,15 @@
-import { FileCheck2, FileText, Plus, Trash2 } from "lucide-react";
+import { FileCheck2, FileText, Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, useNavigate, useSearchParams } from "react-router";
-import { useClientsStore } from "../../store/clients/clients.store";
+import { LocalProductsService } from "../../modules/products/services/local-products.service";
+import { useNavigate, useSearchParams } from "react-router";
+import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
+import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
+import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
+
+type OriginFilter = "ALL" | "UNLINKED";
 
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
@@ -40,9 +45,14 @@ const getMarginVisual = (marginPct: number) => {
 
 export const ManualQuotePage = () => {
   const [openModal, setOpenModal] = useState(false);
+  const [openClientModal, setOpenClientModal] = useState(false);
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [originFilter, setOriginFilter] = useState<OriginFilter>("ALL");
+  const [creatingLocalItems, setCreatingLocalItems] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -50,8 +60,6 @@ export const ManualQuotePage = () => {
   const fromExtractionSource = sourceParam === "file" || sourceParam === "text";
 
   const user = useAuthStore((state) => state.user);
-  const clients = useClientsStore((state) => state.clients);
-  const seedClients = useClientsStore((state) => state.seedClients);
 
   const draft = useManualQuoteStore((state) => state.draft);
   const initializeDraft = useManualQuoteStore((state) => state.initializeDraft);
@@ -59,46 +67,109 @@ export const ManualQuotePage = () => {
   const setExchangeRate = useManualQuoteStore((state) => state.setExchangeRate);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
   const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
+  const assignLocalProductToItem = useManualQuoteStore((state) => state.assignLocalProductToItem);
   const removeItem = useManualQuoteStore((state) => state.removeItem);
   const setItemQty = useManualQuoteStore((state) => state.setItemQty);
   const setItemMargin = useManualQuoteStore((state) => state.setItemMargin);
   const setItemUnitPrice = useManualQuoteStore((state) => state.setItemUnitPrice);
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
   const setClient = useManualQuoteStore((state) => state.setClient);
-  const loadQuoteForEdit = useManualQuoteStore((state) => state.loadQuoteForEdit);
-  const saveQuoteLocal = useManualQuoteStore((state) => state.saveQuoteLocal);
+  const hydrateDraftFromQuote = useManualQuoteStore((state) => state.hydrateDraftFromQuote);
   const clearDraft = useManualQuoteStore((state) => state.clearDraft);
   const subtotal = useManualQuoteStore((state) => state.subtotal);
   const tax = useManualQuoteStore((state) => state.tax);
   const total = useManualQuoteStore((state) => state.total);
 
   useEffect(() => {
-    seedClients();
-
     if (quoteIdFromQuery) {
-      const loaded = loadQuoteForEdit(quoteIdFromQuery);
+      let cancelled = false;
 
-      if (!loaded) {
-        window.alert("No se encontró la cotización para editar.");
-        navigate("/quotes");
-      }
+      const run = async () => {
+        const remoteQuote = await QuotesService.getById(quoteIdFromQuery);
+
+        if (cancelled) return;
+
+        if (!remoteQuote) {
+          notifier.warning("No se encontró la cotización para editar.");
+          navigate("/quotes");
+          return;
+        }
+
+        hydrateDraftFromQuote({
+          ...remoteQuote,
+          items: remoteQuote.items.map((item) => ({
+            ...item,
+            ean: item.ean || "",
+            customerDescription: item.customerDescription || "",
+            customerUnit: item.customerUnit || "",
+            costCurrency: item.costCurrency || "USD",
+            sourceRequiresReview: Boolean(item.sourceRequiresReview),
+          })),
+        });
+      };
+
+      void run();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (fromExtractionSource) {
       return;
     }
 
-    if (fromExtractionSource) return;
-
     clearDraft();
     initializeDraft(user);
-  }, [clearDraft, fromExtractionSource, initializeDraft, loadQuoteForEdit, navigate, quoteIdFromQuery, seedClients, user]);
+  }, [clearDraft, fromExtractionSource, hydrateDraftFromQuote, initializeDraft, navigate, quoteIdFromQuery, user]);
 
   const quoteCurrency = draft.currency;
 
   const totalRequiresReview = useMemo(() => {
     return draft.items.filter((item) => item.requiresReview).length;
   }, [draft.items]);
+  const totalUnlinked = useMemo(() => {
+    return draft.items.filter((item) => !item.erpCode.trim() && !(item.localProductId || "").trim()).length;
+  }, [draft.items]);
+  const visibleItems = useMemo(() => {
+    if (originFilter === "UNLINKED") {
+      return draft.items.filter((item) => !item.erpCode.trim() && !(item.localProductId || "").trim());
+    }
+
+    return draft.items;
+  }, [draft.items, originFilter]);
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
+  const shouldShowCustomerColumns = showCustomerExtractionColumns && showCustomerOrderColumns;
+  const tableColSpan = shouldShowCustomerColumns ? 16 : 14;
+
+  const quoteOrigin = useMemo<"MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT">(() => {
+    if (sourceParam === "file") return "FILE_UPLOAD";
+    if (sourceParam === "text") return "TEXT_INPUT";
+    return "MANUAL";
+  }, [sourceParam]);
+
+  const branchCode = useMemo(() => {
+    const directCode = (user?.erpBranchCode || user?.branch?.code || "").trim();
+    if (/^\d{2}$/.test(directCode)) return directCode;
+    if (/^\d{1}$/.test(directCode)) return `0${directCode}`;
+
+    const normalizedBranch = (user?.branch?.name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .trim();
+
+    if (normalizedBranch.includes("cdmx")) return "01";
+    if (normalizedBranch.includes("mexico")) return "01";
+    if (normalizedBranch.includes("monterrey")) return "02";
+    if (normalizedBranch.includes("veracruz")) return "03";
+    if (normalizedBranch.includes("mexicali")) return "04";
+    if (normalizedBranch.includes("queretaro")) return "05";
+    if (normalizedBranch.includes("cancun")) return "06";
+
+    return "";
+  }, [user?.branch?.code, user?.branch?.name, user?.erpBranchCode]);
 
   const commitQtyDraft = (itemId: string, rawValue: string, fallbackQty: number) => {
     const raw = (rawValue || `${fallbackQty}`).trim();
@@ -132,35 +203,89 @@ export const ManualQuotePage = () => {
     });
   };
 
+  const handleCreateLocalProduct = async (itemId: string) => {
+    const currentItem = draft.items.find((item) => item.id === itemId);
+    if (!currentItem) return;
+    if (currentItem.erpCode.trim() || (currentItem.localProductId || "").trim()) return;
+
+    try {
+      setCreatingLocalItems((state) => ({ ...state, [itemId]: true }));
+
+      const response = await LocalProductsService.createBatchFromItems(
+        [
+          {
+            itemId: currentItem.id,
+            description:
+              currentItem.customerDescription.trim() ||
+              currentItem.erpDescription.trim() ||
+              `PRODUCTO TEMPORAL ${currentItem.id}`,
+          },
+        ]
+      );
+
+      const linked = response.find((row) => row.itemId === itemId);
+      if (!linked) {
+        throw new Error("No se pudo crear/vincular el producto local para esta partida.");
+      }
+
+      assignLocalProductToItem(itemId, linked.product);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el producto local.";
+      notifier.error(message);
+    } finally {
+      setCreatingLocalItems((state) => {
+        const next = { ...state };
+        delete next[itemId];
+        return next;
+      });
+    }
+  };
+
   const validateBeforeSave = () => {
     if (!draft.client) {
-      window.alert("Selecciona un cliente antes de guardar la cotización.");
+      notifier.warning("Selecciona un cliente antes de guardar la cotización.");
       return false;
     }
 
     if (draft.items.length === 0) {
-      window.alert("Agrega al menos una partida para guardar la cotización.");
+      notifier.warning("Agrega al menos una partida para guardar la cotización.");
       return false;
     }
     return true;
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!validateBeforeSave()) return;
 
-    const quoteId = saveQuoteLocal("BORRADOR");
-    clearDraft();
-    window.alert(`Cotización ${quoteId} guardada como BORRADOR.`);
-    navigate("/quotes");
+    try {
+      setSaving(true);
+      const quoteId = await QuotesService.createFromDraft(draft, { status: "BORRADOR", origin: quoteOrigin });
+      clearDraft();
+      notifier.success(`Cotización ${quoteId} guardada como BORRADOR.`);
+      navigate("/quotes");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar la cotización.";
+      notifier.error(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleGenerateQuote = () => {
+  const handleGenerateQuote = async () => {
     if (!validateBeforeSave()) return;
 
-    const quoteId = saveQuoteLocal("COTIZADA");
-    clearDraft();
-    window.alert(`Cotización ${quoteId} generada como COTIZADA.`);
-    navigate("/quotes");
+    try {
+      setSaving(true);
+      const quoteId = await QuotesService.createFromDraft(draft, { status: "COTIZADA", origin: quoteOrigin });
+      clearDraft();
+      notifier.success(`Cotización ${quoteId} generada como COTIZADA.`);
+      navigate("/quotes");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo generar la cotización.";
+      notifier.error(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -175,19 +300,25 @@ export const ManualQuotePage = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handleSaveDraft}
+            onClick={() => {
+              void handleSaveDraft();
+            }}
+            disabled={saving}
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             <FileText className="h-4 w-4" />
-            Guardar borrador
+            {saving ? "Guardando..." : "Guardar borrador"}
           </button>
 
           <button
-            onClick={handleGenerateQuote}
+            onClick={() => {
+              void handleGenerateQuote();
+            }}
+            disabled={saving}
             className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-2 text-sm font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
           >
             <FileCheck2 className="h-4 w-4" />
-            Generar cotización
+            {saving ? "Procesando..." : "Generar cotización"}
           </button>
 
           <button
@@ -216,31 +347,26 @@ export const ManualQuotePage = () => {
 
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="client">
+            <label className="text-xs font-semibold uppercase text-gray-500">
               Cliente
             </label>
-            <NavLink to="/clients" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              Administrar clientes
-            </NavLink>
+            <button
+              onClick={() => setOpenClientModal(true)}
+              className="rounded-md border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+            >
+              Buscar / Crear cliente
+            </button>
           </div>
 
-          <select
-            id="client"
-            value={draft.client?.id ?? ""}
-            onChange={(event) => {
-              const nextClientId = event.target.value;
-              const nextClient = clients.find((client) => client.id === nextClientId) ?? null;
-              setClient(nextClient);
-            }}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
-          >
-            <option value="">Selecciona un cliente</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.name} {client.lastname} - {client.companyName}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700">
+            {draft.client ? (
+              <p>
+                {draft.client.name} {draft.client.lastname} - {draft.client.companyName || "Sin empresa"}
+              </p>
+            ) : (
+              <p className="text-gray-500">Sin cliente seleccionado.</p>
+            )}
+          </div>
         </div>
 
         <div>
@@ -301,16 +427,58 @@ export const ManualQuotePage = () => {
         </div>
       )}
 
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2">
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={() => setOriginFilter("ALL")}
+            className={`rounded-full px-3 py-1 font-semibold ${
+              originFilter === "ALL"
+                ? "bg-gray-800 text-white"
+                : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Todas ({draft.items.length})
+          </button>
+          <button
+            onClick={() => setOriginFilter("UNLINKED")}
+            className={`rounded-full px-3 py-1 font-semibold ${
+              originFilter === "UNLINKED"
+                ? "bg-amber-600 text-white"
+                : "border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+            }`}
+          >
+            Sin vincular ({totalUnlinked})
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          {showCustomerExtractionColumns && (
+            <button
+              type="button"
+              onClick={() => setShowCustomerOrderColumns((prev) => !prev)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              {showCustomerOrderColumns ? "Ocultar pedido cliente" : "Mostrar pedido cliente"}
+            </button>
+          )}
+          <p className="text-xs text-gray-500">
+            {originFilter === "UNLINKED"
+              ? "Mostrando partidas pendientes de vincular a ERP o LOCAL_TEMP."
+              : "Mostrando todas las partidas."}
+          </p>
+        </div>
+      </div>
+
       <div className="overflow-x-auto rounded-md border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
-              {showCustomerExtractionColumns && (
+              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Origen</th>
+              {shouldShowCustomerColumns && (
                 <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción cliente</th>
               )}
-              {showCustomerExtractionColumns && (
+              {shouldShowCustomerColumns && (
                 <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM cliente</th>
               )}
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción ERP</th>
@@ -330,23 +498,39 @@ export const ManualQuotePage = () => {
           <tbody className="divide-y divide-gray-200 bg-white">
             {draft.items.length === 0 && (
               <tr>
-                <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={showCustomerExtractionColumns ? 15 : 13}>
+                <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={tableColSpan}>
                   No hay partidas. Usa "Agregar productos" para comenzar la cotización manual.
                 </td>
               </tr>
             )}
+            {draft.items.length > 0 && visibleItems.length === 0 && (
+              <tr>
+                <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={tableColSpan}>
+                  No hay partidas sin vincular. Puedes volver a "Todas".
+                </td>
+              </tr>
+            )}
 
-            {draft.items.map((item) => {
+            {visibleItems.map((item) => {
               const marginVisual = getMarginVisual(item.marginPct);
 
               return (
                 <tr key={item.id}>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
                   <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>
-                  {showCustomerExtractionColumns && (
+                  <td className="px-4 py-2">
+                    {item.erpCode ? (
+                      <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700">ERP</span>
+                    ) : item.localProductId ? (
+                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">LOCAL_TEMP</span>
+                    ) : (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">SIN VINCULAR</span>
+                    )}
+                  </td>
+                  {shouldShowCustomerColumns && (
                     <td className="px-4 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>
                   )}
-                  {showCustomerExtractionColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
+                  {shouldShowCustomerColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
                   <td className="px-4 py-2 text-xs text-gray-700">{item.erpDescription || "-"}</td>
                   <td className="px-4 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.stock}</td>
@@ -442,6 +626,29 @@ export const ManualQuotePage = () => {
                       >
                         {item.erpCode ? "Cambiar ERP" : "Buscar ERP"}
                       </button>
+                      {!item.erpCode.trim() && !(item.localProductId || "").trim() && (
+                        <button
+                          onClick={() => {
+                            void handleCreateLocalProduct(item.id);
+                          }}
+                          disabled={Boolean(creatingLocalItems[item.id])}
+                          className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {creatingLocalItems[item.id] ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Creando...
+                            </span>
+                          ) : (
+                            "Agregar local"
+                          )}
+                        </button>
+                      )}
+                      {!item.erpCode.trim() && (item.localProductId || "").trim() && (
+                        <span className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                          Local agregado
+                        </span>
+                      )}
                       <button
                         onClick={() => removeItem(item.id)}
                         className="rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"
@@ -500,6 +707,15 @@ export const ManualQuotePage = () => {
           }
           setOpenModal(false);
           setErpTargetItemId(null);
+        }}
+      />
+      <SelectClientModal
+        open={openClientModal}
+        branchCode={branchCode}
+        onClose={() => setOpenClientModal(false)}
+        onSelect={(client) => {
+          setClient(client);
+          setOpenClientModal(false);
         }}
       />
     </section>

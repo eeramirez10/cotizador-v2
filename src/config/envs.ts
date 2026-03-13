@@ -15,11 +15,17 @@ const normalizePath = (path: string): string => {
 };
 
 export const envs = {
+  CORE_API_URL: pickFirst(
+    import.meta.env.VITE_CORE_API_URL,
+    import.meta.env.VITE_COTIZADOR_CORE_API_URL,
+    "http://localhost:4600"
+  ),
   ERP_API_URL: pickFirst(
     import.meta.env.VITE_ERP_API_URL,
     import.meta.env.PROD ? import.meta.env.VITE_ERP_PROD : import.meta.env.VITE_ERP_DEV
   ),
   ERP_PRODUCTS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_PRODUCTS_BASE_PATH, "/api/erp/products")),
+  ERP_CUSTOMERS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_CUSTOMERS_BASE_PATH, "/api/erp/customers")),
   AI_API_URL: pickFirst(
     import.meta.env.VITE_AI_API_URL,
     import.meta.env.VITE_QUOTE_EXTRACTOR_API_URL,

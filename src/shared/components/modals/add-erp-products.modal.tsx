@@ -26,7 +26,7 @@ export const AddErpProductsModal = ({
   const debouncedTerm = useDebouncedValue(term, 300);
   const user = useAuthStore((state) => state.user);
 
-  const branchId = resolveBranchCode(user?.branchId, user?.branch?.name);
+  const branchId = resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
   const enabledSearch = open && !!branchId && debouncedTerm.trim().length > 0;
   const { data, isLoading, isError, error } = useErpProductSearch(debouncedTerm, branchId, enabledSearch);
 
@@ -59,6 +59,11 @@ export const AddErpProductsModal = ({
             />
           </div>
           <p className="mb-2 text-xs text-gray-500">Sucursal consulta: {branchId || "No definida"}</p>
+          {!branchId && (
+            <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              No se pudo determinar el código de sucursal del usuario. Inicia sesión de nuevo o valida tus datos.
+            </p>
+          )}
 
           <div className="max-h-[60vh] overflow-auto rounded-lg border border-gray-200">
             <table className="min-w-full divide-y divide-gray-200">
@@ -147,15 +152,14 @@ const normalizeBranchLabel = (value: string): string =>
     .replace(/\p{Diacritic}/gu, "")
     .trim();
 
-const resolveBranchCode = (branchId?: string, branchName?: string): string => {
-  const raw = (branchId || "").trim();
-  if (/^\d{2}$/.test(raw)) return raw;
-
-  const embeddedCode = raw.match(/\d{2}/)?.[0];
-  if (embeddedCode) return embeddedCode;
+const resolveBranchCode = (erpBranchCode?: string, branchCode?: string, branchName?: string): string => {
+  const explicitCode = (erpBranchCode || branchCode || "").trim();
+  if (/^\d{2}$/.test(explicitCode)) return explicitCode;
+  if (/^\d{1}$/.test(explicitCode)) return `0${explicitCode}`;
 
   const normalizedName = normalizeBranchLabel(branchName || "");
 
+  if (normalizedName.includes("cdmx")) return "01";
   if (normalizedName.includes("mexico")) return "01";
   if (normalizedName.includes("monterrey")) return "02";
   if (normalizedName.includes("veracruz")) return "03";
@@ -163,5 +167,5 @@ const resolveBranchCode = (branchId?: string, branchName?: string): string => {
   if (normalizedName.includes("queretaro")) return "05";
   if (normalizedName.includes("cancun")) return "06";
 
-  return "01";
+  return "";
 };

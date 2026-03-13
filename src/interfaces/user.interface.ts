@@ -1,5 +1,6 @@
 export interface Branch {
   id: string;
+  code?: string;
   name: string;
   address: string;
   createdAt: string;
@@ -18,5 +19,6 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   branchId: string;
+  erpBranchCode?: string;
   branch: Branch;
 }

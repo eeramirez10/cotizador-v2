@@ -3,12 +3,14 @@ import type { User } from "../../interfaces/user.interface";
 import type { Client } from "../../modules/clients/types/client.types";
 import type { ErpProduct, ErpProductCurrency } from "../../modules/products/types/erp-product.types";
 import type { ExtractedQuoteItem } from "../../modules/quote-extraction/types/quote-extraction-job.types";
+import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
 
 export interface ManualQuoteItem {
   id: string;
+  localProductId: string | null;
   erpCode: string;
   ean: string;
   customerDescription: string;
@@ -66,6 +68,32 @@ interface StoredQuote {
   items: ManualQuoteItem[];
 }
 
+interface HydrateQuoteClient {
+  id: string;
+  name: string;
+  lastname: string;
+  whatsappPhone: string;
+  email: string;
+  rfc: string;
+  companyName: string;
+  phone?: string;
+}
+
+interface HydrateQuoteInput {
+  quoteId: string;
+  quoteDraftId: string;
+  status: QuoteStatus;
+  createdByUserId: string | null;
+  createdByName: string;
+  branchId: string | null;
+  branchName: string;
+  currency: QuoteCurrency;
+  exchangeRate: number;
+  taxRate: number;
+  client: HydrateQuoteClient | null;
+  items: ManualQuoteItem[];
+}
+
 interface ManualQuoteState {
   draft: ManualQuoteDraft;
   initializeDraft: (user?: User) => void;
@@ -73,6 +101,10 @@ interface ManualQuoteState {
   setExchangeRate: (exchangeRate: number) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
+  assignLocalProductToItem: (
+    itemId: string,
+    localProduct: LocalProductBatchResultItem["product"]
+  ) => void;
   setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
   removeItem: (itemId: string) => void;
   setItemQty: (itemId: string, qty: number) => void;
@@ -80,6 +112,7 @@ interface ManualQuoteState {
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
   setClient: (client: Client | null) => void;
+  hydrateDraftFromQuote: (quote: HydrateQuoteInput) => void;
   loadQuoteForEdit: (quoteId: string) => boolean;
   subtotal: () => number;
   tax: () => number;
@@ -147,6 +180,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
     computeItem(
       {
         id: item.id,
+        localProductId: item.localProductId,
         erpCode: item.erpCode,
         ean: item.ean,
         customerDescription: item.customerDescription,
@@ -224,6 +258,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
     set((state) => {
       const base = {
         id: `itm_${Math.random().toString(36).slice(2, 10)}`,
+        localProductId: null,
         erpCode: product.code,
         ean: product.ean,
         customerDescription: "",
@@ -256,6 +291,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
 
         return {
           ...item,
+          localProductId: null,
           erpCode: product.code,
           ean: product.ean,
           erpDescription: product.description,
@@ -277,12 +313,37 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       };
     }),
 
+  assignLocalProductToItem: (itemId, localProduct) =>
+    set((state) => {
+      const nextItems = state.draft.items.map((item) => {
+        if (item.id !== itemId) return item;
+
+        return {
+          ...item,
+          localProductId: localProduct.id,
+          erpCode: "",
+          ean: localProduct.ean || item.ean,
+          erpDescription: item.erpDescription.trim() || localProduct.description,
+          marginPct: item.marginPct > 0 ? item.marginPct : 15,
+          sourceRequiresReview: false,
+        };
+      });
+
+      return {
+        draft: {
+          ...state.draft,
+          items: recalcItems(nextItems, state.draft.currency, state.draft.exchangeRate),
+        },
+      };
+    }),
+
   setItemsFromExtraction: (items) =>
     set((state) => {
       const nextItems = items.map((item) =>
         computeItem(
           {
             id: `itm_${Math.random().toString(36).slice(2, 10)}`,
+            localProductId: null,
             erpCode: "",
             ean: "",
             customerDescription: (item.description_normalizada || item.description_original || "").toString().trim(),
@@ -389,12 +450,60 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       },
     })),
 
+  hydrateDraftFromQuote: (quote) =>
+    set((state) => {
+      const normalizedItems = quote.items.map((item) => ({
+        ...item,
+        localProductId: item.localProductId || null,
+        ean: item.ean || item.erpCode,
+        customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+        customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
+        erpDescription: item.erpCode ? item.erpDescription : "",
+        costCurrency: item.costCurrency || "USD",
+        sourceRequiresReview: item.sourceRequiresReview || false,
+      }));
+
+      const loadedItems = recalcItems(normalizedItems, quote.currency, quote.exchangeRate);
+      const hydratedClient = quote.client
+        ? {
+            ...quote.client,
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+            createdByUserId: quote.createdByUserId,
+            createdByName: quote.createdByName,
+            updatedByUserId: quote.createdByUserId,
+            updatedByName: quote.createdByName,
+          }
+        : null;
+
+      return {
+        draft: {
+          ...state.draft,
+          id: quote.quoteDraftId,
+          savedQuoteId: quote.quoteId,
+          status: quote.status,
+          currency: quote.currency,
+          exchangeRate: quote.exchangeRate,
+          exchangeRateDate: nowDateOnly(),
+          exchangeRateSource: "manual",
+          taxRate: quote.taxRate,
+          createdByUserId: quote.createdByUserId,
+          createdByName: quote.createdByName,
+          branchId: quote.branchId,
+          branchName: quote.branchName,
+          client: hydratedClient,
+          items: loadedItems,
+        },
+      };
+    }),
+
   loadQuoteForEdit: (quoteId) => {
     const stored = readStoredQuotes().find((quote) => quote.quoteId === quoteId);
     if (!stored) return false;
 
     const normalizedItems = stored.items.map((item) => ({
       ...item,
+      localProductId: item.localProductId || null,
       ean: item.ean || item.erpCode,
       customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
       customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),

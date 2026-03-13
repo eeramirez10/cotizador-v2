@@ -1,8 +1,10 @@
 import { redirect } from "react-router";
-import { hasActiveSession } from "../store/auth/auth.store";
+import { useAuthStore } from "../store/auth/auth.store";
 
 export const requireAuthLoader = async (): Promise<null> => {
-  if (!hasActiveSession()) {
+  try {
+    await useAuthStore.getState().checkStatus();
+  } catch {
     throw redirect("/login");
   }
 
@@ -10,11 +12,12 @@ export const requireAuthLoader = async (): Promise<null> => {
 };
 
 export const guestOnlyLoader = async (): Promise<null> => {
-  if (hasActiveSession()) {
+  try {
+    await useAuthStore.getState().checkStatus();
     throw redirect("/home");
+  } catch {
+    return null;
   }
-
-  return null;
 };
 
 export const indexRedirectLoader = async (): Promise<Response> => {

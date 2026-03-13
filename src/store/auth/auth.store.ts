@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { User } from "../../interfaces/user.interface";
-import { findMockUserByCredentials } from "../../modules/auth/mocks/mock-users";
+import { AuthService } from "../../modules/auth/services/auth.service";
 
 export type AuthStatus = "authorized" | "unauthorized" | "pending";
 
@@ -20,8 +20,6 @@ type PersistedAuth = {
   token: string;
   user: User;
 };
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const readStorage = (): PersistedAuth | null => {
   if (typeof window === "undefined") return null;
@@ -66,30 +64,31 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     set({ fetching: true });
 
-    await sleep(500);
+    try {
+      const backendSession = await AuthService.login(normalizedEmail, normalizedPassword);
 
-    const user = findMockUserByCredentials(normalizedEmail, normalizedPassword);
-    if (!user) {
-      set({ fetching: false });
-      throw new Error("Credenciales invalidas para entorno mock.");
+      writeStorage({ token: backendSession.token, user: backendSession.user });
+
+      set({
+        fetching: false,
+        status: "authorized",
+        token: backendSession.token,
+        user: backendSession.user,
+      });
+    } catch (error) {
+      set({
+        fetching: false,
+        status: "unauthorized",
+        token: undefined,
+        user: undefined,
+      });
+      clearStorage();
+      throw error;
     }
-
-    const token = `mock_${Date.now()}`;
-
-    writeStorage({ token, user });
-
-    set({
-      fetching: false,
-      status: "authorized",
-      token,
-      user,
-    });
   },
 
   checkStatus: async () => {
     set({ fetching: true });
-
-    await sleep(100);
 
     const persisted = readStorage();
 
@@ -103,12 +102,26 @@ export const useAuthStore = create<AuthState>((set) => ({
       throw new Error("unauthorized");
     }
 
-    set({
-      fetching: false,
-      status: "authorized",
-      token: persisted.token,
-      user: persisted.user,
-    });
+    try {
+      const user = await AuthService.me(persisted.token);
+      writeStorage({ token: persisted.token, user });
+
+      set({
+        fetching: false,
+        status: "authorized",
+        token: persisted.token,
+        user,
+      });
+    } catch {
+      clearStorage();
+      set({
+        fetching: false,
+        status: "unauthorized",
+        token: undefined,
+        user: undefined,
+      });
+      throw new Error("unauthorized");
+    }
   },
 
   logout: () => {
@@ -145,3 +158,5 @@ export const performLogin = async (email: string, password: string): Promise<voi
 export const performLogout = (): void => {
   useAuthStore.getState().logout();
 };
+
+export const getAuthToken = (): string | undefined => useAuthStore.getState().token;

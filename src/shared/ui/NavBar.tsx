@@ -56,7 +56,7 @@ const SideBarButton: FC<Props> = ({ handleOpen }) => {
   return (
     <button
       onClick={() => handleOpen()}
-      className="ms-3 ml-4 mt-2 inline-flex items-center rounded-lg p-2 text-sm text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 md:hidden"
+      className="ms-3 ml-4 inline-flex items-center rounded-lg p-2 text-sm text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200"
     >
       <span className="sr-only">Open sidebar</span>
       <svg className="h-6 w-6" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">

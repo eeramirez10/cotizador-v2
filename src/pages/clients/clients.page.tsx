@@ -1,7 +1,7 @@
-import { Pencil, Trash2, UserPlus } from "lucide-react";
+import { Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ClientInput } from "../../modules/clients/types/client.types";
-import { useAuthStore } from "../../store/auth/auth.store";
+import { notifier } from "../../shared/notifications/notifier";
 import { useClientsStore } from "../../store/clients/clients.store";
 
 const EMPTY_FORM: ClientInput = {
@@ -15,19 +15,25 @@ const EMPTY_FORM: ClientInput = {
 };
 
 export const ClientsPage = () => {
-  const user = useAuthStore((state) => state.user);
   const clients = useClientsStore((state) => state.clients);
-  const seedClients = useClientsStore((state) => state.seedClients);
+  const loading = useClientsStore((state) => state.loading);
+  const loadClients = useClientsStore((state) => state.loadClients);
   const addClient = useClientsStore((state) => state.addClient);
   const updateClient = useClientsStore((state) => state.updateClient);
   const deleteClient = useClientsStore((state) => state.deleteClient);
 
   const [form, setForm] = useState<ClientInput>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [openClientModal, setOpenClientModal] = useState(false);
 
   useEffect(() => {
-    seedClients();
-  }, [seedClients]);
+    void loadClients().catch((error) => {
+      const message = error instanceof Error ? error.message : "No se pudieron cargar los clientes.";
+      notifier.error(message);
+    });
+  }, [loadClients]);
 
   const title = editingId ? "Editar cliente" : "Nuevo cliente";
 
@@ -37,122 +43,100 @@ export const ClientsPage = () => {
     return [...clients].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }, [clients]);
 
-  const actorName = `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim() || "Usuario";
-  const actor = {
-    userId: user?.id ?? null,
-    fullName: actorName,
-  };
-
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
+  };
+
+  const closeClientModal = () => {
+    if (saving) return;
+    setOpenClientModal(false);
+    resetForm();
+  };
+
+  const openCreateClientModal = () => {
+    resetForm();
+    setOpenClientModal(true);
+  };
+
+  const openEditClientModal = (client: {
+    id: string;
+    name: string;
+    lastname: string;
+    whatsappPhone: string;
+    email: string;
+    rfc: string;
+    companyName: string;
+    phone?: string | null;
+  }) => {
+    setEditingId(client.id);
+    setForm({
+      name: client.name,
+      lastname: client.lastname,
+      whatsappPhone: client.whatsappPhone,
+      email: client.email,
+      rfc: client.rfc,
+      companyName: client.companyName,
+      phone: client.phone ?? "",
+    });
+    setOpenClientModal(true);
   };
 
   const validate = () => {
     if (!form.name.trim()) return "El nombre es obligatorio";
     if (!form.lastname.trim()) return "El apellido es obligatorio";
     if (!form.whatsappPhone.trim()) return "El WhatsApp es obligatorio";
-    if (!form.email.trim()) return "El correo es obligatorio";
-    if (!form.rfc.trim()) return "El RFC es obligatorio";
-    if (!form.companyName.trim()) return "La empresa es obligatoria";
     return null;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const error = validate();
     if (error) {
-      window.alert(error);
+      notifier.warning(error);
       return;
     }
 
-    if (editingId) {
-      updateClient(editingId, form, actor);
-      window.alert("Cliente actualizado.");
+    try {
+      setSaving(true);
+
+      if (editingId) {
+        await updateClient(editingId, form);
+        notifier.success("Cliente actualizado.");
+      } else {
+        await addClient(form);
+        notifier.success("Cliente creado.");
+      }
+
+      setOpenClientModal(false);
       resetForm();
-      return;
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : "No se pudo guardar el cliente.";
+      notifier.error(message);
+    } finally {
+      setSaving(false);
     }
-
-    addClient(form, actor);
-    window.alert("Cliente creado.");
-    resetForm();
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+    <div className="space-y-5">
       <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-        <p className="mb-4 text-xs text-gray-500">Datos obligatorios para cotizar y enviar por WhatsApp/correo.</p>
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <Input
-            label="Nombre"
-            value={form.name}
-            onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
-          />
-
-          <Input
-            label="Apellido"
-            value={form.lastname}
-            onChange={(value) => setForm((prev) => ({ ...prev, lastname: value }))}
-          />
-
-          <Input
-            label="WhatsApp"
-            value={form.whatsappPhone}
-            onChange={(value) => setForm((prev) => ({ ...prev, whatsappPhone: value }))}
-          />
-
-          <Input
-            label="Correo"
-            value={form.email}
-            onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
-          />
-
-          <Input
-            label="RFC"
-            value={form.rfc}
-            onChange={(value) => setForm((prev) => ({ ...prev, rfc: value }))}
-          />
-
-          <Input
-            label="Empresa"
-            value={form.companyName}
-            onChange={(value) => setForm((prev) => ({ ...prev, companyName: value }))}
-          />
-
-          <Input
-            label="Teléfono alterno"
-            value={form.phone ?? ""}
-            onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
-          />
-
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
-            >
-              <UserPlus className="h-4 w-4" />
-              {submitLabel}
-            </button>
-
-            {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-            )}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Clientes</h2>
+            <p className="text-xs text-gray-500">Seleccionables en el cotizador para ligar datos de contacto.</p>
           </div>
-        </form>
-      </section>
 
-      <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800">Clientes</h2>
-        <p className="mb-4 text-xs text-gray-500">Seleccionables en el cotizador para ligar datos de contacto.</p>
+          <button
+            type="button"
+            onClick={openCreateClientModal}
+            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
+          >
+            <UserPlus className="h-4 w-4" />
+            Nuevo cliente
+          </button>
+        </div>
 
         <div className="overflow-auto rounded-md border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
@@ -168,7 +152,15 @@ export const ClientsPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {sortedClients.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-500">
+                    Cargando clientes...
+                  </td>
+                </tr>
+              )}
+
+              {!loading && sortedClients.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-500">
                     No hay clientes registrados.
@@ -189,18 +181,7 @@ export const ClientsPage = () => {
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex gap-1">
                       <button
-                        onClick={() => {
-                          setEditingId(client.id);
-                          setForm({
-                            name: client.name,
-                            lastname: client.lastname,
-                            whatsappPhone: client.whatsappPhone,
-                            email: client.email,
-                            rfc: client.rfc,
-                            companyName: client.companyName,
-                            phone: client.phone ?? "",
-                          });
-                        }}
+                        onClick={() => openEditClientModal(client)}
                         className="rounded-md border border-gray-300 p-1 text-gray-600 hover:bg-gray-100"
                         aria-label="Editar cliente"
                       >
@@ -208,10 +189,28 @@ export const ClientsPage = () => {
                       </button>
 
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const allowDelete = window.confirm("¿Eliminar cliente?");
-                          if (allowDelete) deleteClient(client.id);
+                          if (!allowDelete) return;
+
+                          try {
+                            setDeletingId(client.id);
+                            await deleteClient(client.id);
+                            if (editingId === client.id) {
+                              setOpenClientModal(false);
+                              resetForm();
+                            }
+                          } catch (deleteError) {
+                            const message =
+                              deleteError instanceof Error
+                                ? deleteError.message
+                                : "No se pudo eliminar el cliente.";
+                            notifier.error(message);
+                          } finally {
+                            setDeletingId(null);
+                          }
                         }}
+                        disabled={deletingId === client.id}
                         className="rounded-md border border-gray-300 p-1 text-gray-600 hover:bg-gray-100"
                         aria-label="Eliminar cliente"
                       >
@@ -225,6 +224,102 @@ export const ClientsPage = () => {
           </table>
         </div>
       </section>
+
+      {openClientModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={closeClientModal}
+            className="absolute inset-0 bg-black/40"
+            aria-label="Cerrar modal de cliente"
+          />
+
+          <div className="relative w-full max-w-xl rounded-md border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+                <p className="text-xs text-gray-500">Datos obligatorios para cotizar y enviar por WhatsApp/correo.</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeClientModal}
+                disabled={saving}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="px-4 py-3">
+              <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
+                <Input
+                  label="Nombre"
+                  value={form.name}
+                  onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+                />
+
+                <Input
+                  label="Apellido"
+                  value={form.lastname}
+                  onChange={(value) => setForm((prev) => ({ ...prev, lastname: value }))}
+                />
+
+                <Input
+                  label="WhatsApp"
+                  value={form.whatsappPhone}
+                  onChange={(value) => setForm((prev) => ({ ...prev, whatsappPhone: value }))}
+                />
+
+                <Input
+                  label="Correo"
+                  value={form.email}
+                  onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
+                />
+
+                <Input
+                  label="RFC"
+                  value={form.rfc}
+                  onChange={(value) => setForm((prev) => ({ ...prev, rfc: value }))}
+                />
+
+                <Input
+                  label="Empresa"
+                  value={form.companyName}
+                  onChange={(value) => setForm((prev) => ({ ...prev, companyName: value }))}
+                />
+
+                <Input
+                  label="Teléfono alterno"
+                  value={form.phone ?? ""}
+                  onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
+                />
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2 border-t border-gray-200 pt-3">
+                <button
+                  type="button"
+                  onClick={closeClientModal}
+                  disabled={saving}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:from-sky-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  {saving ? "Guardando..." : submitLabel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

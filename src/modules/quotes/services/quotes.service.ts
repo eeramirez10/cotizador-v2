@@ -1,9 +1,15 @@
+import type { Client } from "../../clients/types/client.types";
+import { coreHttpClient } from "../../core/services/http/core-http.client";
 import type { PageResult, Quote } from "../types/quote.types";
+import { getAuthToken } from "../../../store/auth/auth.store";
+import type { ManualQuoteDraft, ManualQuoteItem } from "../../../store/quote/manual-quote.store";
 
 export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
+export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 
 export interface SavedQuoteRecord {
   quoteId: string;
+  quoteNumber?: string;
   quoteDraftId: string;
   status: SavedQuoteStatus;
   erpProfile?: "GENERIC_TXT";
@@ -32,6 +38,7 @@ export interface SavedQuoteRecord {
   } | null;
   items: Array<{
     id: string;
+    localProductId: string | null;
     erpCode: string;
     ean?: string;
     customerDescription?: string;
@@ -51,45 +58,105 @@ export interface SavedQuoteRecord {
   }>;
 }
 
-const STORAGE_QUOTES_KEY = "cotizador-v2-saved-quotes";
-const STORAGE_ERP_ORDERS_KEY = "cotizador-v2-erp-order-queue";
+interface ApiQuoteItem {
+  id: string;
+  productId: string | null;
+  externalProductCode: string | null;
+  ean: string | null;
+  customerDescription: string | null;
+  customerUnit: string | null;
+  erpDescription: string | null;
+  unit: string;
+  qty: number;
+  stock: number | null;
+  deliveryTime: string | null;
+  cost: number;
+  costCurrency: "MXN" | "USD";
+  marginPct: number;
+  unitPrice: number;
+  subtotal: number;
+  sourceRequiresReview: boolean;
+  requiresReview: boolean;
+  product?: {
+    id: string;
+    code: string | null;
+    ean: string | null;
+    description: string;
+    unit: string;
+    currency: "MXN" | "USD";
+  } | null;
+}
 
-const readStoredQuotes = (): SavedQuoteRecord[] => {
-  if (typeof window === "undefined") return [];
+interface ApiQuote {
+  id: string;
+  quoteNumber: string;
+  status: "DRAFT" | "PENDING" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  currency: "MXN" | "USD";
+  exchangeRate: number;
+  taxRate: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  createdByUserId: string;
+  branch: {
+    id: string;
+    name: string;
+  };
+  customer: {
+    id: string;
+    displayName: string;
+    legalName: string | null;
+    email: string | null;
+    phone: string | null;
+    whatsapp: string;
+  };
+  createdByUser: {
+    firstName: string;
+    lastName: string;
+  };
+  items: ApiQuoteItem[];
+  createdAt: string;
+  updatedAt: string;
+}
 
-  const raw = window.localStorage.getItem(STORAGE_QUOTES_KEY);
-  if (!raw) return [];
+interface ApiPaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
 
+const STORAGE_CUSTOMER_MAP_KEY = "cotizador-v2-customer-id-map";
+
+const isUuid = (value: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const readCustomerMap = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem(STORAGE_CUSTOMER_MAP_KEY);
+  if (!raw) return {};
   try {
-    const parsed = JSON.parse(raw) as SavedQuoteRecord[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return [];
+    return {};
   }
 };
 
-const writeStoredQuotes = (quotes: SavedQuoteRecord[]): void => {
+const writeCustomerMap = (value: Record<string, string>): void => {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_QUOTES_KEY, JSON.stringify(quotes));
+  window.localStorage.setItem(STORAGE_CUSTOMER_MAP_KEY, JSON.stringify(value));
 };
 
-const pushErpOrderQueue = (payload: { quoteId: string; requestedAt: string }): void => {
-  if (typeof window === "undefined") return;
-
-  const raw = window.localStorage.getItem(STORAGE_ERP_ORDERS_KEY);
-
-  let existing: Array<{ quoteId: string; requestedAt: string }> = [];
-
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as Array<{ quoteId: string; requestedAt: string }>;
-      existing = Array.isArray(parsed) ? parsed : [];
-    } catch {
-      existing = [];
-    }
+const requireAuthHeaders = (): Record<string, string> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error("Sesión no válida. Inicia sesión nuevamente.");
   }
 
-  window.localStorage.setItem(STORAGE_ERP_ORDERS_KEY, JSON.stringify([payload, ...existing]));
+  return {
+    Authorization: `Bearer ${token}`,
+  };
 };
 
 const formatDate = (iso: string): string => {
@@ -103,9 +170,79 @@ const formatDate = (iso: string): string => {
   }).format(date);
 };
 
+const mapApiStatusToSaved = (status: ApiQuote["status"]): SavedQuoteStatus => {
+  if (status === "DRAFT") return "BORRADOR";
+  if (status === "PENDING") return "PENDIENTE";
+  if (status === "QUOTED" || status === "APPROVED") return "COTIZADA";
+  return "CANCELADA";
+};
+
+const splitName = (displayName: string): { name: string; lastname: string } => {
+  const safe = displayName.trim();
+  if (!safe) return { name: "", lastname: "" };
+
+  const [first, ...rest] = safe.split(" ");
+  return { name: first, lastname: rest.join(" ") };
+};
+
+const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
+  const person = splitName(apiQuote.customer.displayName);
+
+  return {
+    quoteId: apiQuote.id,
+    quoteNumber: apiQuote.quoteNumber,
+    quoteDraftId: apiQuote.id,
+    status: mapApiStatusToSaved(apiQuote.status),
+    erpProfile: "GENERIC_TXT",
+    erpExportState: "PENDIENTE",
+    createdAt: apiQuote.createdAt,
+    updatedAt: apiQuote.updatedAt,
+    createdByUserId: apiQuote.createdByUserId,
+    createdByName: `${apiQuote.createdByUser.firstName} ${apiQuote.createdByUser.lastName}`.trim(),
+    branchId: apiQuote.branch.id,
+    branchName: apiQuote.branch.name,
+    currency: apiQuote.currency,
+    exchangeRate: apiQuote.exchangeRate,
+    taxRate: apiQuote.taxRate,
+    subtotal: apiQuote.subtotal,
+    tax: apiQuote.tax,
+    total: apiQuote.total,
+    client: {
+      id: apiQuote.customer.id,
+      name: person.name || apiQuote.customer.displayName,
+      lastname: person.lastname,
+      whatsappPhone: apiQuote.customer.whatsapp || "",
+      email: apiQuote.customer.email || "",
+      rfc: "",
+      companyName: apiQuote.customer.legalName || apiQuote.customer.displayName,
+      phone: apiQuote.customer.phone || "",
+    },
+    items: apiQuote.items.map((item) => ({
+      id: item.id,
+      localProductId: item.productId || item.product?.id || null,
+      erpCode: item.externalProductCode || item.product?.code || "",
+      ean: item.ean || item.product?.ean || "",
+      customerDescription: item.customerDescription || "",
+      customerUnit: item.customerUnit || "",
+      erpDescription: item.erpDescription || item.product?.description || "",
+      unit: item.unit || item.product?.unit || "",
+      qty: item.qty,
+      stock: item.stock ?? 0,
+      deliveryTime: item.deliveryTime || "Por definir",
+      costUsd: item.cost,
+      costCurrency: item.costCurrency,
+      marginPct: item.marginPct,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      sourceRequiresReview: item.sourceRequiresReview,
+      requiresReview: item.requiresReview,
+    })),
+  };
+};
+
 const toQuote = (stored: SavedQuoteRecord): Quote => ({
   id: stored.quoteId,
-  quoteNumber: stored.quoteId.replace("COT-", ""),
+  quoteNumber: stored.quoteNumber ?? stored.quoteId,
   status: stored.status,
   createdByName: stored.createdByName,
   branch: stored.branchName ?? "Monterrey",
@@ -147,84 +284,310 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   },
 });
 
+const mapDraftItemToPayload = (item: ManualQuoteItem) => {
+  const safeQty = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : 1;
+  const safeCost = Number.isFinite(item.costUsd) && item.costUsd >= 0 ? item.costUsd : 0;
+  const erpCode = item.erpCode?.trim() ? item.erpCode.trim() : null;
+  const localProductId =
+    !erpCode && item.localProductId?.trim() ? item.localProductId.trim() : null;
+  const fallbackDescriptionForLocal = !erpCode
+    ? item.erpDescription?.trim() || item.customerDescription?.trim() || null
+    : item.erpDescription?.trim() || null;
+
+  return {
+    productId: localProductId,
+    externalProductCode: erpCode,
+    ean: item.ean?.trim() ? item.ean.trim() : null,
+    customerDescription: item.customerDescription?.trim() ? item.customerDescription.trim() : null,
+    customerUnit: item.customerUnit?.trim() ? item.customerUnit.trim() : null,
+    erpDescription: fallbackDescriptionForLocal,
+    unit: item.unit?.trim() ? item.unit.trim() : "PZA",
+    qty: safeQty,
+    stock: Number.isFinite(item.stock) ? item.stock : null,
+    deliveryTime: item.deliveryTime?.trim() ? item.deliveryTime.trim() : null,
+    cost: safeCost,
+    costCurrency: item.costCurrency || "USD",
+    marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,
+    unitPrice: Number.isFinite(item.unitPrice) ? item.unitPrice : undefined,
+    sourceRequiresReview: Boolean(item.sourceRequiresReview),
+    requiresReview: Boolean(item.requiresReview),
+  };
+};
+
+const mapDraftItemToExtractionPayload = (item: ManualQuoteItem) => {
+  const description = item.customerDescription?.trim() || item.erpDescription?.trim() || "Descripcion pendiente";
+  const customerUnit = item.customerUnit?.trim() || null;
+  const normalizedUnit = item.unit?.trim() || customerUnit;
+  const quantity = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : null;
+  const requiresReview =
+    Boolean(item.sourceRequiresReview) || Boolean(item.requiresReview) || quantity === null || !normalizedUnit;
+
+  return {
+    descriptionOriginal: description,
+    descriptionNormalized: description,
+    quantity,
+    unitOriginal: customerUnit,
+    unitNormalized: normalizedUnit,
+    requiresReview,
+  };
+};
+
+const replaceQuoteItems = async (quoteId: string, items: ManualQuoteItem[]): Promise<void> => {
+  const current = await getRawQuoteById(quoteId);
+  if (!current) {
+    throw new Error("No se encontró la cotización para sincronizar partidas.");
+  }
+
+  for (const currentItem of current.items) {
+    await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${currentItem.id}`, {
+      headers: requireAuthHeaders(),
+    });
+  }
+
+  for (const item of items) {
+    await coreHttpClient.post(`/api/quotes/${quoteId}/items`, mapDraftItemToPayload(item), {
+      headers: requireAuthHeaders(),
+    });
+  }
+};
+
+const ensureRemoteCustomerId = async (client: Client): Promise<string> => {
+  if (isUuid(client.id)) return client.id;
+
+  const mapped = readCustomerMap();
+  if (mapped[client.id]) return mapped[client.id];
+
+  const payload = {
+    source: "LOCAL",
+    firstName: client.name,
+    lastName: client.lastname,
+    displayName: `${client.name} ${client.lastname}`.trim(),
+    legalName: client.companyName || null,
+    email: client.email || null,
+    phone: client.phone || null,
+    whatsapp: client.whatsappPhone,
+    taxId: client.rfc || null,
+    profileStatus:
+      client.rfc?.trim() && client.companyName?.trim() ? "FISCAL_COMPLETED" : "PROSPECT",
+  };
+
+  const { data } = await coreHttpClient.post<ApiQuote["customer"] & { id: string }>(
+    "/api/customers",
+    payload,
+    {
+      headers: requireAuthHeaders(),
+    }
+  );
+
+  mapped[client.id] = data.id;
+  writeCustomerMap(mapped);
+  return data.id;
+};
+
+const getRawQuoteById = async (quoteId: string): Promise<ApiQuote | null> => {
+  try {
+    const { data } = await coreHttpClient.get<ApiQuote>(`/api/quotes/${quoteId}`, {
+      headers: requireAuthHeaders(),
+    });
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+const ensureQuotedStatus = async (quoteId: string): Promise<boolean> => {
+  const current = await getRawQuoteById(quoteId);
+  if (!current) return false;
+
+  if (current.status === "QUOTED" || current.status === "APPROVED") {
+    return true;
+  }
+
+  if (current.status === "DRAFT") {
+    await coreHttpClient.patch(
+      `/api/quotes/${quoteId}/status`,
+      { status: "PENDING", note: "Moved to pending from frontend workflow." },
+      { headers: requireAuthHeaders() }
+    );
+  }
+
+  const refreshed = await getRawQuoteById(quoteId);
+  if (!refreshed) return false;
+  if (refreshed.status === "QUOTED" || refreshed.status === "APPROVED") return true;
+  if (refreshed.status !== "PENDING") return false;
+
+  await coreHttpClient.patch(
+    `/api/quotes/${quoteId}/status`,
+    { status: "QUOTED", note: "Marked as quoted from frontend workflow." },
+    { headers: requireAuthHeaders() }
+  );
+
+  return true;
+};
+
 export class QuotesService {
   static async list(params: { page?: number; pageSize?: number }): Promise<PageResult<Quote>> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;
 
-    await new Promise((resolve) => setTimeout(resolve, 120));
-
-    const quotes = readStoredQuotes().map(toQuote);
-
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
+    const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuote>>("/api/quotes", {
+      params: { page, pageSize },
+      headers: requireAuthHeaders(),
+    });
 
     return {
-      items: quotes.slice(start, end),
-      total: quotes.length,
-      page,
-      pageSize,
+      items: data.items.map((item) => toQuote(mapApiQuoteToSavedRecord(item))),
+      total: data.total,
+      page: data.page,
+      pageSize: data.pageSize,
     };
   }
 
   static async getById(quoteId: string): Promise<SavedQuoteRecord | null> {
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    const raw = await getRawQuoteById(quoteId);
+    if (!raw) return null;
+    return mapApiQuoteToSavedRecord(raw);
+  }
 
-    const quote = readStoredQuotes().find((item) => item.quoteId === quoteId);
-    return quote ?? null;
+  static async createFromDraft(
+    draft: ManualQuoteDraft,
+    options: { status: SavedQuoteStatus; origin?: QuoteDraftOrigin }
+  ): Promise<string> {
+    if (!draft.client) {
+      throw new Error("Selecciona un cliente antes de guardar la cotización.");
+    }
+
+    const customerId = await ensureRemoteCustomerId(draft.client);
+    const origin = options.origin ?? "MANUAL";
+    const draftItemsWithLocalProducts = draft.items;
+
+    let quoteId = draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null;
+
+    if (quoteId) {
+      await coreHttpClient.patch(
+        `/api/quotes/${quoteId}`,
+        {
+          customerId,
+          currency: draft.currency,
+          exchangeRate: draft.exchangeRate,
+          exchangeRateDate: draft.exchangeRateDate,
+          taxRate: draft.taxRate,
+          notes: null,
+        },
+        { headers: requireAuthHeaders() }
+      );
+
+      const current = await getRawQuoteById(quoteId);
+      if (!current) throw new Error("No se encontró la cotización para actualizar.");
+
+      for (const item of current.items) {
+        await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${item.id}`, {
+          headers: requireAuthHeaders(),
+        });
+      }
+    } else if (origin !== "MANUAL") {
+      const extractionItems = draft.items.map(mapDraftItemToExtractionPayload);
+
+      const { data } = await coreHttpClient.post<ApiQuote>(
+        "/api/quotes/from-extraction",
+        {
+          customerId,
+          currency: draft.currency,
+          exchangeRate: draft.exchangeRate,
+          exchangeRateDate: draft.exchangeRateDate,
+          taxRate: draft.taxRate,
+          origin,
+          notes: null,
+          items: extractionItems,
+        },
+        { headers: requireAuthHeaders() }
+      );
+
+      quoteId = data.id;
+      await replaceQuoteItems(quoteId, draftItemsWithLocalProducts);
+    } else {
+      const { data } = await coreHttpClient.post<ApiQuote>(
+        "/api/quotes",
+        {
+          customerId,
+          currency: draft.currency,
+          exchangeRate: draft.exchangeRate,
+          exchangeRateDate: draft.exchangeRateDate,
+          taxRate: draft.taxRate,
+          origin,
+          notes: null,
+        },
+        { headers: requireAuthHeaders() }
+      );
+      quoteId = data.id;
+    }
+
+    if (origin === "MANUAL" || draft.savedQuoteId) {
+      for (const item of draftItemsWithLocalProducts) {
+        await coreHttpClient.post(`/api/quotes/${quoteId}/items`, mapDraftItemToPayload(item), {
+          headers: requireAuthHeaders(),
+        });
+      }
+    }
+
+    if (options.status === "COTIZADA") {
+      const success = await ensureQuotedStatus(quoteId);
+      if (!success) throw new Error("No se pudo mover la cotización a COTIZADA.");
+    }
+
+    return quoteId;
   }
 
   static async updateStatus(quoteId: string, status: SavedQuoteStatus): Promise<boolean> {
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    try {
+      const current = await getRawQuoteById(quoteId);
+      if (!current) return false;
 
-    const quotes = readStoredQuotes();
-    const exists = quotes.some((quote) => quote.quoteId === quoteId);
+      if (status === "COTIZADA") {
+        return ensureQuotedStatus(quoteId);
+      }
 
-    if (!exists) return false;
+      if (status === "CANCELADA") {
+        if (current.status === "CANCELLED") return true;
 
-    const updated = quotes.map((quote) => {
-      if (quote.quoteId !== quoteId) return quote;
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          { status: "CANCELLED", note: "Cancelled from frontend." },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
+      }
 
-      return {
-        ...quote,
-        status,
-        updatedAt: new Date().toISOString(),
-      };
-    });
+      if (status === "PENDIENTE") {
+        if (current.status === "PENDING") return true;
+        if (current.status !== "DRAFT") return false;
 
-    writeStoredQuotes(updated);
-    return true;
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          { status: "PENDING", note: "Pending status set from frontend." },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   static async generateOrder(quoteId: string): Promise<{ ok: boolean; message: string }> {
-    await new Promise((resolve) => setTimeout(resolve, 120));
-
-    const quotes = readStoredQuotes();
-    const target = quotes.find((quote) => quote.quoteId === quoteId);
-
-    if (!target) {
-      return { ok: false, message: "No se encontró la cotización." };
+    try {
+      const { data } = await coreHttpClient.post<{ message?: string }>(
+        `/api/quotes/${quoteId}/generate-order`,
+        {},
+        { headers: requireAuthHeaders() }
+      );
+      return { ok: true, message: data.message || "Pedido generado correctamente." };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "No se pudo generar el pedido desde el backend.";
+      return { ok: false, message };
     }
-
-    if (target.status !== "COTIZADA") {
-      return { ok: false, message: "Solo se puede generar pedido para cotizaciones cotizadas." };
-    }
-
-    const updated = quotes.map((quote) => {
-      if (quote.quoteId !== quoteId) return quote;
-
-      return {
-        ...quote,
-        erpExportState: "EXPORTADO" as const,
-        updatedAt: new Date().toISOString(),
-      };
-    });
-
-    writeStoredQuotes(updated);
-
-    // Cola temporal local hasta conectar envío real desde backend.
-    pushErpOrderQueue({ quoteId, requestedAt: new Date().toISOString() });
-
-    return { ok: true, message: "Pedido generado correctamente." };
   }
 }
