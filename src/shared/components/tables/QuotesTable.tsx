@@ -57,12 +57,12 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                     src="https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                     alt="Client picture"
                   />
-                  <div className="ml-3">
-                    <p className="text-sm font-medium text-gray-900">
-                      {quote?.customer?.name} {quote?.customer?.lastname}
-                    </p>
-                    <p className="text-sm text-gray-500">{quote?.customer?.phone}</p>
-                  </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-900">
+                      {quote?.customer?.company || `${quote?.customer?.name || ""} ${quote?.customer?.lastname || ""}`.trim()}
+                  </p>
+                  <p className="text-sm text-gray-500">{quote?.customer?.phone}</p>
+                </div>
                 </div>
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.createdByName || "-"}</td>

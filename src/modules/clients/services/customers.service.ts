@@ -9,6 +9,10 @@ interface ApiUserBrief {
 
 interface ApiCustomer {
   id: string;
+  source: "LOCAL" | "ERP";
+  externalId?: string | null;
+  externalSystem?: string | null;
+  code?: string | null;
   firstName: string;
   lastName: string;
   displayName: string;
@@ -35,8 +39,11 @@ interface ApiCustomersListResponse {
   hasNextPage: boolean;
 }
 
-interface CreateOrUpdateCustomerPayload {
-  source: "LOCAL";
+interface CustomerPayload {
+  source?: "LOCAL" | "ERP";
+  externalId?: string | null;
+  externalSystem?: string | null;
+  code?: string | null;
   firstName: string;
   lastName: string;
   displayName: string;
@@ -60,6 +67,10 @@ const mapApiCustomer = (raw: ApiCustomer): Client => {
 
   return {
     id: raw.id,
+    source: raw.source,
+    externalId: raw.externalId ?? null,
+    externalSystem: raw.externalSystem ?? null,
+    code: raw.code ?? null,
     name: raw.firstName || "",
     lastname: raw.lastName || "",
     whatsappPhone: raw.whatsapp || "",
@@ -76,14 +87,16 @@ const mapApiCustomer = (raw: ApiCustomer): Client => {
   };
 };
 
-const buildPayloadFromInput = (input: ClientInput): CreateOrUpdateCustomerPayload => {
+const buildBasePayloadFromInput = (input: ClientInput): Omit<
+  CustomerPayload,
+  "source" | "externalId" | "externalSystem" | "code"
+> => {
   const firstName = input.name.trim();
   const lastName = input.lastname.trim();
   const legalName = input.companyName.trim();
   const taxId = input.rfc.trim().toUpperCase();
 
   return {
-    source: "LOCAL",
     firstName,
     lastName,
     displayName: `${firstName} ${lastName}`.trim(),
@@ -94,6 +107,37 @@ const buildPayloadFromInput = (input: ClientInput): CreateOrUpdateCustomerPayloa
     taxId: taxId || null,
     profileStatus: legalName && taxId ? "FISCAL_COMPLETED" : "PROSPECT",
   };
+};
+
+const buildCreatePayloadFromInput = (input: ClientInput): CustomerPayload => {
+  const source = input.source === "ERP" ? "ERP" : "LOCAL";
+  const externalId = input.externalId?.trim() || null;
+  const externalSystemRaw = input.externalSystem?.trim() || null;
+  const externalSystem = source === "ERP" ? (externalSystemRaw || "ERP") : externalSystemRaw;
+
+  return {
+    ...buildBasePayloadFromInput(input),
+    source,
+    externalId,
+    externalSystem,
+    code: input.code?.trim() || null,
+  };
+};
+
+const buildUpdatePayloadFromInput = (input: ClientInput): CustomerPayload => {
+  const payload: CustomerPayload = {
+    ...buildBasePayloadFromInput(input),
+  };
+
+  if (input.source) {
+    const source = input.source === "ERP" ? "ERP" : "LOCAL";
+    payload.source = source;
+    payload.externalId = input.externalId?.trim() || null;
+    payload.externalSystem = source === "ERP" ? input.externalSystem?.trim() || "ERP" : input.externalSystem?.trim() || null;
+    payload.code = input.code?.trim() || null;
+  }
+
+  return payload;
 };
 
 const requireAuthHeaders = (): Record<string, string> => {
@@ -108,13 +152,19 @@ const requireAuthHeaders = (): Record<string, string> => {
 };
 
 export class CustomersService {
-  static async list(params?: { search?: string; pageSize?: number; page?: number }): Promise<Client[]> {
+  static async list(params?: {
+    search?: string;
+    pageSize?: number;
+    page?: number;
+    source?: "LOCAL" | "ERP";
+  }): Promise<Client[]> {
     const { data } = await coreHttpClient.get<ApiCustomersListResponse>("/api/customers", {
       headers: requireAuthHeaders(),
       params: {
         page: params?.page ?? 1,
         pageSize: params?.pageSize ?? 100,
         search: params?.search?.trim() || undefined,
+        source: params?.source,
       },
     });
 
@@ -122,7 +172,7 @@ export class CustomersService {
   }
 
   static async create(input: ClientInput): Promise<Client> {
-    const payload = buildPayloadFromInput(input);
+    const payload = buildCreatePayloadFromInput(input);
     const { data } = await coreHttpClient.post<ApiCustomer>("/api/customers", payload, {
       headers: requireAuthHeaders(),
     });
@@ -131,7 +181,7 @@ export class CustomersService {
   }
 
   static async update(customerId: string, input: ClientInput): Promise<Client> {
-    const payload = buildPayloadFromInput(input);
+    const payload = buildUpdatePayloadFromInput(input);
     const { data } = await coreHttpClient.patch<ApiCustomer>(`/api/customers/${customerId}`, payload, {
       headers: requireAuthHeaders(),
     });

@@ -41,6 +41,10 @@ const toInputFromErp = (erpCustomer: ErpCustomer): ClientInput => {
   const split = splitDisplayName(erpCustomer.displayName);
 
   return {
+    source: "ERP",
+    externalId: erpCustomer.externalId,
+    externalSystem: "ERP",
+    code: erpCustomer.code || null,
     name: erpCustomer.firstName || split.name,
     lastname: erpCustomer.lastName || split.lastname,
     whatsappPhone: erpCustomer.whatsapp,

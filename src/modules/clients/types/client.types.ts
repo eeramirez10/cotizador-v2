@@ -1,5 +1,9 @@
 export interface Client {
   id: string;
+  source?: "LOCAL" | "ERP";
+  externalId?: string | null;
+  externalSystem?: string | null;
+  code?: string | null;
   name: string;
   lastname: string;
   whatsappPhone: string;
@@ -16,6 +20,10 @@ export interface Client {
 }
 
 export interface ClientInput {
+  source?: "LOCAL" | "ERP";
+  externalId?: string | null;
+  externalSystem?: string | null;
+  code?: string | null;
   name: string;
   lastname: string;
   whatsappPhone: string;

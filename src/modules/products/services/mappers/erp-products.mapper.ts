@@ -8,6 +8,7 @@ interface ErpByEanRow {
   stock?: number | string;
   unit?: string;
   currency?: string;
+  cost?: number | string;
   averageCost?: number | string;
   lastCost?: number | string;
   [key: string]: unknown;
@@ -36,10 +37,11 @@ const toCurrency = (value: unknown): ErpProductCurrency => {
 };
 
 const resolveCost = (row: ErpByEanRow): number => {
+  const directCost = toNumber(row.cost);
   const lastCost = toNumber(row.lastCost);
-  if (lastCost > 0) return lastCost;
+  const averageCost = toNumber(row.averageCost);
 
-  return toNumber(row.averageCost);
+  return Math.max(0, directCost, lastCost, averageCost);
 };
 
 const asByEanRows = (payload: unknown): ErpByEanRow[] => {

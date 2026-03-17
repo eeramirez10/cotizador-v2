@@ -23,6 +23,7 @@ export interface ManualQuoteItem {
   costUsd: number;
   costCurrency: ErpProductCurrency;
   marginPct: number;
+  manualUnitPrice?: number;
   unitPrice: number;
   subtotal: number;
   sourceRequiresReview: boolean;
@@ -163,7 +164,10 @@ const computeItem = (
   exchangeRate: number
 ): ManualQuoteItem => {
   const costInQuoteCurrency = getCostInQuoteCurrency(item, currency, exchangeRate);
-  const unitPrice = round(costInQuoteCurrency * (1 + item.marginPct / 100));
+  const unitPrice =
+    costInQuoteCurrency > 0
+      ? round(costInQuoteCurrency * (1 + item.marginPct / 100))
+      : round(Math.max(0, item.manualUnitPrice ?? 0));
   const subtotal = round(unitPrice * item.qty);
   const requiresReview = item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
 
@@ -193,6 +197,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
+        manualUnitPrice: item.manualUnitPrice,
         sourceRequiresReview: item.sourceRequiresReview,
       },
       currency,
@@ -302,6 +307,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
           costCurrency: product.costCurrency,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
+          manualUnitPrice: undefined,
         };
       });
 
@@ -326,6 +332,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
           erpDescription: item.erpDescription.trim() || localProduct.description,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
+          manualUnitPrice: undefined,
         };
       });
 
@@ -356,6 +363,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
             costUsd: 0,
             costCurrency: "USD",
             marginPct: 0,
+            manualUnitPrice: undefined,
             sourceRequiresReview: item.requiere_revision,
           },
           state.draft.currency,
@@ -398,7 +406,9 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       draft: {
         ...state.draft,
         items: recalcItems(
-          state.draft.items.map((item) => (item.id === itemId ? { ...item, marginPct } : item)),
+          state.draft.items.map((item) =>
+            item.id === itemId ? { ...item, marginPct, manualUnitPrice: undefined } : item
+          ),
           state.draft.currency,
           state.draft.exchangeRate
         ),
@@ -415,11 +425,11 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         const costInQuoteCurrency = getCostInQuoteCurrency(item, state.draft.currency, state.draft.exchangeRate);
 
         if (costInQuoteCurrency <= 0) {
-          return { ...item, marginPct: 0 };
+          return { ...item, marginPct: 0, manualUnitPrice: safeUnitPrice };
         }
 
         const nextMargin = Number((((safeUnitPrice / costInQuoteCurrency) - 1) * 100).toFixed(6));
-        return { ...item, marginPct: nextMargin };
+        return { ...item, marginPct: nextMargin, manualUnitPrice: undefined };
       });
 
       return {
@@ -461,6 +471,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
+        manualUnitPrice: item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
       }));
 
       const loadedItems = recalcItems(normalizedItems, quote.currency, quote.exchangeRate);
@@ -510,6 +521,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,
+      manualUnitPrice: item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
     }));
 
     const loadedItems = recalcItems(normalizedItems, stored.currency, stored.exchangeRate);

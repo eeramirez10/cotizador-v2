@@ -26,6 +26,8 @@ export const envs = {
   ),
   ERP_PRODUCTS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_PRODUCTS_BASE_PATH, "/api/erp/products")),
   ERP_CUSTOMERS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_CUSTOMERS_BASE_PATH, "/api/erp/customers")),
+  ERP_USERS_API_URL: pickFirst(import.meta.env.VITE_ERP_USERS_API_URL, "http://localhost:3500"),
+  ERP_USERS_BASE_PATH: normalizePath(pickFirst(import.meta.env.VITE_ERP_USERS_BASE_PATH, "/api/erp-users")),
   AI_API_URL: pickFirst(
     import.meta.env.VITE_AI_API_URL,
     import.meta.env.VITE_QUOTE_EXTRACTOR_API_URL,

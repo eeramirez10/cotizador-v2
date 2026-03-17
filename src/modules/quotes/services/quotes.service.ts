@@ -186,7 +186,11 @@ const splitName = (displayName: string): { name: string; lastname: string } => {
 };
 
 const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
+  const legalName = (apiQuote.customer.legalName || "").trim();
   const person = splitName(apiQuote.customer.displayName);
+  const customerName = legalName || person.name || apiQuote.customer.displayName;
+  const customerLastName = legalName ? "" : person.lastname;
+  const companyName = legalName || apiQuote.customer.displayName;
 
   return {
     quoteId: apiQuote.id,
@@ -209,12 +213,12 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     total: apiQuote.total,
     client: {
       id: apiQuote.customer.id,
-      name: person.name || apiQuote.customer.displayName,
-      lastname: person.lastname,
+      name: customerName,
+      lastname: customerLastName,
       whatsappPhone: apiQuote.customer.whatsapp || "",
       email: apiQuote.customer.email || "",
       rfc: "",
-      companyName: apiQuote.customer.legalName || apiQuote.customer.displayName,
+      companyName,
       phone: apiQuote.customer.phone || "",
     },
     items: apiQuote.items.map((item) => ({
@@ -290,9 +294,9 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
   const erpCode = item.erpCode?.trim() ? item.erpCode.trim() : null;
   const localProductId =
     !erpCode && item.localProductId?.trim() ? item.localProductId.trim() : null;
-  const fallbackDescriptionForLocal = !erpCode
-    ? item.erpDescription?.trim() || item.customerDescription?.trim() || null
-    : item.erpDescription?.trim() || null;
+  const hasLinkedProduct = Boolean(erpCode || localProductId);
+  const normalizedErpDescription = item.erpDescription?.trim() || null;
+  const erpDescriptionForPayload = hasLinkedProduct ? normalizedErpDescription : null;
 
   return {
     productId: localProductId,
@@ -300,7 +304,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     ean: item.ean?.trim() ? item.ean.trim() : null,
     customerDescription: item.customerDescription?.trim() ? item.customerDescription.trim() : null,
     customerUnit: item.customerUnit?.trim() ? item.customerUnit.trim() : null,
-    erpDescription: fallbackDescriptionForLocal,
+    erpDescription: erpDescriptionForPayload,
     unit: item.unit?.trim() ? item.unit.trim() : "PZA",
     qty: safeQty,
     stock: Number.isFinite(item.stock) ? item.stock : null,
@@ -357,8 +361,15 @@ const ensureRemoteCustomerId = async (client: Client): Promise<string> => {
   const mapped = readCustomerMap();
   if (mapped[client.id]) return mapped[client.id];
 
+  const source = client.source === "ERP" ? "ERP" : "LOCAL";
+  const externalId = client.externalId?.trim() || null;
+  const externalSystem = source === "ERP" ? client.externalSystem?.trim() || "ERP" : client.externalSystem?.trim() || null;
+
   const payload = {
-    source: "LOCAL",
+    source,
+    externalId,
+    externalSystem,
+    code: client.code?.trim() || null,
     firstName: client.name,
     lastName: client.lastname,
     displayName: `${client.name} ${client.lastname}`.trim(),

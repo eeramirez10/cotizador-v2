@@ -1,4 +1,4 @@
-import { ArrowLeft, ContactRound, DollarSign, FileUp, LucideLayoutDashboard, Package, Power, UserRound } from "lucide-react";
+import { ArrowLeft, ContactRound, DollarSign, FileUp, LucideLayoutDashboard, Package, Power, UserRound, Users } from "lucide-react";
 import { Form, NavLink } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
@@ -8,6 +8,8 @@ export const SideBar = () => {
   const setClose = useUiStore((state) => state.setClose);
 
   const user = useAuthStore((state) => state.user);
+  const role = (user?.role || "").trim().toLowerCase();
+  const canAccessUsers = role === "admin" || role === "manager";
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
   const active = "bg-gray-100 text-gray-900";
@@ -21,6 +23,7 @@ export const SideBar = () => {
     { name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> },
     { name: "Clientes", to: "/clients", icon: <ContactRound /> },
     { name: "Productos", to: "/products", icon: <Package /> },
+    ...(canAccessUsers ? [{ name: "Usuarios", to: "/users", icon: <Users /> }] : []),
     { name: "Perfil", to: "/user", icon: <UserRound /> },
   ];
 

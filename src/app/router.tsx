@@ -1,7 +1,7 @@
 import { createBrowserRouter, redirect } from "react-router";
 import { loginAction, logoutAction } from "./actions/auth.actions";
 import { AppShellLayout } from "./layouts/app-shell.layout";
-import { guestOnlyLoader, indexRedirectLoader, requireAuthLoader } from "./route-guards";
+import { guestOnlyLoader, indexRedirectLoader, requireAuthLoader, requireRolesLoader } from "./route-guards";
 import { LoginPage } from "../pages/auth/login.page";
 import { DashboardPage } from "../pages/dashboard/dashboard.page";
 import { NotFoundPage } from "../pages/not-found.page";
@@ -12,6 +12,7 @@ import { ManualQuotePage } from "../pages/quotes/manual-quote.page";
 import { UserPage } from "../pages/user/user.page";
 import { ClientsPage } from "../pages/clients/clients.page";
 import { ProductsPage } from "../pages/products/products.page";
+import { UsersPage } from "../pages/users/users.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -80,6 +81,12 @@ export const appRouter = createBrowserRouter([
         path: "products",
         handle: { title: "Productos" },
         Component: ProductsPage,
+      },
+      {
+        path: "users",
+        loader: requireRolesLoader(["admin", "manager"]),
+        handle: { title: "Usuarios" },
+        Component: UsersPage,
       },
     ],
   },

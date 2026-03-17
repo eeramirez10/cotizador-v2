@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleSlash, Pencil, ShoppingCart } from "lucide-react";
+import { CheckCircle2, CircleSlash, FileText, Pencil, ShoppingCart, X } from "lucide-react";
 import { useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 import { useGenerateQuoteOrder, useQuoteDetail, useUpdateQuoteStatus } from "../../queries/quotes/use-quote-detail";
@@ -19,10 +19,17 @@ const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   }).format(value);
 };
 
+const formatDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+};
+
 export const QuoteDetailPage = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
   const updateStatus = useUpdateQuoteStatus();
@@ -46,6 +53,12 @@ export const QuoteDetailPage = () => {
   const badgeClass = statusClass[quote.status] ?? "bg-gray-100 text-gray-700";
   const showCustomerExtractionColumns = quote.items.some(
     (item) => (item.customerDescription || "").trim().length > 0 || (item.customerUnit || "").trim().length > 0
+  );
+  const company = quote.client?.companyName?.trim() || "";
+  const contactName = `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
+  const customerDisplayName = company || contactName || "Cliente sin nombre";
+  const deliverySummary = Array.from(
+    new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
   );
 
   const handleCancelQuote = async () => {
@@ -100,6 +113,14 @@ export const QuoteDetailPage = () => {
           >
             <Pencil className="h-4 w-4" />
             Editar
+          </button>
+
+          <button
+            onClick={() => setShowPdfPreview(true)}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <FileText className="h-4 w-4" />
+            Vista PDF
           </button>
 
           {quote.status === "COTIZADA" && (
@@ -158,7 +179,7 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Cliente</p>
           <p className="text-sm text-gray-700">
-            {quote.client ? `${quote.client.name} ${quote.client.lastname}` : "-"}
+            {quote.client ? quote.client.companyName || `${quote.client.name} ${quote.client.lastname}`.trim() : "-"}
           </p>
         </div>
 
@@ -257,6 +278,174 @@ export const QuoteDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => setShowPdfPreview(false)}
+            className="absolute inset-0 bg-black/40"
+            aria-label="Cerrar vista previa PDF"
+          />
+
+          <div className="relative max-h-[92vh] w-full max-w-[95vw] overflow-auto rounded-md border border-gray-200 bg-slate-100 p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Vista previa PDF</h3>
+                <p className="text-xs text-gray-500">Diseño carta antes de generar y enviar al cliente.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPdfPreview(false)}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-200"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <article
+              className="mx-auto bg-white text-gray-900 shadow-lg"
+              style={{ width: "8.5in", minHeight: "11in", padding: "0.55in" }}
+            >
+              <header className="border-b border-gray-200 pb-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <img className="h-12" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" />
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
+                      <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-right text-xs">
+                    <p>
+                      <span className="font-semibold">Folio:</span> {quote.quoteNumber || quote.quoteId}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Fecha emisión:</span> {formatDate(quote.updatedAt || quote.createdAt)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Vigencia:</span> 15 días naturales
+                    </p>
+                    <p>
+                      <span className="font-semibold">Moneda:</span> {quote.currency}
+                    </p>
+                  </div>
+                </div>
+              </header>
+
+              <section className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                <div className="rounded-md border border-gray-200 p-3">
+                  <p className="text-[11px] font-semibold uppercase text-gray-500">Cliente</p>
+                  <p className="mt-1 font-semibold">{customerDisplayName}</p>
+                  <p className="text-xs text-gray-600">Contacto: {contactName || "-"}</p>
+                  <p className="text-xs text-gray-600">Correo: {quote.client?.email || "-"}</p>
+                  <p className="text-xs text-gray-600">WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
+                </div>
+
+                <div className="rounded-md border border-gray-200 p-3">
+                  <p className="text-[11px] font-semibold uppercase text-gray-500">Datos comerciales</p>
+                  <p className="mt-1 text-xs text-gray-700">
+                    <span className="font-semibold">Vendedor:</span> {quote.createdByName || "-"}
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    <span className="font-semibold">Sucursal:</span> {quote.branchName || "-"}
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    <span className="font-semibold">Tipo de cambio:</span> {quote.exchangeRate}
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    <span className="font-semibold">Tiempo de entrega:</span>{" "}
+                    {deliverySummary.length > 0 ? deliverySummary.join(" / ") : "Por definir"}
+                  </p>
+                </div>
+              </section>
+
+              <section className="mt-4">
+                <div className="overflow-hidden rounded-md border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Código</th>
+                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Descripción</th>
+                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">UM</th>
+                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Cantidad</th>
+                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Precio unit.</th>
+                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Importe</th>
+                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Entrega</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-gray-200 bg-white text-[10px] leading-4">
+                      {quote.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
+                          <td className="px-2 py-2 align-top">
+                            {item.erpDescription || item.customerDescription || "-"}
+                          </td>
+                          <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
+                          <td className="px-2 py-2 text-right align-top">{item.qty}</td>
+                          <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
+                          <td className="px-2 py-2 text-right align-top font-semibold">
+                            {formatCurrency(item.subtotal, quote.currency)}
+                          </td>
+                          <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="mt-4 flex justify-end">
+                <div className="w-full max-w-[300px] space-y-1 rounded-md border border-gray-200 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(quote.subtotal, quote.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>IVA ({(quote.taxRate * 100).toFixed(0)}%)</span>
+                    <span>{formatCurrency(quote.tax, quote.currency)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 font-semibold">
+                    <span>Total</span>
+                    <span>{formatCurrency(quote.total, quote.currency)}</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="mt-4 rounded-md border border-gray-200 p-3">
+                <p className="text-[11px] font-semibold uppercase text-gray-500">Condiciones comerciales</p>
+                <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
+                  <li>PRECIOS: UNITARIOS MAS IVA.</li>
+                  <li>
+                    COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.
+                  </li>
+                  <li>CONDICIONES DE PAGO: 60% DE ANTICIPO RESTO CONTRA ENTREGA.</li>
+                  <li>LUGAR DE ENTREGA: L.A.B. OBRA.</li>
+                  <li>TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.</li>
+                  <li>
+                    EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O
+                    REPRESENTANTE DE LA EMPRESA.
+                  </li>
+                  <li>MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.</li>
+                  <li>PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.</li>
+                  <li>NO SE ACEPTAN DEVOLUCIONES.</li>
+                  <li>VIGENCIA 15 DIAS.</li>
+                </ol>
+              </section>
+
+              <footer className="mt-6 border-t border-gray-200 pt-3 text-[11px] text-gray-500">
+                <div className="flex items-center justify-between">
+                  <p>Esta es una vista previa del diseño PDF de cotización.</p>
+                  <p>Página 1/1</p>
+                </div>
+              </footer>
+            </article>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
