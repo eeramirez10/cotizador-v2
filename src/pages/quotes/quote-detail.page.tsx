@@ -1,13 +1,36 @@
-import { CheckCircle2, CircleSlash, FileText, Pencil, ShoppingCart, X } from "lucide-react";
-import { useState } from "react";
+import {
+  CheckCircle2,
+  CircleSlash,
+  Download,
+  FileText,
+  Mail,
+  MessageCircle,
+  Pencil,
+  Printer,
+  Send,
+  ShoppingCart,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "lucide-react";
+import { forwardRef, useRef, useState, type CSSProperties } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
-import { useGenerateQuoteOrder, useQuoteDetail, useUpdateQuoteStatus } from "../../queries/quotes/use-quote-detail";
+import type { SavedQuoteRecord } from "../../modules/quotes/services/quotes.service";
+import {
+  useDownloadQuoteOrderFile,
+  useGenerateQuoteOrder,
+  useQuoteDetail,
+  useRegisterQuoteDeliveryAttempt,
+  useUpdateQuoteStatus,
+} from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
   PENDIENTE: "bg-amber-100 text-amber-700",
   COTIZADA: "bg-emerald-100 text-emerald-700",
+  APROBADA: "bg-blue-100 text-blue-700",
+  RECHAZADA: "bg-orange-100 text-orange-700",
   CANCELADA: "bg-rose-100 text-rose-700",
 };
 
@@ -25,15 +48,217 @@ const formatDate = (value: string) => {
   return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 };
 
+const waitForImages = async (root: HTMLElement): Promise<void> => {
+  const images = Array.from(root.querySelectorAll("img"));
+  if (images.length === 0) return;
+
+  await Promise.all(
+    images.map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          if (image.complete && image.naturalWidth > 0) {
+            resolve();
+            return;
+          }
+
+          const cleanup = () => {
+            image.removeEventListener("load", onDone);
+            image.removeEventListener("error", onDone);
+          };
+
+          const onDone = () => {
+            cleanup();
+            resolve();
+          };
+
+          image.addEventListener("load", onDone, { once: true });
+          image.addEventListener("error", onDone, { once: true });
+          window.setTimeout(onDone, 3000);
+        })
+    )
+  );
+};
+
+const printableColorVars: CSSProperties = {
+  "--color-white": "#ffffff",
+  "--color-gray-50": "#f9fafb",
+  "--color-gray-200": "#e5e7eb",
+  "--color-gray-500": "#6b7280",
+  "--color-gray-600": "#4b5563",
+  "--color-gray-700": "#374151",
+  "--color-gray-900": "#111827",
+} as CSSProperties;
+
+interface QuotePrintableDocumentProps {
+  quote: SavedQuoteRecord;
+  customerDisplayName: string;
+  contactName: string;
+  deliverySummary: string[];
+  className?: string;
+  style?: CSSProperties;
+}
+
+const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentProps>(function QuotePrintableDocument(
+  { quote, customerDisplayName, contactName, deliverySummary, className, style },
+  ref
+) {
+  return (
+    <article
+      ref={ref}
+      data-print-root
+      className={className}
+      style={{ width: "8.5in", minHeight: "11in", padding: "0.55in", ...printableColorVars, ...style }}
+    >
+      <header className="border-b border-gray-200 pb-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <img className="h-12" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" loading="eager" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
+              <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
+            </div>
+          </div>
+
+          <div className="space-y-1 text-right text-xs">
+            <p>
+              <span className="font-semibold">Folio:</span> {quote.quoteNumber || quote.quoteId}
+            </p>
+            <p>
+              <span className="font-semibold">Fecha emisión:</span> {formatDate(quote.updatedAt || quote.createdAt)}
+            </p>
+            <p>
+              <span className="font-semibold">Vigencia:</span> 15 días naturales
+            </p>
+            <p>
+              <span className="font-semibold">Moneda:</span> {quote.currency}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <section className="mt-4 grid grid-cols-2 gap-4 text-sm">
+        <div className="rounded-md border border-gray-200 p-3">
+          <p className="text-[11px] font-semibold uppercase text-gray-500">Cliente</p>
+          <p className="mt-1 font-semibold">{customerDisplayName}</p>
+          <p className="text-xs text-gray-600">Contacto: {contactName || "-"}</p>
+          <p className="text-xs text-gray-600">Correo: {quote.client?.email || "-"}</p>
+          <p className="text-xs text-gray-600">WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
+        </div>
+
+        <div className="rounded-md border border-gray-200 p-3">
+          <p className="text-[11px] font-semibold uppercase text-gray-500">Datos comerciales</p>
+          <p className="mt-1 text-xs text-gray-700">
+            <span className="font-semibold">Vendedor:</span> {quote.createdByName || "-"}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Sucursal:</span> {quote.branchName || "-"}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Tipo de cambio:</span> {quote.exchangeRate}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Tiempo de entrega:</span>{" "}
+            {deliverySummary.length > 0 ? deliverySummary.join(" / ") : "Por definir"}
+          </p>
+        </div>
+      </section>
+
+      <section className="mt-4">
+        <div className="overflow-hidden rounded-md border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 text-xs">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Código</th>
+                <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Descripción</th>
+                <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">UM</th>
+                <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Cantidad</th>
+                <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Precio unit.</th>
+                <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Importe</th>
+                <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Entrega</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200 bg-white text-[10px] leading-4">
+              {quote.items.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
+                  <td className="px-2 py-2 align-top">{item.erpDescription || item.customerDescription || "-"}</td>
+                  <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
+                  <td className="px-2 py-2 text-right align-top">{item.qty}</td>
+                  <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
+                  <td className="px-2 py-2 text-right align-top font-semibold">
+                    {formatCurrency(item.subtotal, quote.currency)}
+                  </td>
+                  <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-4 flex justify-end">
+        <div className="w-full max-w-[300px] space-y-1 rounded-md border border-gray-200 p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span>Subtotal</span>
+            <span>{formatCurrency(quote.subtotal, quote.currency)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>IVA ({(quote.taxRate * 100).toFixed(0)}%)</span>
+            <span>{formatCurrency(quote.tax, quote.currency)}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 font-semibold">
+            <span>Total</span>
+            <span>{formatCurrency(quote.total, quote.currency)}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-md border border-gray-200 p-3">
+        <p className="text-[11px] font-semibold uppercase text-gray-500">Condiciones comerciales</p>
+        <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
+          <li>PRECIOS: UNITARIOS MAS IVA.</li>
+          <li>COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.</li>
+          <li>CONDICIONES DE PAGO: 60% DE ANTICIPO RESTO CONTRA ENTREGA.</li>
+          <li>LUGAR DE ENTREGA: L.A.B. OBRA.</li>
+          <li>TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.</li>
+          <li>
+            EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O REPRESENTANTE DE
+            LA EMPRESA.
+          </li>
+          <li>MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.</li>
+          <li>PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.</li>
+          <li>NO SE ACEPTAN DEVOLUCIONES.</li>
+          <li>VIGENCIA 15 DIAS.</li>
+        </ol>
+      </section>
+
+      <footer className="mt-6 border-t border-gray-200 pt-3 text-[11px] text-gray-500">
+        <div className="flex items-center justify-between">
+          <p>Esta es una vista previa del diseño PDF de cotización.</p>
+          <p>Página 1/1</p>
+        </div>
+      </footer>
+    </article>
+  );
+});
+
 export const QuoteDetailPage = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
+  const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false);
+  const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
   const updateStatus = useUpdateQuoteStatus();
   const generateOrder = useGenerateQuoteOrder();
+  const downloadOrderFile = useDownloadQuoteOrderFile();
+  const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
 
   if (isLoading) {
     return <p className="text-sm text-gray-500">Cargando detalle de cotización...</p>;
@@ -60,40 +285,366 @@ export const QuoteDetailPage = () => {
   const deliverySummary = Array.from(
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
   );
+  const canMarkQuoted = quote.status === "BORRADOR" || quote.status === "PENDIENTE";
+  const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
+  const canDownloadQuotePdf =
+    quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
+  const canApproveReject = quote.status === "COTIZADA";
+  const canGenerateOrder = quote.status === "APROBADA" && quote.orderStatus !== "GENERADO";
+  const canDownloadOrder =
+    quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
+  const isActionLocked =
+    actionInProgress ||
+    updateStatus.isPending ||
+    generateOrder.isPending ||
+    downloadOrderFile.isPending ||
+    registerDeliveryAttempt.isPending;
+  const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
+
+  const runActionWithToast = async <T,>({
+    loadingMessage,
+    action,
+    isSuccess,
+    successMessage,
+    errorMessage,
+    onSuccess,
+  }: {
+    loadingMessage: string;
+    action: () => Promise<T>;
+    isSuccess?: (result: T) => boolean;
+    successMessage?: string | ((result: T) => string);
+    errorMessage?: string | ((result: T) => string);
+    onSuccess?: (result: T) => Promise<void> | void;
+  }) => {
+    if (isActionLocked) return;
+
+    setActionInProgress(true);
+    const loadingToastId = notifier.loading(loadingMessage);
+
+    try {
+      const result = await action();
+      const successful = isSuccess ? isSuccess(result) : true;
+
+      if (!successful) {
+        const resolvedError =
+          typeof errorMessage === "function"
+            ? errorMessage(result)
+            : errorMessage || "No se pudo completar la operación.";
+
+        if (loadingToastId !== undefined) {
+          notifier.update(loadingToastId, "error", resolvedError);
+        } else {
+          notifier.error(resolvedError);
+        }
+        return;
+      }
+
+      const resolvedSuccess = typeof successMessage === "function" ? successMessage(result) : successMessage;
+      if (resolvedSuccess) {
+        if (loadingToastId !== undefined) {
+          notifier.update(loadingToastId, "success", resolvedSuccess);
+        } else {
+          notifier.success(resolvedSuccess);
+        }
+      } else if (loadingToastId !== undefined) {
+        notifier.dismiss(loadingToastId);
+      }
+
+      await onSuccess?.(result);
+    } catch (error) {
+      const resolvedError =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "No se pudo completar la operación.";
+
+      if (loadingToastId !== undefined) {
+        notifier.update(loadingToastId, "error", resolvedError);
+      } else {
+        notifier.error(resolvedError);
+      }
+    } finally {
+      setActionInProgress(false);
+    }
+  };
 
   const handleCancelQuote = async () => {
+    if (isActionLocked) return;
     const confirmCancel = window.confirm("¿Seguro que quieres cancelar esta cotización?");
     if (!confirmCancel) return;
 
-    const result = await updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "CANCELADA" });
-    if (!result) {
-      notifier.error("No se pudo cancelar la cotización.");
-      return;
-    }
-
-    notifier.success("Cotización cancelada.");
-    await refetch();
+    await runActionWithToast({
+      loadingMessage: "Cancelando cotización...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "CANCELADA" }),
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Cotización cancelada.",
+      errorMessage: "No se pudo cancelar la cotización.",
+      onSuccess: async () => {
+        await refetch();
+      },
+    });
   };
 
   const handleMarkQuoted = async () => {
-    const result = await updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "COTIZADA" });
-    if (!result) {
-      notifier.error("No se pudo actualizar el estatus.");
-      return;
-    }
+    await runActionWithToast({
+      loadingMessage: "Actualizando estatus a COTIZADA...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "COTIZADA" }),
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Estatus actualizado a COTIZADA.",
+      errorMessage: "No se pudo actualizar el estatus.",
+      onSuccess: async () => {
+        await refetch();
+      },
+    });
+  };
 
-    notifier.success("Estatus actualizado a COTIZADA.");
-    await refetch();
+  const handleApproveQuote = async () => {
+    await runActionWithToast({
+      loadingMessage: "Marcando cotización como APROBADA...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "APROBADA" }),
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Cotización marcada como APROBADA.",
+      errorMessage: "No se pudo marcar la cotización como APROBADA.",
+      onSuccess: async () => {
+        await refetch();
+      },
+    });
+  };
+
+  const handleRejectQuote = async () => {
+    await runActionWithToast({
+      loadingMessage: "Marcando cotización como RECHAZADA...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "RECHAZADA" }),
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Cotización marcada como RECHAZADA.",
+      errorMessage: "No se pudo marcar la cotización como RECHAZADA.",
+      onSuccess: async () => {
+        await refetch();
+      },
+    });
+  };
+
+  const buildWhatsAppUrl = (): string => {
+    const digits = (quote.client?.whatsappPhone || "").replace(/\D/g, "");
+    const message = `Hola, comparto la cotización ${quote.quoteNumber || quote.quoteId}.`;
+    return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  };
+
+  const buildMailToUrl = (): string => {
+    const email = quote.client?.email || "";
+    const subject = `Cotización ${quote.quoteNumber || quote.quoteId}`;
+    const body = `Hola,\n\nTe comparto la cotización ${quote.quoteNumber || quote.quoteId}.\n\nSaludos.`;
+    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const handleSendQuote = async () => {
+    await runActionWithToast({
+      loadingMessage: "Registrando envío de cotización...",
+      action: async () => {
+        const channels =
+          sendChannel === "BOTH" ? (["WHATSAPP", "EMAIL"] as const) : ([sendChannel] as const);
+
+        const results: boolean[] = [];
+
+        for (const channel of channels) {
+          const recipient = channel === "WHATSAPP" ? quote.client?.whatsappPhone || "" : quote.client?.email || "";
+          if (!recipient.trim()) {
+            notifier.warning(
+              channel === "WHATSAPP"
+                ? "El cliente no tiene WhatsApp para registrar envío."
+                : "El cliente no tiene correo para registrar envío."
+            );
+            results.push(false);
+            continue;
+          }
+
+          const url = channel === "WHATSAPP" ? buildWhatsAppUrl() : buildMailToUrl();
+          window.open(url, "_blank", "noopener,noreferrer");
+
+          const response = await registerDeliveryAttempt.mutateAsync({
+            quoteId: quote.quoteId,
+            channel,
+            recipient,
+            note:
+              channel === "WHATSAPP"
+                ? "Quote sent manually via WhatsApp from frontend."
+                : "Quote sent manually via email from frontend.",
+          });
+
+          results.push(response.ok);
+          if (!response.ok) {
+            notifier.error(response.message);
+          }
+        }
+
+        return { anySuccess: results.some(Boolean) };
+      },
+      isSuccess: (result) => result.anySuccess,
+      successMessage: "Envío registrado correctamente.",
+      errorMessage: "No se pudo registrar el envío.",
+      onSuccess: async () => {
+        setShowSendModal(false);
+        await refetch();
+      },
+    });
   };
 
   const handleGenerateOrder = async () => {
-    const result = await generateOrder.mutateAsync({ quoteId: quote.quoteId });
-    if (result.ok) {
-      notifier.success(result.message);
-    } else {
-      notifier.error(result.message);
-    }
-    await refetch();
+    await runActionWithToast({
+      loadingMessage: "Generando pedido...",
+      action: () => generateOrder.mutateAsync({ quoteId: quote.quoteId }),
+      isSuccess: (result) => result.ok,
+      successMessage: (result) => result.message,
+      errorMessage: (result) => result.message,
+      onSuccess: async () => {
+        setOrderGeneratedLocal(true);
+        const downloadResult = await downloadOrderFile.mutateAsync({ quoteId: quote.quoteId });
+        if (downloadResult.ok) {
+          notifier.info("Archivo .txt descargado. Pégalo en la carpeta del servidor FTP.");
+        } else {
+          notifier.warning("Pedido generado, pero no se pudo descargar automáticamente.");
+        }
+        await refetch();
+      },
+    });
+  };
+
+  const handleDownloadOrderFile = async () => {
+    await runActionWithToast({
+      loadingMessage: "Descargando pedido...",
+      action: () => downloadOrderFile.mutateAsync({ quoteId: quote.quoteId }),
+      isSuccess: (result) => result.ok,
+      successMessage: (result) => result.message,
+      errorMessage: (result) => result.message,
+    });
+  };
+
+  const handleDownloadQuotePdf = async () => {
+    await runActionWithToast({
+      loadingMessage: "Generando PDF de cotización...",
+      action: async () => {
+        const printable = printableRef.current;
+        if (!printable) {
+          throw new Error("No se pudo preparar la cotización para descargar.");
+        }
+
+        const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+
+        if ("fonts" in document) {
+          await document.fonts.ready;
+        }
+        await waitForImages(printable);
+
+        const rootRect = printable.getBoundingClientRect();
+        const rowBreaksDom = Array.from(printable.querySelectorAll("tbody tr"))
+          .map((row) => (row as HTMLElement).getBoundingClientRect().top - rootRect.top)
+          .filter((top) => Number.isFinite(top) && top > 0)
+          .sort((a, b) => a - b);
+
+        const canvas = await html2canvas(printable, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          windowWidth: printable.scrollWidth,
+          windowHeight: printable.scrollHeight,
+        });
+
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "pt",
+          format: "letter",
+        });
+
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const marginTop = 26;
+        const marginBottom = 20;
+        const marginX = 18;
+        const contentWidth = pageWidth - marginX * 2;
+        const contentHeight = pdf.internal.pageSize.getHeight() - marginTop - marginBottom;
+        const imageHeight = (canvas.height * contentWidth) / canvas.width;
+        const domToPdfFactor = imageHeight / Math.max(printable.scrollHeight, 1);
+        const rowBreaksPdf = rowBreaksDom.map((value) => value * domToPdfFactor);
+        const pxPerPdfUnit = canvas.height / Math.max(imageHeight, 1);
+
+        let currentOffset = 0;
+        const minChunkHeight = 130;
+        let pageIndex = 0;
+
+        while (currentOffset < imageHeight - 0.5) {
+          const tentativeEnd = Math.min(currentOffset + contentHeight, imageHeight);
+          const candidates = rowBreaksPdf.filter(
+            (value) => value > currentOffset + minChunkHeight && value <= tentativeEnd - 4
+          );
+          const nextOffset = candidates.length > 0 ? candidates[candidates.length - 1] : tentativeEnd;
+          const safeNextOffset = nextOffset > currentOffset + 4 ? nextOffset : tentativeEnd;
+          const chunkHeightPdf = safeNextOffset - currentOffset;
+          if (chunkHeightPdf <= 0) {
+            break;
+          }
+
+          if (pageIndex > 0) {
+            pdf.addPage("letter", "portrait");
+          }
+
+          const sourceY = Math.floor(currentOffset * pxPerPdfUnit);
+          const sourceHeight = Math.max(1, Math.ceil(chunkHeightPdf * pxPerPdfUnit));
+          const pageCanvas = document.createElement("canvas");
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sourceHeight;
+          const pageContext = pageCanvas.getContext("2d");
+          if (!pageContext) {
+            throw new Error("No se pudo preparar el contexto de imagen para PDF.");
+          }
+
+          pageContext.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
+          const pageImageData = pageCanvas.toDataURL("image/jpeg", 0.96);
+          const renderedHeight = sourceHeight / pxPerPdfUnit;
+          pdf.addImage(pageImageData, "JPEG", marginX, marginTop, contentWidth, renderedHeight, undefined, "FAST");
+
+          currentOffset = safeNextOffset;
+          pageIndex += 1;
+        }
+
+        const safeFileName = `${quote.quoteNumber || quote.quoteId}`
+          .replace(/[^a-zA-Z0-9_-]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_|_$/g, "");
+
+        pdf.save(`${safeFileName || "cotizacion"}.pdf`);
+        return true;
+      },
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Cotización descargada en PDF.",
+      errorMessage: "No se pudo descargar la cotización.",
+    });
+  };
+
+  const handlePrintPreview = async () => {
+    const printable = printableRef.current;
+    if (!printable) return;
+
+    const host = document.createElement("div");
+    host.id = "quote-print-host";
+
+    const cloned = printable.cloneNode(true) as HTMLElement;
+    cloned.setAttribute("data-print-root", "");
+    host.appendChild(cloned);
+    document.body.appendChild(host);
+    document.body.classList.add("printing-quote");
+    await waitForImages(cloned);
+
+    const cleanup = () => {
+      document.body.classList.remove("printing-quote");
+      if (host.parentNode) {
+        host.parentNode.removeChild(host);
+      }
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    window.addEventListener("afterprint", cleanup);
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(cleanup, 1000);
+    }, 80);
   };
 
   return (
@@ -109,7 +660,8 @@ export const QuoteDetailPage = () => {
 
           <button
             onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            disabled={isActionLocked}
+            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <Pencil className="h-4 w-4" />
             Editar
@@ -117,36 +669,95 @@ export const QuoteDetailPage = () => {
 
           <button
             onClick={() => setShowPdfPreview(true)}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            disabled={isActionLocked}
+            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <FileText className="h-4 w-4" />
             Vista PDF
           </button>
 
-          {quote.status === "COTIZADA" && (
+          {canDownloadQuotePdf && (
             <button
-              onClick={handleGenerateOrder}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              onClick={handleDownloadQuotePdf}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
-              <ShoppingCart className="h-4 w-4" />
-              Generar pedido
+              <Download className="h-4 w-4" />
+              Descargar cotización (PDF)
             </button>
           )}
 
-          {(quote.status === "BORRADOR" || quote.status === "PENDIENTE") && (
+          {canSendQuote && (
+            <button
+              onClick={() => setShowSendModal(true)}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            >
+              <Send className="h-4 w-4" />
+              Enviar
+            </button>
+          )}
+
+          {canGenerateOrder && (
+            <button
+              onClick={handleGenerateOrder}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            >
+              <ShoppingCart className="h-4 w-4" />
+              Generar pedido (.txt)
+            </button>
+          )}
+
+          {canDownloadOrder && (
+            <button
+              onClick={handleDownloadOrderFile}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            >
+              <Download className="h-4 w-4" />
+              {isActionLocked ? "Procesando..." : "Descargar pedido"}
+            </button>
+          )}
+
+          {canMarkQuoted && (
             <button
               onClick={handleMarkQuoted}
-              className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
             >
               <CheckCircle2 className="h-4 w-4" />
               Marcar cotizada
             </button>
           )}
 
+          {canApproveReject && (
+            <button
+              onClick={handleApproveQuote}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 ${disabledActionClass}`}
+            >
+              <ThumbsUp className="h-4 w-4" />
+              Marcar aprobada
+            </button>
+          )}
+
+          {canApproveReject && (
+            <button
+              onClick={handleRejectQuote}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-700 ${disabledActionClass}`}
+            >
+              <ThumbsDown className="h-4 w-4" />
+              Marcar rechazada
+            </button>
+          )}
+
           {quote.status !== "CANCELADA" && (
             <button
               onClick={handleCancelQuote}
-              className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 ${disabledActionClass}`}
             >
               <CircleSlash className="h-4 w-4" />
               Cancelar
@@ -187,6 +798,22 @@ export const QuoteDetailPage = () => {
           <p className="text-xs font-semibold uppercase text-gray-500">WhatsApp</p>
           <p className="text-sm text-gray-700">{quote.client?.whatsappPhone ?? "-"}</p>
         </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Envío cliente</p>
+          <p className="text-sm text-gray-700">
+            {quote.deliveryStatus}
+            {quote.firstSentAt ? ` · ${new Date(quote.firstSentAt).toLocaleString("es-MX")}` : ""}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Pedido ERP</p>
+          <p className="text-sm text-gray-700">
+            {quote.orderStatus}
+            {quote.orderReference ? ` · ${quote.orderReference}` : ""}
+          </p>
+        </div>
       </div>
 
       <div className="max-h-[62vh] overflow-x-auto overflow-y-auto rounded-md border border-gray-200 bg-white">
@@ -195,7 +822,8 @@ export const QuoteDetailPage = () => {
             <button
               type="button"
               onClick={() => setShowCustomerOrderColumns((prev) => !prev)}
-              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              disabled={isActionLocked}
+              className={`rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               {showCustomerOrderColumns ? "Ocultar pedido cliente" : "Mostrar pedido cliente"}
             </button>
@@ -279,12 +907,121 @@ export const QuoteDetailPage = () => {
         </div>
       </div>
 
+      {showSendModal && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => {
+              if (!isActionLocked) setShowSendModal(false);
+            }}
+            disabled={isActionLocked}
+            className={`absolute inset-0 bg-black/40 ${disabledActionClass}`}
+            aria-label="Cerrar modal de envío"
+          />
+
+          <div className="relative w-full max-w-lg rounded-md border border-gray-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Enviar cotización</h3>
+                <p className="text-xs text-gray-500">
+                  Selecciona el canal. Se registrará el envío automáticamente en la cotización.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSendModal(false)}
+                disabled={isActionLocked}
+                className={`rounded-md p-1 text-gray-500 hover:bg-gray-100 ${disabledActionClass}`}
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => setSendChannel("WHATSAPP")}
+                disabled={isActionLocked}
+                className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+                  sendChannel === "WHATSAPP"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                } ${disabledActionClass}`}
+              >
+                <MessageCircle className="h-4 w-4" />
+                WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSendChannel("EMAIL")}
+                disabled={isActionLocked}
+                className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+                  sendChannel === "EMAIL"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                } ${disabledActionClass}`}
+              >
+                <Mail className="h-4 w-4" />
+                Correo
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSendChannel("BOTH")}
+                disabled={isActionLocked}
+                className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+                  sendChannel === "BOTH"
+                    ? "border-violet-500 bg-violet-50 text-violet-700"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                } ${disabledActionClass}`}
+              >
+                <Send className="h-4 w-4" />
+                Ambos
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+              <p>
+                <span className="font-semibold">Correo:</span> {quote.client?.email || "No disponible"}
+              </p>
+              <p>
+                <span className="font-semibold">WhatsApp:</span> {quote.client?.whatsappPhone || "No disponible"}
+              </p>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSendModal(false)}
+                disabled={isActionLocked}
+                className={`rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSendQuote}
+                disabled={isActionLocked}
+                className={`rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
+              >
+                {isActionLocked ? "Procesando..." : "Confirmar envío"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPdfPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
-            onClick={() => setShowPdfPreview(false)}
-            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (!isActionLocked) setShowPdfPreview(false);
+            }}
+            disabled={isActionLocked}
+            className={`absolute inset-0 bg-black/40 ${disabledActionClass}`}
             aria-label="Cerrar vista previa PDF"
           />
 
@@ -294,158 +1031,60 @@ export const QuoteDetailPage = () => {
                 <h3 className="text-lg font-semibold text-gray-800">Vista previa PDF</h3>
                 <p className="text-xs text-gray-500">Diseño carta antes de generar y enviar al cliente.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowPdfPreview(false)}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-200"
-                aria-label="Cerrar"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {canDownloadQuotePdf && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadQuotePdf}
+                    disabled={isActionLocked}
+                    className={`inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar PDF
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handlePrintPreview}
+                  disabled={isActionLocked}
+                  className={`inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  disabled={isActionLocked}
+                  className={`rounded-md p-1 text-gray-500 hover:bg-gray-200 ${disabledActionClass}`}
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            <article
+            <QuotePrintableDocument
+              quote={quote}
+              customerDisplayName={customerDisplayName}
+              contactName={contactName}
+              deliverySummary={deliverySummary}
               className="mx-auto bg-white text-gray-900 shadow-lg"
-              style={{ width: "8.5in", minHeight: "11in", padding: "0.55in" }}
-            >
-              <header className="border-b border-gray-200 pb-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <img className="h-12" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" />
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
-                      <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 text-right text-xs">
-                    <p>
-                      <span className="font-semibold">Folio:</span> {quote.quoteNumber || quote.quoteId}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Fecha emisión:</span> {formatDate(quote.updatedAt || quote.createdAt)}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Vigencia:</span> 15 días naturales
-                    </p>
-                    <p>
-                      <span className="font-semibold">Moneda:</span> {quote.currency}
-                    </p>
-                  </div>
-                </div>
-              </header>
-
-              <section className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                <div className="rounded-md border border-gray-200 p-3">
-                  <p className="text-[11px] font-semibold uppercase text-gray-500">Cliente</p>
-                  <p className="mt-1 font-semibold">{customerDisplayName}</p>
-                  <p className="text-xs text-gray-600">Contacto: {contactName || "-"}</p>
-                  <p className="text-xs text-gray-600">Correo: {quote.client?.email || "-"}</p>
-                  <p className="text-xs text-gray-600">WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
-                </div>
-
-                <div className="rounded-md border border-gray-200 p-3">
-                  <p className="text-[11px] font-semibold uppercase text-gray-500">Datos comerciales</p>
-                  <p className="mt-1 text-xs text-gray-700">
-                    <span className="font-semibold">Vendedor:</span> {quote.createdByName || "-"}
-                  </p>
-                  <p className="text-xs text-gray-700">
-                    <span className="font-semibold">Sucursal:</span> {quote.branchName || "-"}
-                  </p>
-                  <p className="text-xs text-gray-700">
-                    <span className="font-semibold">Tipo de cambio:</span> {quote.exchangeRate}
-                  </p>
-                  <p className="text-xs text-gray-700">
-                    <span className="font-semibold">Tiempo de entrega:</span>{" "}
-                    {deliverySummary.length > 0 ? deliverySummary.join(" / ") : "Por definir"}
-                  </p>
-                </div>
-              </section>
-
-              <section className="mt-4">
-                <div className="overflow-hidden rounded-md border border-gray-200">
-                  <table className="min-w-full divide-y divide-gray-200 text-xs">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Código</th>
-                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Descripción</th>
-                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">UM</th>
-                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Cantidad</th>
-                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Precio unit.</th>
-                        <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Importe</th>
-                        <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Entrega</th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-gray-200 bg-white text-[10px] leading-4">
-                      {quote.items.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
-                          <td className="px-2 py-2 align-top">
-                            {item.erpDescription || item.customerDescription || "-"}
-                          </td>
-                          <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
-                          <td className="px-2 py-2 text-right align-top">{item.qty}</td>
-                          <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
-                          <td className="px-2 py-2 text-right align-top font-semibold">
-                            {formatCurrency(item.subtotal, quote.currency)}
-                          </td>
-                          <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section className="mt-4 flex justify-end">
-                <div className="w-full max-w-[300px] space-y-1 rounded-md border border-gray-200 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(quote.subtotal, quote.currency)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>IVA ({(quote.taxRate * 100).toFixed(0)}%)</span>
-                    <span>{formatCurrency(quote.tax, quote.currency)}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 font-semibold">
-                    <span>Total</span>
-                    <span>{formatCurrency(quote.total, quote.currency)}</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="mt-4 rounded-md border border-gray-200 p-3">
-                <p className="text-[11px] font-semibold uppercase text-gray-500">Condiciones comerciales</p>
-                <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
-                  <li>PRECIOS: UNITARIOS MAS IVA.</li>
-                  <li>
-                    COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.
-                  </li>
-                  <li>CONDICIONES DE PAGO: 60% DE ANTICIPO RESTO CONTRA ENTREGA.</li>
-                  <li>LUGAR DE ENTREGA: L.A.B. OBRA.</li>
-                  <li>TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.</li>
-                  <li>
-                    EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O
-                    REPRESENTANTE DE LA EMPRESA.
-                  </li>
-                  <li>MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.</li>
-                  <li>PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.</li>
-                  <li>NO SE ACEPTAN DEVOLUCIONES.</li>
-                  <li>VIGENCIA 15 DIAS.</li>
-                </ol>
-              </section>
-
-              <footer className="mt-6 border-t border-gray-200 pt-3 text-[11px] text-gray-500">
-                <div className="flex items-center justify-between">
-                  <p>Esta es una vista previa del diseño PDF de cotización.</p>
-                  <p>Página 1/1</p>
-                </div>
-              </footer>
-            </article>
+            />
           </div>
         </div>
       )}
+
+      <div aria-hidden className="pointer-events-none fixed left-0 top-[120vh] -z-10">
+        <QuotePrintableDocument
+          ref={printableRef}
+          quote={quote}
+          customerDisplayName={customerDisplayName}
+          contactName={contactName}
+          deliverySummary={deliverySummary}
+          className="bg-white text-gray-900"
+        />
+      </div>
     </section>
   );
 };

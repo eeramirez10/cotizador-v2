@@ -41,3 +41,31 @@ export const useGenerateQuoteOrder = () => {
     },
   });
 };
+
+export const useDownloadQuoteOrderFile = () => {
+  return useMutation({
+    mutationFn: ({ quoteId }: { quoteId: string }) => QuotesService.downloadOrderFile(quoteId),
+  });
+};
+
+export const useRegisterQuoteDeliveryAttempt = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      quoteId,
+      channel,
+      recipient,
+      note,
+    }: {
+      quoteId: string;
+      channel: "WHATSAPP" | "EMAIL";
+      recipient: string;
+      note?: string;
+    }) => QuotesService.registerDeliveryAttempt(quoteId, { channel, recipient, note, status: "SENT" }),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};

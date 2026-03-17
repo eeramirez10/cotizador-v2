@@ -38,7 +38,16 @@ export interface QuoteMeta {
 export interface Quote {
   id: string;
   quoteNumber?: string;
-  status: "DRAFT" | "FINAL" | "PENDING" | "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
+  status:
+    | "DRAFT"
+    | "FINAL"
+    | "PENDING"
+    | "BORRADOR"
+    | "PENDIENTE"
+    | "COTIZADA"
+    | "APROBADA"
+    | "RECHAZADA"
+    | "CANCELADA";
   createdByName?: string;
   branch?: string;
   currency: Currency;

@@ -1,17 +1,26 @@
+import axios from "axios";
 import type { Client } from "../../clients/types/client.types";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 import type { PageResult, Quote } from "../types/quote.types";
 import { getAuthToken } from "../../../store/auth/auth.store";
 import type { ManualQuoteDraft, ManualQuoteItem } from "../../../store/quote/manual-quote.store";
 
-export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
+export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
+export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
+export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
+export type QuoteDeliveryChannel = "WHATSAPP" | "EMAIL";
 
 export interface SavedQuoteRecord {
   quoteId: string;
   quoteNumber?: string;
   quoteDraftId: string;
   status: SavedQuoteStatus;
+  deliveryStatus: SavedDeliveryStatus;
+  firstSentAt: string | null;
+  orderStatus: SavedOrderStatus;
+  orderGeneratedAt: string | null;
+  orderReference: string | null;
   erpProfile?: "GENERIC_TXT";
   erpExportState?: "PENDIENTE" | "EXPORTADO";
   createdAt: string;
@@ -91,6 +100,11 @@ interface ApiQuote {
   id: string;
   quoteNumber: string;
   status: "DRAFT" | "PENDING" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  deliveryStatus: "NOT_SENT" | "SENT";
+  firstSentAt: string | null;
+  orderStatus: "NOT_GENERATED" | "GENERATED";
+  orderGeneratedAt: string | null;
+  orderReference: string | null;
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
@@ -173,8 +187,27 @@ const formatDate = (iso: string): string => {
 const mapApiStatusToSaved = (status: ApiQuote["status"]): SavedQuoteStatus => {
   if (status === "DRAFT") return "BORRADOR";
   if (status === "PENDING") return "PENDIENTE";
-  if (status === "QUOTED" || status === "APPROVED") return "COTIZADA";
+  if (status === "QUOTED") return "COTIZADA";
+  if (status === "APPROVED") return "APROBADA";
+  if (status === "REJECTED") return "RECHAZADA";
   return "CANCELADA";
+};
+
+const mapApiDeliveryStatusToSaved = (status: ApiQuote["deliveryStatus"]): SavedDeliveryStatus => {
+  return status === "SENT" ? "ENVIADA" : "NO_ENVIADA";
+};
+
+const mapApiOrderStatusToSaved = (status: ApiQuote["orderStatus"]): SavedOrderStatus => {
+  return status === "GENERATED" ? "GENERADO" : "NO_GENERADO";
+};
+
+const mapAxiosErrorMessage = (error: unknown, fallback: string): string => {
+  if (axios.isAxiosError(error)) {
+    const apiMessage = error.response?.data?.error;
+    if (typeof apiMessage === "string" && apiMessage.trim()) return apiMessage.trim();
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
 };
 
 const splitName = (displayName: string): { name: string; lastname: string } => {
@@ -197,8 +230,13 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     quoteNumber: apiQuote.quoteNumber,
     quoteDraftId: apiQuote.id,
     status: mapApiStatusToSaved(apiQuote.status),
+    deliveryStatus: mapApiDeliveryStatusToSaved(apiQuote.deliveryStatus),
+    firstSentAt: apiQuote.firstSentAt,
+    orderStatus: mapApiOrderStatusToSaved(apiQuote.orderStatus),
+    orderGeneratedAt: apiQuote.orderGeneratedAt,
+    orderReference: apiQuote.orderReference,
     erpProfile: "GENERIC_TXT",
-    erpExportState: "PENDIENTE",
+    erpExportState: apiQuote.orderStatus === "GENERATED" ? "EXPORTADO" : "PENDIENTE",
     createdAt: apiQuote.createdAt,
     updatedAt: apiQuote.updatedAt,
     createdByUserId: apiQuote.createdByUserId,
@@ -281,7 +319,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   version: "",
   statusVersion: stored.status,
   quoteMeta: {
-    pdfSentAt: null,
+    pdfSentAt: stored.firstSentAt,
     quoteCreatedAt: stored.createdAt,
     versionCreatedAt: null,
     createdByUser: null,
@@ -569,6 +607,30 @@ export class QuotesService {
         return true;
       }
 
+      if (status === "APROBADA") {
+        if (current.status === "APPROVED") return true;
+        if (current.status !== "QUOTED") return false;
+
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          { status: "APPROVED", note: "Approved from frontend." },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
+      }
+
+      if (status === "RECHAZADA") {
+        if (current.status === "REJECTED") return true;
+        if (current.status !== "QUOTED") return false;
+
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          { status: "REJECTED", note: "Rejected from frontend." },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
+      }
+
       if (status === "PENDIENTE") {
         if (current.status === "PENDING") return true;
         if (current.status !== "DRAFT") return false;
@@ -596,8 +658,69 @@ export class QuotesService {
       );
       return { ok: true, message: data.message || "Pedido generado correctamente." };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "No se pudo generar el pedido desde el backend.";
+      const message = mapAxiosErrorMessage(error, "No se pudo generar el pedido desde el backend.");
+      return { ok: false, message };
+    }
+  }
+
+  static async downloadOrderFile(quoteId: string): Promise<{ ok: boolean; message: string }> {
+    try {
+      const response = await coreHttpClient.get(`/api/quotes/${quoteId}/order-file`, {
+        headers: requireAuthHeaders(),
+        responseType: "blob",
+      });
+
+      const disposition = (response.headers["content-disposition"] as string | undefined) || "";
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+      const fileName = filenameMatch?.[1] || `pedido-${quoteId}.txt`;
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: "text/plain" });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      return { ok: true, message: "Pedido descargado correctamente." };
+    } catch (error) {
+      const message = mapAxiosErrorMessage(error, "No se pudo descargar el archivo del pedido.");
+      return { ok: false, message };
+    }
+  }
+
+  static async registerDeliveryAttempt(
+    quoteId: string,
+    payload: {
+      channel: QuoteDeliveryChannel;
+      recipient: string;
+      status?: "SENT" | "FAILED";
+      providerMessageId?: string;
+      errorMessage?: string;
+      note?: string;
+    }
+  ): Promise<{ ok: boolean; message: string }> {
+    try {
+      const { data } = await coreHttpClient.post<{ id?: string }>(
+        `/api/quotes/${quoteId}/delivery-attempts`,
+        {
+          channel: payload.channel,
+          recipient: payload.recipient,
+          status: payload.status ?? "SENT",
+          providerMessageId: payload.providerMessageId || null,
+          errorMessage: payload.errorMessage || null,
+          note: payload.note || null,
+        },
+        { headers: requireAuthHeaders() }
+      );
+      if (!data) {
+        return { ok: false, message: "No se pudo registrar el envío de la cotización." };
+      }
+      return { ok: true, message: "Envío de cotización registrado." };
+    } catch (error) {
+      const message = mapAxiosErrorMessage(error, "No se pudo registrar el envío de la cotización.");
       return { ok: false, message };
     }
   }

@@ -72,6 +72,10 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                   className={`rounded-full px-2 py-1 font-semibold ${
                     quote.status === "COTIZADA"
                       ? "bg-emerald-100 text-emerald-700"
+                      : quote.status === "APROBADA"
+                        ? "bg-blue-100 text-blue-700"
+                        : quote.status === "RECHAZADA"
+                          ? "bg-orange-100 text-orange-700"
                       : quote.status === "BORRADOR"
                         ? "bg-slate-100 text-slate-700"
                         : quote.status === "CANCELADA"

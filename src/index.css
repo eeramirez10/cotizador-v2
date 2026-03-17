@@ -7,6 +7,67 @@ body {
   overflow: hidden;
 }
 
+#quote-print-host {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: Letter;
+    margin: 0;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.printing-quote > * {
+    display: none !important;
+  }
+
+  body.printing-quote #quote-print-host {
+    display: block !important;
+  }
+
+  body.printing-quote #quote-print-host [data-print-root] {
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0.45in !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    background: #fff !important;
+  }
+
+  body.printing-quote #quote-print-host [data-print-root] table {
+    width: 100% !important;
+    page-break-inside: auto;
+  }
+
+  body.printing-quote #quote-print-host [data-print-root] tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  body.printing-quote #quote-print-host [data-print-root] thead {
+    display: table-header-group;
+  }
+
+  body.printing-quote #quote-print-host [data-print-root] tfoot {
+    display: table-footer-group;
+  }
+}
+
 @layer components {
   .btn {
     @apply flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-gray-300 px-2 py-2 text-gray-600 transition-colors hover:shadow-lg;
