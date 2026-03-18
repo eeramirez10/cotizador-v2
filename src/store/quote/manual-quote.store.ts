@@ -427,7 +427,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         ...state.draft,
         items: recalcItems(
           state.draft.items.map((item) =>
-            item.id === itemId ? { ...item, marginPct, manualUnitPrice: undefined } : item
+            item.id === itemId ? { ...item, marginPct: Number(marginPct.toFixed(2)), manualUnitPrice: undefined } : item
           ),
           state.draft.currency,
           state.draft.exchangeRate
@@ -441,6 +441,9 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
 
       const nextItems = state.draft.items.map((item) => {
         if (item.id !== itemId) return item;
+        if (Math.abs(safeUnitPrice - item.unitPrice) < 0.000001) {
+          return item;
+        }
 
         const sellerPriceCostBase = getSellerPriceCostBase(item, state.draft.currency, state.draft.exchangeRate);
 
@@ -449,7 +452,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         }
 
         const rawMargin = ((safeUnitPrice / sellerPriceCostBase) - 1) * 100;
-        const nextMargin = Math.abs(rawMargin) < 0.01 ? 0 : Number(rawMargin.toFixed(6));
+        const nextMargin = Math.abs(rawMargin) < 0.005 ? 0 : Number(rawMargin.toFixed(2));
         return { ...item, marginPct: nextMargin, manualUnitPrice: undefined };
       });
 

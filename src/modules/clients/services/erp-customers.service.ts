@@ -72,7 +72,7 @@ const mapRow = (row: ErpCustomerRow): ErpCustomer | null => {
   const whatsapp = asText(row.whatsapp || row.whatsappPhone);
   const companyName = asText(row.companyName || row.legalName || displayName);
 
-  if (!externalId || !displayName || !firstName || !lastName || !whatsapp) {
+  if (!externalId || !displayName || !firstName || !lastName) {
     return null;
   }
 

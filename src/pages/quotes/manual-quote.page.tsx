@@ -39,6 +39,22 @@ const getDisplayCostCurrency = (
   return "MXN";
 };
 
+const getSellerPriceCostBase = (
+  cost: number,
+  productCurrency: "MXN" | "USD",
+  quoteCurrency: "MXN" | "USD",
+  exchangeRate: number
+): number => {
+  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
+
+  if (productCurrency === "USD") {
+    const normalizedUsdCost = cost / safeRate;
+    return quoteCurrency === "USD" ? normalizedUsdCost : normalizedUsdCost * safeRate;
+  }
+
+  return quoteCurrency === "USD" ? cost / safeRate : cost;
+};
+
 const getMarginVisual = (marginPct: number) => {
   if (marginPct < 0) {
     return {
@@ -69,6 +85,8 @@ export const ManualQuotePage = () => {
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [marginDrafts, setMarginDrafts] = useState<Record<string, string>>({});
+  const [exchangeRateDraft, setExchangeRateDraft] = useState<string | null>(null);
   const [originFilter, setOriginFilter] = useState<OriginFilter>("ALL");
   const [creatingLocalItems, setCreatingLocalItems] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -223,6 +241,32 @@ export const ManualQuotePage = () => {
     });
   };
 
+  const commitMarginDraft = (itemId: string, rawValue: string, fallbackMargin: number) => {
+    const raw = rawValue.trim();
+    const parsed = raw === "" ? fallbackMargin : Number(raw);
+
+    if (Number.isFinite(parsed)) {
+      setItemMargin(itemId, parsed);
+    }
+
+    setMarginDrafts((state) => {
+      const next = { ...state };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const commitExchangeRateDraft = (rawValue: string, fallbackExchangeRate: number) => {
+    const raw = rawValue.trim();
+    const parsed = raw === "" ? fallbackExchangeRate : Number(raw);
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setExchangeRate(parsed);
+    }
+
+    setExchangeRateDraft(null);
+  };
+
   const handleCreateLocalProduct = async (itemId: string) => {
     const currentItem = draft.items.find((item) => item.id === itemId);
     if (!currentItem) return;
@@ -261,7 +305,7 @@ export const ManualQuotePage = () => {
     }
   };
 
-  const validateBeforeSave = () => {
+  const validateBeforeSave = (options?: { enforcePriceFloor?: boolean }) => {
     if (!draft.client) {
       notifier.warning("Selecciona un cliente antes de guardar la cotización.");
       return false;
@@ -271,6 +315,23 @@ export const ManualQuotePage = () => {
       notifier.warning("Agrega al menos una partida para guardar la cotización.");
       return false;
     }
+
+    if (options?.enforcePriceFloor) {
+      const belowCostItems = draft.items.filter((item) => {
+        const baseCost = Number(
+          getSellerPriceCostBase(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate).toFixed(2)
+        );
+        return item.unitPrice + 0.000001 < baseCost;
+      });
+
+      if (belowCostItems.length > 0) {
+        notifier.error(
+          `No puedes generar la cotización. Hay ${belowCostItems.length} partida(s) con precio vendedor menor al costo ERP.`
+        );
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -292,7 +353,7 @@ export const ManualQuotePage = () => {
   };
 
   const handleGenerateQuote = async () => {
-    if (!validateBeforeSave()) return;
+    if (!validateBeforeSave({ enforcePriceFloor: true })) return;
 
     try {
       setSaving(true);
@@ -413,8 +474,23 @@ export const ManualQuotePage = () => {
             type="number"
             step="0.0001"
             min="0"
-            value={draft.exchangeRate}
-            onChange={(event) => setExchangeRate(Number(event.target.value || 0))}
+            value={exchangeRateDraft ?? `${draft.exchangeRate}`}
+            onChange={(event) => {
+              const raw = event.target.value;
+              setExchangeRateDraft(raw);
+
+              if (raw.trim() === "") return;
+              const parsed = Number(raw);
+              if (Number.isFinite(parsed) && parsed > 0) {
+                setExchangeRate(parsed);
+              }
+            }}
+            onBlur={(event) => commitExchangeRateDraft(event.currentTarget.value, draft.exchangeRate)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
           />
           <p className="mt-1 text-xs text-gray-500">Fecha TC: {draft.exchangeRateDate}</p>
@@ -603,8 +679,26 @@ export const ManualQuotePage = () => {
                       type="number"
                       min="-100"
                       step="0.01"
-                      value={item.marginPct}
-                      onChange={(event) => setItemMargin(item.id, Number(event.target.value || 0))}
+                      value={marginDrafts[item.id] ?? `${item.marginPct}`}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        setMarginDrafts((state) => ({
+                          ...state,
+                          [item.id]: raw,
+                        }));
+
+                        if (raw.trim() === "") return;
+                        const parsed = Number(raw);
+                        if (Number.isFinite(parsed)) {
+                          setItemMargin(item.id, parsed);
+                        }
+                      }}
+                      onBlur={(event) => commitMarginDraft(item.id, event.currentTarget.value, item.marginPct)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.currentTarget.blur();
+                        }
+                      }}
                       className={`w-24 rounded-md border px-2 py-1 text-xs font-semibold ${marginVisual.inputClass}`}
                     />
                     <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${marginVisual.badgeClass}`}>
