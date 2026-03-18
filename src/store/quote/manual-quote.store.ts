@@ -6,7 +6,7 @@ import type { ExtractedQuoteItem } from "../../modules/quote-extraction/types/qu
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 
 export type QuoteCurrency = "MXN" | "USD";
-export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "CANCELADA";
+export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 
 export interface ManualQuoteItem {
   id: string;
@@ -152,10 +152,30 @@ const newDraft = (): ManualQuoteDraft => ({
   items: [],
 });
 
-const getCostInQuoteCurrency = (item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">, currency: QuoteCurrency, exchangeRate: number): number => {
+const getCostInQuoteCurrency = (
+  item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">,
+  currency: QuoteCurrency,
+  exchangeRate: number
+): number => {
   const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-  const costInMxn = item.costCurrency === "USD" ? item.costUsd * safeRate : item.costUsd;
-  return currency === "MXN" ? costInMxn : costInMxn / safeRate;
+  if (item.costCurrency === "USD") return item.costUsd / safeRate;
+  if (currency === "USD") return item.costUsd / safeRate;
+  return item.costUsd;
+};
+
+const getSellerPriceCostBase = (
+  item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">,
+  currency: QuoteCurrency,
+  exchangeRate: number
+): number => {
+  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
+
+  if (item.costCurrency === "USD") {
+    const usdCost = item.costUsd / safeRate;
+    return currency === "USD" ? usdCost : usdCost * safeRate;
+  }
+
+  return getCostInQuoteCurrency(item, currency, exchangeRate);
 };
 
 const computeItem = (
@@ -163,10 +183,10 @@ const computeItem = (
   currency: QuoteCurrency,
   exchangeRate: number
 ): ManualQuoteItem => {
-  const costInQuoteCurrency = getCostInQuoteCurrency(item, currency, exchangeRate);
+  const sellerPriceCostBase = getSellerPriceCostBase(item, currency, exchangeRate);
   const unitPrice =
-    costInQuoteCurrency > 0
-      ? round(costInQuoteCurrency * (1 + item.marginPct / 100))
+    sellerPriceCostBase > 0
+      ? round(sellerPriceCostBase * (1 + item.marginPct / 100))
       : round(Math.max(0, item.manualUnitPrice ?? 0));
   const subtotal = round(unitPrice * item.qty);
   const requiresReview = item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
@@ -422,13 +442,14 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       const nextItems = state.draft.items.map((item) => {
         if (item.id !== itemId) return item;
 
-        const costInQuoteCurrency = getCostInQuoteCurrency(item, state.draft.currency, state.draft.exchangeRate);
+        const sellerPriceCostBase = getSellerPriceCostBase(item, state.draft.currency, state.draft.exchangeRate);
 
-        if (costInQuoteCurrency <= 0) {
+        if (sellerPriceCostBase <= 0) {
           return { ...item, marginPct: 0, manualUnitPrice: safeUnitPrice };
         }
 
-        const nextMargin = Number((((safeUnitPrice / costInQuoteCurrency) - 1) * 100).toFixed(6));
+        const rawMargin = ((safeUnitPrice / sellerPriceCostBase) - 1) * 100;
+        const nextMargin = Math.abs(rawMargin) < 0.01 ? 0 : Number(rawMargin.toFixed(6));
         return { ...item, marginPct: nextMargin, manualUnitPrice: undefined };
       });
 

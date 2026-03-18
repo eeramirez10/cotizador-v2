@@ -19,6 +19,26 @@ const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   }).format(value);
 };
 
+const getDisplayCost = (
+  cost: number,
+  productCurrency: "MXN" | "USD",
+  quoteCurrency: "MXN" | "USD",
+  exchangeRate: number
+): number => {
+  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
+  if (productCurrency === "USD") return cost / safeRate;
+  if (quoteCurrency === "USD") return cost / safeRate;
+  return cost;
+};
+
+const getDisplayCostCurrency = (
+  productCurrency: "MXN" | "USD",
+  quoteCurrency: "MXN" | "USD"
+): "MXN" | "USD" => {
+  if (productCurrency === "USD" || quoteCurrency === "USD") return "USD";
+  return "MXN";
+};
+
 const getMarginVisual = (marginPct: number) => {
   if (marginPct < 0) {
     return {
@@ -572,7 +592,12 @@ export const ManualQuotePage = () => {
                       className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
                     />
                   </td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{formatCurrency(item.costUsd, item.costCurrency)}</td>
+                  <td className="px-4 py-2 text-xs text-gray-700">
+                    {formatCurrency(
+                      getDisplayCost(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate),
+                      getDisplayCostCurrency(item.costCurrency, draft.currency)
+                    )}
+                  </td>
                   <td className="px-4 py-2">
                     <input
                       type="number"

@@ -42,6 +42,26 @@ const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   }).format(value);
 };
 
+const getDisplayCost = (
+  cost: number,
+  productCurrency: "MXN" | "USD",
+  quoteCurrency: "MXN" | "USD",
+  exchangeRate: number
+): number => {
+  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
+  if (productCurrency === "USD") return cost / safeRate;
+  if (quoteCurrency === "USD") return cost / safeRate;
+  return cost;
+};
+
+const getDisplayCostCurrency = (
+  productCurrency: "MXN" | "USD",
+  quoteCurrency: "MXN" | "USD"
+): "MXN" | "USD" => {
+  if (productCurrency === "USD" || quoteCurrency === "USD") return "USD";
+  return "MXN";
+};
+
 const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -878,7 +898,12 @@ export const QuoteDetailPage = () => {
                 <td className="px-3 py-2 text-xs text-gray-700">{item.stock}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.deliveryTime}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.qty}</td>
-                <td className="px-3 py-2 text-xs text-gray-700">{formatCurrency(item.costUsd, item.costCurrency || "USD")}</td>
+                <td className="px-3 py-2 text-xs text-gray-700">
+                  {formatCurrency(
+                    getDisplayCost(item.costUsd, item.costCurrency || "USD", quote.currency, quote.exchangeRate),
+                    getDisplayCostCurrency(item.costCurrency || "USD", quote.currency)
+                  )}
+                </td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.marginPct}%</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{formatCurrency(item.unitPrice, quote.currency)}</td>
                 <td className="px-3 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quote.currency)}</td>
