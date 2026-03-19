@@ -19,7 +19,7 @@ export const AddErpProductsModal = ({
   onClose,
   onSelect,
   title = "Agregar productos desde ERP",
-  subtitle = "Busca por EAN exacto y agrega partidas a la cotización.",
+  subtitle = "Busca por EAN, código o descripción y agrega partidas a la cotización.",
   actionLabel = "Agregar",
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
@@ -55,7 +55,7 @@ export const AddErpProductsModal = ({
               value={term}
               onChange={(event) => setTerm(event.target.value)}
               className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Ej. TSC480"
+              placeholder="Ej. TSC480 o TUBO ACERO"
             />
           </div>
           <p className="mb-2 text-xs text-gray-500">Sucursal consulta: {branchId || "No definida"}</p>
@@ -103,7 +103,7 @@ export const AddErpProductsModal = ({
                 {!isLoading && debouncedTerm.trim().length === 0 && (
                   <tr>
                     <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={8}>
-                      Captura un EAN para consultar el ERP.
+                      Captura un EAN, código o descripción para consultar el ERP.
                     </td>
                   </tr>
                 )}

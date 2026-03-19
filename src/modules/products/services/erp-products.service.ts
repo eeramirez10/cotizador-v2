@@ -12,28 +12,28 @@ interface CachedSearch {
 export class ErpProductsService {
   private static searchCache = new Map<string, CachedSearch>();
 
-  private static getCacheKey(ean: string, branchId: string): string {
-    return `${branchId}::${ean.toUpperCase()}`;
+  private static getCacheKey(term: string, branchId: string): string {
+    return `${branchId}::${term.toUpperCase()}`;
   }
 
   private static hasFreshCache(loadedAt: number): boolean {
     return Date.now() - loadedAt < CACHE_TTL_MS;
   }
 
-  static async searchByEan(ean: string, branchId: string, signal?: AbortSignal): Promise<ErpProduct[]> {
-    const normalizedEan = ean.trim().toUpperCase();
+  static async searchByTerm(term: string, branchId: string, signal?: AbortSignal): Promise<ErpProduct[]> {
+    const normalizedTerm = term.trim().toUpperCase();
     const normalizedBranch = branchId.trim();
 
-    if (!normalizedEan || !normalizedBranch) return [];
+    if (!normalizedTerm || !normalizedBranch) return [];
 
-    const key = this.getCacheKey(normalizedEan, normalizedBranch);
+    const key = this.getCacheKey(normalizedTerm, normalizedBranch);
     const cached = this.searchCache.get(key);
 
     if (cached && this.hasFreshCache(cached.loadedAt)) {
       return cached.items;
     }
 
-    const payload = await ErpProductsApi.getByEanAndBranch(normalizedEan, normalizedBranch, signal);
+    const payload = await ErpProductsApi.searchByTermAndBranch(normalizedTerm, normalizedBranch, signal);
     const items = mapByEanPayload(payload);
 
     this.searchCache.set(key, { loadedAt: Date.now(), items });

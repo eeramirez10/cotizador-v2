@@ -8,11 +8,11 @@ export class ErpProductsApi {
     }
   }
 
-  static async getByEanAndBranch(ean: string, branchId: string, signal?: AbortSignal): Promise<unknown> {
+  static async searchByTermAndBranch(term: string, branchId: string, signal?: AbortSignal): Promise<unknown> {
     this.ensureConfigured();
-    const safeEan = encodeURIComponent(ean);
+    const safeTerm = encodeURIComponent(term);
     const safeBranch = encodeURIComponent(branchId);
-    const path = `${envs.ERP_PRODUCTS_BASE_PATH}/by-ean/${safeEan}/branch/${safeBranch}`;
+    const path = `${envs.ERP_PRODUCTS_BASE_PATH}/by-ean/${safeTerm}/branch/${safeBranch}`;
     const { data } = await erpHttpClient.get<unknown>(path, { signal });
     return data;
   }
