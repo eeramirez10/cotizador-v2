@@ -13,6 +13,7 @@ import { UserPage } from "../pages/user/user.page";
 import { ClientsPage } from "../pages/clients/clients.page";
 import { ProductsPage } from "../pages/products/products.page";
 import { UsersPage } from "../pages/users/users.page";
+import { BranchesPage } from "../pages/branches/branches.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -81,6 +82,12 @@ export const appRouter = createBrowserRouter([
         path: "products",
         handle: { title: "Productos" },
         Component: ProductsPage,
+      },
+      {
+        path: "branches",
+        loader: requireRolesLoader(["admin"]),
+        handle: { title: "Sucursales" },
+        Component: BranchesPage,
       },
       {
         path: "users",
