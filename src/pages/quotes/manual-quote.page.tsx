@@ -187,27 +187,8 @@ export const ManualQuotePage = () => {
     return "MANUAL";
   }, [sourceParam]);
 
-  const branchCode = useMemo(() => {
-    const directCode = (user?.erpBranchCode || user?.branch?.code || "").trim();
-    if (/^\d{2}$/.test(directCode)) return directCode;
-    if (/^\d{1}$/.test(directCode)) return `0${directCode}`;
-
-    const normalizedBranch = (user?.branch?.name || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .trim();
-
-    if (normalizedBranch.includes("cdmx")) return "01";
-    if (normalizedBranch.includes("mexico")) return "01";
-    if (normalizedBranch.includes("monterrey")) return "02";
-    if (normalizedBranch.includes("veracruz")) return "03";
-    if (normalizedBranch.includes("mexicali")) return "04";
-    if (normalizedBranch.includes("queretaro")) return "05";
-    if (normalizedBranch.includes("cancun")) return "06";
-
-    return "";
-  }, [user?.branch?.code, user?.branch?.name, user?.erpBranchCode]);
+  // ERP de clientes solo contiene catálogo de Mexico por el momento.
+  const branchCode = "01";
 
   const commitQtyDraft = (itemId: string, rawValue: string, fallbackQty: number) => {
     const raw = (rawValue || `${fallbackQty}`).trim();
