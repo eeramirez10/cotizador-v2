@@ -175,6 +175,10 @@ export const ManualQuotePage = () => {
 
     return draft.items;
   }, [draft.items, originFilter]);
+  const erpTargetItem = useMemo(() => {
+    if (!erpTargetItemId) return null;
+    return draft.items.find((item) => item.id === erpTargetItemId) ?? null;
+  }, [draft.items, erpTargetItemId]);
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
@@ -796,6 +800,8 @@ export const ManualQuotePage = () => {
             : "Busca por EAN exacto y agrega partidas a la cotización."
         }
         actionLabel={erpTargetItemId ? "Seleccionar" : "Agregar"}
+        customerDescription={erpTargetItem?.customerDescription}
+        customerUnit={erpTargetItem?.customerUnit}
         onSelect={(product) => {
           if (erpTargetItemId) {
             assignErpProductToItem(erpTargetItemId, product);

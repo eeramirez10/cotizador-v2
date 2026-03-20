@@ -12,6 +12,8 @@ interface AddErpProductsModalProps {
   title?: string;
   subtitle?: string;
   actionLabel?: string;
+  customerDescription?: string;
+  customerUnit?: string;
 }
 
 export const AddErpProductsModal = ({
@@ -21,10 +23,15 @@ export const AddErpProductsModal = ({
   title = "Agregar productos desde ERP",
   subtitle = "Busca por EAN, código o descripción y agrega partidas a la cotización.",
   actionLabel = "Agregar",
+  customerDescription = "",
+  customerUnit = "",
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
   const debouncedTerm = useDebouncedValue(term, 300);
   const user = useAuthStore((state) => state.user);
+  const normalizedCustomerDescription = customerDescription.trim();
+  const normalizedCustomerUnit = customerUnit.trim();
+  const hasCustomerContext = normalizedCustomerDescription.length > 0 || normalizedCustomerUnit.length > 0;
 
   const branchId = resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
   const enabledSearch = open && !!branchId && debouncedTerm.trim().length > 0;
@@ -49,6 +56,18 @@ export const AddErpProductsModal = ({
         </div>
 
         <div className="p-4">
+          {hasCustomerContext && (
+            <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Pedido cliente</p>
+              <p className="mt-1 text-xs text-indigo-900">
+                {normalizedCustomerDescription || "Sin descripcion del cliente."}
+              </p>
+              <p className="mt-1 text-[11px] text-indigo-700">
+                UM cliente: {normalizedCustomerUnit || "-"}
+              </p>
+            </div>
+          )}
+
           <div className="relative mb-4">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input
