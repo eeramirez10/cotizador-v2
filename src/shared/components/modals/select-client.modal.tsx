@@ -11,7 +11,6 @@ interface SelectClientModalProps {
   open: boolean;
   onClose: () => void;
   onSelect: (client: Client) => void;
-  branchCode: string;
 }
 
 type SearchMode = "core" | "erp";
@@ -55,7 +54,7 @@ const toInputFromErp = (erpCustomer: ErpCustomer): ClientInput => {
   };
 };
 
-export const SelectClientModal = ({ open, onClose, onSelect, branchCode }: SelectClientModalProps) => {
+export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModalProps) => {
   const clients = useClientsStore((state) => state.clients);
   const loadingCore = useClientsStore((state) => state.loading);
   const loadClients = useClientsStore((state) => state.loadClients);
@@ -67,12 +66,8 @@ export const SelectClientModal = ({ open, onClose, onSelect, branchCode }: Selec
   const [createForm, setCreateForm] = useState<ClientInput>(EMPTY_FORM);
 
   const debouncedTerm = useDebouncedValue(term, 300);
-  const erpEnabled = open && mode === "erp" && !!branchCode && debouncedTerm.trim().length >= 2;
-  const { data: erpCustomers = [], isLoading: loadingErp, error: erpError } = useErpCustomerSearch(
-    debouncedTerm,
-    branchCode,
-    erpEnabled
-  );
+  const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
+  const { data: erpCustomers = [], isLoading: loadingErp, error: erpError } = useErpCustomerSearch(debouncedTerm, erpEnabled);
 
   useEffect(() => {
     if (!open) return;
@@ -185,7 +180,7 @@ export const SelectClientModal = ({ open, onClose, onSelect, branchCode }: Selec
                 </button>
               </div>
 
-              <p className="text-xs text-gray-500">Sucursal: {branchCode || "No definida"}</p>
+              <p className="text-xs text-gray-500">Consulta ERP global</p>
             </div>
 
             <div className="relative mb-3">

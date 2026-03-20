@@ -114,20 +114,18 @@ const normalizePayload = (payload: unknown): ErpCustomer[] => {
 };
 
 export class ErpCustomersService {
-  static async searchByTerm(term: string, branchCode: string, signal?: AbortSignal): Promise<ErpCustomer[]> {
+  static async searchByTerm(term: string, signal?: AbortSignal): Promise<ErpCustomer[]> {
     if (!envs.ERP_API_URL) return [];
 
     const normalizedTerm = term.trim();
-    const normalizedBranch = branchCode.trim();
 
-    if (!normalizedTerm || !normalizedBranch) return [];
+    if (!normalizedTerm) return [];
 
     const path = `${envs.ERP_CUSTOMERS_BASE_PATH}/search`;
     const { data } = await erpHttpClient.get<unknown>(path, {
       signal,
       params: {
         q: normalizedTerm,
-        branchCode: normalizedBranch,
         limit: 20,
       },
     });

@@ -187,9 +187,6 @@ export const ManualQuotePage = () => {
     return "MANUAL";
   }, [sourceParam]);
 
-  // ERP de clientes solo contiene catálogo de Mexico por el momento.
-  const branchCode = "01";
-
   const commitQtyDraft = (itemId: string, rawValue: string, fallbackQty: number) => {
     const raw = (rawValue || `${fallbackQty}`).trim();
     const parsed = raw === "" ? 0 : Number(raw);
@@ -811,7 +808,6 @@ export const ManualQuotePage = () => {
       />
       <SelectClientModal
         open={openClientModal}
-        branchCode={branchCode}
         onClose={() => setOpenClientModal(false)}
         onSelect={(client) => {
           setClient(client);
