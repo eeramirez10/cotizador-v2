@@ -779,12 +779,19 @@ export const ManualQuotePage = () => {
                       min="0"
                       step="0.01"
                       value={priceDrafts[item.id] ?? `${item.unitPrice}`}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const raw = event.target.value;
                         setPriceDrafts((state) => ({
                           ...state,
-                          [item.id]: event.target.value,
-                        }))
-                      }
+                          [item.id]: raw,
+                        }));
+
+                        if (raw.trim() === "") return;
+                        const parsed = Number(raw);
+                        if (Number.isFinite(parsed)) {
+                          setItemUnitPrice(item.id, parsed);
+                        }
+                      }}
                       onBlur={(event) => commitPriceDraft(item.id, event.currentTarget.value, item.unitPrice)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {

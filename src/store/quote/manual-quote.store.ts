@@ -139,6 +139,7 @@ const STORAGE_QUOTES_KEY = "cotizador-v2-saved-quotes";
 const nowIso = () => new Date().toISOString();
 const nowDateOnly = () => new Date().toISOString().slice(0, 10);
 const round = (value: number) => Number(value.toFixed(2));
+const roundMargin = (value: number) => Number(value.toFixed(1));
 
 const deliverySuggestion = (stock: number, costUsd: number): string => {
   if (stock > 0) return "Inmediato";
@@ -193,21 +194,32 @@ const getSellerPriceCostBase = (
   return getCostInQuoteCurrency(item, currency, exchangeRate);
 };
 
+const calculateMarginPct = (unitPrice: number, sellerPriceCostBase: number): number => {
+  if (sellerPriceCostBase <= 0) return 0;
+  const rawMargin = ((unitPrice / sellerPriceCostBase) - 1) * 100;
+  return Math.abs(rawMargin) < 0.005 ? 0 : roundMargin(rawMargin);
+};
+
 const computeItem = (
   item: Omit<ManualQuoteItem, "unitPrice" | "subtotal" | "requiresReview">,
   currency: QuoteCurrency,
   exchangeRate: number
 ): ManualQuoteItem => {
   const sellerPriceCostBase = getSellerPriceCostBase(item, currency, exchangeRate);
-  const unitPrice =
-    sellerPriceCostBase > 0
-      ? round(sellerPriceCostBase * (1 + item.marginPct / 100))
-      : round(Math.max(0, item.manualUnitPrice ?? 0));
+  const normalizedMarginPct = roundMargin(item.marginPct);
+  const hasManualPrice = Number.isFinite(item.manualUnitPrice) && (item.manualUnitPrice ?? 0) >= 0;
+  const unitPrice = hasManualPrice
+    ? round(Math.max(0, item.manualUnitPrice ?? 0))
+    : sellerPriceCostBase > 0
+      ? round(sellerPriceCostBase * (1 + normalizedMarginPct / 100))
+      : round(0);
+  const marginPct = hasManualPrice ? calculateMarginPct(unitPrice, sellerPriceCostBase) : normalizedMarginPct;
   const subtotal = round(unitPrice * item.qty);
   const requiresReview = item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
 
   return {
     ...item,
+    marginPct,
     unitPrice,
     subtotal,
     requiresReview,
@@ -466,7 +478,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         ...state.draft,
         items: recalcItems(
           state.draft.items.map((item) =>
-            item.id === itemId ? { ...item, marginPct: Number(marginPct.toFixed(2)), manualUnitPrice: undefined } : item
+            item.id === itemId ? { ...item, marginPct: roundMargin(marginPct), manualUnitPrice: undefined } : item
           ),
           state.draft.currency,
           state.draft.exchangeRate
@@ -476,7 +488,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
 
   setItemUnitPrice: (itemId, unitPrice) =>
     set((state) => {
-      const safeUnitPrice = Math.max(0, unitPrice);
+      const safeUnitPrice = round(Math.max(0, unitPrice));
 
       const nextItems = state.draft.items.map((item) => {
         if (item.id !== itemId) return item;
@@ -486,13 +498,11 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
 
         const sellerPriceCostBase = getSellerPriceCostBase(item, state.draft.currency, state.draft.exchangeRate);
 
-        if (sellerPriceCostBase <= 0) {
-          return { ...item, marginPct: 0, manualUnitPrice: safeUnitPrice };
-        }
-
-        const rawMargin = ((safeUnitPrice / sellerPriceCostBase) - 1) * 100;
-        const nextMargin = Math.abs(rawMargin) < 0.005 ? 0 : Number(rawMargin.toFixed(2));
-        return { ...item, marginPct: nextMargin, manualUnitPrice: undefined };
+        return {
+          ...item,
+          manualUnitPrice: safeUnitPrice,
+          marginPct: calculateMarginPct(safeUnitPrice, sellerPriceCostBase),
+        };
       });
 
       return {
