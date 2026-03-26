@@ -39,6 +39,9 @@ export interface ManualQuoteDraft {
   exchangeRateDate: string;
   exchangeRateSource: "manual" | "api";
   taxRate: number;
+  deliveryPlace: string;
+  paymentTerms: string;
+  validityDays: number;
   createdByUserId: string | null;
   createdByName: string;
   branchId: string | null;
@@ -62,6 +65,9 @@ interface StoredQuote {
   currency: QuoteCurrency;
   exchangeRate: number;
   taxRate: number;
+  deliveryPlace: string;
+  paymentTerms: string;
+  validityDays: number;
   subtotal: number;
   tax: number;
   total: number;
@@ -91,6 +97,9 @@ interface HydrateQuoteInput {
   currency: QuoteCurrency;
   exchangeRate: number;
   taxRate: number;
+  deliveryPlace: string;
+  paymentTerms: string;
+  validityDays: number;
   client: HydrateQuoteClient | null;
   items: ManualQuoteItem[];
 }
@@ -100,6 +109,9 @@ interface ManualQuoteState {
   initializeDraft: (user?: User) => void;
   setCurrency: (currency: QuoteCurrency) => void;
   setExchangeRate: (exchangeRate: number) => void;
+  setDeliveryPlace: (deliveryPlace: string) => void;
+  setPaymentTerms: (paymentTerms: string) => void;
+  setValidityDays: (validityDays: number) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
   assignLocalProductToItem: (
@@ -144,6 +156,9 @@ const newDraft = (): ManualQuoteDraft => ({
   exchangeRateDate: nowDateOnly(),
   exchangeRateSource: "manual",
   taxRate: 0.16,
+  deliveryPlace: "L.A.B. OBRA",
+  paymentTerms: "CONTADO",
+  validityDays: 10,
   createdByUserId: null,
   createdByName: "",
   branchId: null,
@@ -276,6 +291,30 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         exchangeRateDate: nowDateOnly(),
         exchangeRateSource: "manual",
         items: recalcItems(state.draft.items, state.draft.currency, exchangeRate),
+      },
+    })),
+
+  setDeliveryPlace: (deliveryPlace) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        deliveryPlace,
+      },
+    })),
+
+  setPaymentTerms: (paymentTerms) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        paymentTerms,
+      },
+    })),
+
+  setValidityDays: (validityDays) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        validityDays,
       },
     })),
 
@@ -522,6 +561,9 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
           exchangeRateDate: nowDateOnly(),
           exchangeRateSource: "manual",
           taxRate: quote.taxRate,
+          deliveryPlace: quote.deliveryPlace,
+          paymentTerms: quote.paymentTerms,
+          validityDays: quote.validityDays,
           createdByUserId: quote.createdByUserId,
           createdByName: quote.createdByName,
           branchId: quote.branchId,
@@ -561,6 +603,9 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         exchangeRateDate: nowDateOnly(),
         exchangeRateSource: "manual",
         taxRate: stored.taxRate,
+        deliveryPlace: stored.deliveryPlace || "L.A.B. OBRA",
+        paymentTerms: stored.paymentTerms || "CONTADO",
+        validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         createdByUserId: stored.createdByUserId,
         createdByName: stored.createdByName,
         branchId: stored.branchId,
@@ -603,6 +648,9 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       currency: state.draft.currency,
       exchangeRate: state.draft.exchangeRate,
       taxRate: state.draft.taxRate,
+      deliveryPlace: state.draft.deliveryPlace,
+      paymentTerms: state.draft.paymentTerms,
+      validityDays: state.draft.validityDays,
       subtotal: state.subtotal(),
       tax: state.tax(),
       total: state.total(),

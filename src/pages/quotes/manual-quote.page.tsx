@@ -11,6 +11,27 @@ import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
+const PAYMENT_TERMS_OPTIONS: string[] = [
+  "CONTADO",
+  "30% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "40% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "50% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "60% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "70% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "80% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "90% DE ANTICIPO RESTO CONTRA ENTREGA",
+  "CREDITO 7 DIAS",
+  "CREDITO 10 DIAS",
+  "CREDITO 15 DIAS",
+  "CREDITO 20 DIAS",
+  "CREDITO 30 DIAS",
+  "CREDITO 45 DIAS",
+  "CREDITO 60 DIAS",
+  "CREDITO 90 DIAS",
+];
+
+const VALIDITY_DAYS_OPTIONS: number[] = [10, 15, 20, 30, 45, 60, 90];
+
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
@@ -103,6 +124,9 @@ export const ManualQuotePage = () => {
   const initializeDraft = useManualQuoteStore((state) => state.initializeDraft);
   const setCurrency = useManualQuoteStore((state) => state.setCurrency);
   const setExchangeRate = useManualQuoteStore((state) => state.setExchangeRate);
+  const setDeliveryPlace = useManualQuoteStore((state) => state.setDeliveryPlace);
+  const setPaymentTerms = useManualQuoteStore((state) => state.setPaymentTerms);
+  const setValidityDays = useManualQuoteStore((state) => state.setValidityDays);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
   const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
   const assignLocalProductToItem = useManualQuoteStore((state) => state.assignLocalProductToItem);
@@ -161,6 +185,16 @@ export const ManualQuotePage = () => {
   }, [clearDraft, fromExtractionSource, hydrateDraftFromQuote, initializeDraft, navigate, quoteIdFromQuery, user]);
 
   const quoteCurrency = draft.currency;
+  const paymentTermsOptions = useMemo(() => {
+    const current = (draft.paymentTerms || "").trim();
+    if (!current) return PAYMENT_TERMS_OPTIONS;
+    if (PAYMENT_TERMS_OPTIONS.includes(current)) return PAYMENT_TERMS_OPTIONS;
+    return [current, ...PAYMENT_TERMS_OPTIONS];
+  }, [draft.paymentTerms]);
+  const validityDaysOptions = useMemo(() => {
+    if (VALIDITY_DAYS_OPTIONS.includes(draft.validityDays)) return VALIDITY_DAYS_OPTIONS;
+    return [draft.validityDays, ...VALIDITY_DAYS_OPTIONS].sort((a, b) => a - b);
+  }, [draft.validityDays]);
 
   const totalRequiresReview = useMemo(() => {
     return draft.items.filter((item) => item.requiresReview).length;
@@ -397,7 +431,7 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 lg:grid-cols-4">
+      <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 lg:grid-cols-5">
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Vendedor</p>
           <p className="text-sm text-gray-700">{draft.createdByName || `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim()}</p>
@@ -476,6 +510,56 @@ export const ManualQuotePage = () => {
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
           />
           <p className="mt-1 text-xs text-gray-500">Fecha TC: {draft.exchangeRateDate}</p>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="validityDays">
+            Vigencia
+          </label>
+          <select
+            id="validityDays"
+            value={draft.validityDays}
+            onChange={(event) => setValidityDays(Number(event.target.value))}
+            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+          >
+            {validityDaysOptions.map((days) => (
+              <option key={days} value={days}>
+                {days} dias
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="lg:col-span-2">
+          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="paymentTerms">
+            Condiciones de pago
+          </label>
+          <select
+            id="paymentTerms"
+            value={draft.paymentTerms}
+            onChange={(event) => setPaymentTerms(event.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+          >
+            {paymentTermsOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="lg:col-span-3">
+          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="deliveryPlace">
+            Lugar de entrega
+          </label>
+          <input
+            id="deliveryPlace"
+            type="text"
+            value={draft.deliveryPlace}
+            onChange={(event) => setDeliveryPlace(event.target.value)}
+            placeholder="Ej. L.A.B. OBRA / CEDIS MONTERREY"
+            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+          />
         </div>
       </div>
 

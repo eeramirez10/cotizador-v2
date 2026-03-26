@@ -6,6 +6,7 @@ import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.ty
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
 import { useClientsStore } from "../../../store/clients/clients.store";
+import { CustomerContactsModal } from "./customer-contacts.modal";
 
 interface SelectClientModalProps {
   open: boolean;
@@ -54,6 +55,12 @@ const toInputFromErp = (erpCustomer: ErpCustomer): ClientInput => {
   };
 };
 
+const hasMissingContactData = (erpCustomer: ErpCustomer): boolean => {
+  const hasPhone = Boolean(erpCustomer.whatsapp.trim() || erpCustomer.phone.trim());
+  const hasEmail = Boolean(erpCustomer.email.trim());
+  return !hasPhone || !hasEmail;
+};
+
 export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModalProps) => {
   const clients = useClientsStore((state) => state.clients);
   const loadingCore = useClientsStore((state) => state.loading);
@@ -64,6 +71,9 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const [term, setTerm] = useState("");
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState<ClientInput>(EMPTY_FORM);
+  const [contactsModalOpen, setContactsModalOpen] = useState(false);
+  const [contactsCustomerId, setContactsCustomerId] = useState<string | null>(null);
+  const [contactsCustomerLabel, setContactsCustomerLabel] = useState("");
 
   const debouncedTerm = useDebouncedValue(term, 300);
   const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
@@ -77,6 +87,13 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
       // handled by page notifications where needed
     });
   }, [debouncedTerm, loadClients, mode, open]);
+
+  useEffect(() => {
+    if (open) return;
+    setContactsModalOpen(false);
+    setContactsCustomerId(null);
+    setContactsCustomerLabel("");
+  }, [open]);
 
   const filteredLocalClients = useMemo(() => {
     const normalized = debouncedTerm.trim().toLowerCase();
@@ -112,6 +129,21 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
       onClose();
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo anexar el cliente ERP.";
+      notifier.error(message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleOpenContactsModal = async (erpCustomer: ErpCustomer) => {
+    try {
+      setCreating(true);
+      const upserted = await addClient(toInputFromErp(erpCustomer));
+      setContactsCustomerId(upserted.id);
+      setContactsCustomerLabel(upserted.companyName || `${upserted.name} ${upserted.lastname}`.trim() || erpCustomer.displayName);
+      setContactsModalOpen(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo preparar el cliente ERP.";
       notifier.error(message);
     } finally {
       setCreating(false);
@@ -280,15 +312,30 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                         <td className="px-3 py-2 text-xs text-gray-700">{customer.whatsapp}</td>
                         <td className="px-3 py-2 text-xs text-gray-700">{customer.email || "-"}</td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => {
-                              void handleSelectErp(customer);
-                            }}
-                            disabled={creating}
-                            className="rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60"
-                          >
-                            Anexar
-                          </button>
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={() => {
+                                void handleSelectErp(customer);
+                              }}
+                              disabled={creating}
+                              className="rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-2 py-1 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60"
+                            >
+                              Anexar
+                            </button>
+                            <button
+                              onClick={() => {
+                                void handleOpenContactsModal(customer);
+                              }}
+                              disabled={creating}
+                              className={`rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-60 ${
+                                hasMissingContactData(customer)
+                                  ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                                  : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                              }`}
+                            >
+                              {hasMissingContactData(customer) ? "Completar contactos" : "Ver contactos"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -341,9 +388,16 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                 {creating ? "Guardando..." : "Crear y seleccionar"}
               </button>
             </div>
+
           </aside>
         </div>
       </div>
+      <CustomerContactsModal
+        open={contactsModalOpen}
+        onClose={() => setContactsModalOpen(false)}
+        customerId={contactsCustomerId}
+        customerLabel={contactsCustomerLabel}
+      />
     </div>
   );
 };

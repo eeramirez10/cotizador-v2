@@ -13,8 +13,10 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react";
-import { forwardRef, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
+import { CustomerContactsService } from "../../modules/clients/services/customer-contacts.service";
+import type { CustomerContact } from "../../modules/clients/types/customer-contact.types";
 import type { SavedQuoteRecord } from "../../modules/quotes/services/quotes.service";
 import {
   useDownloadQuoteOrderFile,
@@ -66,6 +68,82 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+};
+
+interface SendRecipientOption {
+  id: string;
+  name: string;
+  label: string;
+  email: string;
+  whatsapp: string;
+  isPrimary: boolean;
+}
+
+const normalizeEmail = (value: string): string => value.trim().toLowerCase();
+const normalizePhone = (value: string): string => value.replace(/\D/g, "");
+
+const createRecipientLabel = (name: string, companyName: string, whatsapp: string, email: string): string => {
+  const safeName = name.trim() || companyName.trim() || "Contacto";
+  const fragments: string[] = [];
+  if (whatsapp.trim()) fragments.push(`WA: ${whatsapp.trim()}`);
+  if (email.trim()) fragments.push(`Correo: ${email.trim()}`);
+  return fragments.length > 0 ? `${safeName} (${fragments.join(" · ")})` : safeName;
+};
+
+const buildRecipientOptions = (
+  client: SavedQuoteRecord["client"],
+  contacts: CustomerContact[]
+): SendRecipientOption[] => {
+  const result: SendRecipientOption[] = [];
+  const seen = new Set<string>();
+
+  const addOption = (candidate: SendRecipientOption) => {
+    const emailKey = normalizeEmail(candidate.email);
+    const whatsappKey = normalizePhone(candidate.whatsapp);
+    const dedupeKey = `${candidate.name.toLowerCase()}|${emailKey}|${whatsappKey}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    result.push(candidate);
+  };
+
+  if (client) {
+    const baseName = `${client.name || ""} ${client.lastname || ""}`.trim();
+    addOption({
+      id: "__base__",
+      name: baseName || client.companyName || "Contacto ERP",
+      label: createRecipientLabel(baseName, client.companyName || "", client.whatsappPhone || "", client.email || ""),
+      email: client.email || "",
+      whatsapp: client.whatsappPhone || "",
+      isPrimary: true,
+    });
+  }
+
+  contacts.forEach((contact) => {
+    const contactWhatsapp = contact.mobile || contact.phone || "";
+    const companyName = client?.companyName || "";
+    addOption({
+      id: contact.id,
+      name: contact.name,
+      label: createRecipientLabel(contact.name, companyName, contactWhatsapp, contact.email || ""),
+      email: contact.email || "",
+      whatsapp: contactWhatsapp,
+      isPrimary: contact.isPrimary,
+    });
+  });
+
+  return result;
+};
+
+const getDefaultRecipientId = (
+  options: SendRecipientOption[],
+  channel: "WHATSAPP" | "EMAIL"
+): string => {
+  const candidates =
+    channel === "WHATSAPP"
+      ? options.filter((option) => option.whatsapp.trim())
+      : options.filter((option) => option.email.trim());
+  if (candidates.length === 0) return "";
+  return candidates.find((option) => option.isPrimary)?.id || candidates[0].id;
 };
 
 const waitForImages = async (root: HTMLElement): Promise<void> => {
@@ -147,7 +225,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
               <span className="font-semibold">Fecha emisión:</span> {formatDate(quote.updatedAt || quote.createdAt)}
             </p>
             <p>
-              <span className="font-semibold">Vigencia:</span> 15 días naturales
+              <span className="font-semibold">Vigencia:</span> {quote.validityDays} dias naturales
             </p>
             <p>
               <span className="font-semibold">Moneda:</span> {quote.currency}
@@ -175,6 +253,12 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           </p>
           <p className="text-xs text-gray-700">
             <span className="font-semibold">Tipo de cambio:</span> {quote.exchangeRate}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Condicion de pago:</span> {quote.paymentTerms || "CONTADO"}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Lugar de entrega:</span> {quote.deliveryPlace || "Por definir"}
           </p>
           <p className="text-xs text-gray-700">
             <span className="font-semibold">Tiempo de entrega:</span>{" "}
@@ -239,8 +323,8 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
         <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
           <li>PRECIOS: UNITARIOS MAS IVA.</li>
           <li>COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.</li>
-          <li>CONDICIONES DE PAGO: 60% DE ANTICIPO RESTO CONTRA ENTREGA.</li>
-          <li>LUGAR DE ENTREGA: L.A.B. OBRA.</li>
+          <li>CONDICIONES DE PAGO: {(quote.paymentTerms || "CONTADO").toUpperCase()}.</li>
+          <li>LUGAR DE ENTREGA: {(quote.deliveryPlace || "POR DEFINIR").toUpperCase()}.</li>
           <li>TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.</li>
           <li>
             EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O REPRESENTANTE DE
@@ -249,7 +333,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           <li>MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.</li>
           <li>PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.</li>
           <li>NO SE ACEPTAN DEVOLUCIONES.</li>
-          <li>VIGENCIA 15 DIAS.</li>
+          <li>VIGENCIA {quote.validityDays} DIAS.</li>
         </ol>
       </section>
 
@@ -270,6 +354,11 @@ export const QuoteDetailPage = () => {
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
+  const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
+  const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
+  const [selectedEmailRecipientId, setSelectedEmailRecipientId] = useState("");
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const [recipientsError, setRecipientsError] = useState("");
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
   const printableRef = useRef<HTMLElement | null>(null);
@@ -306,6 +395,7 @@ export const QuoteDetailPage = () => {
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
   );
   const canMarkQuoted = quote.status === "BORRADOR" || quote.status === "PENDIENTE";
+  const canEditQuote = quote.status !== "CANCELADA";
   const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
@@ -320,6 +410,70 @@ export const QuoteDetailPage = () => {
     downloadOrderFile.isPending ||
     registerDeliveryAttempt.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
+  const availableWhatsAppRecipients = useMemo(
+    () => sendRecipientOptions.filter((option) => option.whatsapp.trim()),
+    [sendRecipientOptions]
+  );
+  const availableEmailRecipients = useMemo(
+    () => sendRecipientOptions.filter((option) => option.email.trim()),
+    [sendRecipientOptions]
+  );
+  const selectedWhatsAppRecipient = useMemo(
+    () => sendRecipientOptions.find((option) => option.id === selectedWhatsAppRecipientId) || null,
+    [sendRecipientOptions, selectedWhatsAppRecipientId]
+  );
+  const selectedEmailRecipient = useMemo(
+    () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
+    [sendRecipientOptions, selectedEmailRecipientId]
+  );
+
+  useEffect(() => {
+    if (!showSendModal) return;
+
+    let cancelled = false;
+
+    const loadRecipients = async () => {
+      setLoadingRecipients(true);
+      setRecipientsError("");
+
+      try {
+        const customerId = quote.client?.id;
+        const contacts = customerId ? await CustomerContactsService.list(customerId) : [];
+        const options = buildRecipientOptions(quote.client, contacts);
+        if (cancelled) return;
+
+        setSendRecipientOptions(options);
+        setSelectedWhatsAppRecipientId(getDefaultRecipientId(options, "WHATSAPP"));
+        setSelectedEmailRecipientId(getDefaultRecipientId(options, "EMAIL"));
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "No se pudieron cargar los contactos.";
+        setRecipientsError(message);
+        const options = buildRecipientOptions(quote.client, []);
+        setSendRecipientOptions(options);
+        setSelectedWhatsAppRecipientId(getDefaultRecipientId(options, "WHATSAPP"));
+        setSelectedEmailRecipientId(getDefaultRecipientId(options, "EMAIL"));
+      } finally {
+        if (!cancelled) {
+          setLoadingRecipients(false);
+        }
+      }
+    };
+
+    void loadRecipients();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showSendModal,
+    quote.client?.id,
+    quote.client?.name,
+    quote.client?.lastname,
+    quote.client?.companyName,
+    quote.client?.email,
+    quote.client?.whatsappPhone,
+  ]);
 
   const runActionWithToast = async <T,>({
     loadingMessage,
@@ -443,14 +597,14 @@ export const QuoteDetailPage = () => {
     });
   };
 
-  const buildWhatsAppUrl = (): string => {
-    const digits = (quote.client?.whatsappPhone || "").replace(/\D/g, "");
+  const buildWhatsAppUrl = (recipient: string): string => {
+    const digits = recipient.replace(/\D/g, "");
     const message = `Hola, comparto la cotización ${quote.quoteNumber || quote.quoteId}.`;
     return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
   };
 
-  const buildMailToUrl = (): string => {
-    const email = quote.client?.email || "";
+  const buildMailToUrl = (recipient: string): string => {
+    const email = recipient || "";
     const subject = `Cotización ${quote.quoteNumber || quote.quoteId}`;
     const body = `Hola,\n\nTe comparto la cotización ${quote.quoteNumber || quote.quoteId}.\n\nSaludos.`;
     return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -466,18 +620,21 @@ export const QuoteDetailPage = () => {
         const results: boolean[] = [];
 
         for (const channel of channels) {
-          const recipient = channel === "WHATSAPP" ? quote.client?.whatsappPhone || "" : quote.client?.email || "";
+          const recipient =
+            channel === "WHATSAPP"
+              ? selectedWhatsAppRecipient?.whatsapp || ""
+              : selectedEmailRecipient?.email || "";
           if (!recipient.trim()) {
             notifier.warning(
               channel === "WHATSAPP"
-                ? "El cliente no tiene WhatsApp para registrar envío."
-                : "El cliente no tiene correo para registrar envío."
+                ? "Selecciona un contacto con WhatsApp para enviar."
+                : "Selecciona un contacto con correo para enviar."
             );
             results.push(false);
             continue;
           }
 
-          const url = channel === "WHATSAPP" ? buildWhatsAppUrl() : buildMailToUrl();
+          const url = channel === "WHATSAPP" ? buildWhatsAppUrl(recipient) : buildMailToUrl(recipient);
           window.open(url, "_blank", "noopener,noreferrer");
 
           const response = await registerDeliveryAttempt.mutateAsync({
@@ -680,7 +837,8 @@ export const QuoteDetailPage = () => {
 
           <button
             onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
-            disabled={isActionLocked}
+            disabled={isActionLocked || !canEditQuote}
+            title={!canEditQuote ? "No puedes editar una cotización cancelada." : undefined}
             className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <Pencil className="h-4 w-4" />
@@ -833,6 +991,24 @@ export const QuoteDetailPage = () => {
             {quote.orderStatus}
             {quote.orderReference ? ` · ${quote.orderReference}` : ""}
           </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Condiciones de pago</p>
+          <p className="text-sm text-gray-700">{quote.paymentTerms || "CONTADO"}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Vigencia</p>
+          <p className="text-sm text-gray-700">
+            {quote.validityDays} dias
+            {quote.validUntil ? ` · vence ${formatDate(quote.validUntil)}` : ""}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Lugar de entrega</p>
+          <p className="text-sm text-gray-700">{quote.deliveryPlace || "Por definir"}</p>
         </div>
       </div>
 
@@ -1008,12 +1184,64 @@ export const QuoteDetailPage = () => {
             </div>
 
             <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-              <p>
-                <span className="font-semibold">Correo:</span> {quote.client?.email || "No disponible"}
-              </p>
-              <p>
-                <span className="font-semibold">WhatsApp:</span> {quote.client?.whatsappPhone || "No disponible"}
-              </p>
+              {loadingRecipients ? (
+                <p>Cargando contactos...</p>
+              ) : (
+                <>
+                  {(sendChannel === "WHATSAPP" || sendChannel === "BOTH") && (
+                    <div className="mb-3">
+                      <p className="mb-1 font-semibold text-gray-700">Contacto WhatsApp</p>
+                      <select
+                        value={selectedWhatsAppRecipientId}
+                        onChange={(event) => setSelectedWhatsAppRecipientId(event.target.value)}
+                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-700"
+                      >
+                        <option value="">Selecciona contacto...</option>
+                        {availableWhatsAppRecipients.map((option) => (
+                          <option key={`wa-${option.id}`} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {!availableWhatsAppRecipients.length && (
+                        <p className="mt-1 text-[11px] text-amber-600">No hay contactos con WhatsApp disponible.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {(sendChannel === "EMAIL" || sendChannel === "BOTH") && (
+                    <div className="mb-3">
+                      <p className="mb-1 font-semibold text-gray-700">Contacto correo</p>
+                      <select
+                        value={selectedEmailRecipientId}
+                        onChange={(event) => setSelectedEmailRecipientId(event.target.value)}
+                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-700"
+                      >
+                        <option value="">Selecciona contacto...</option>
+                        {availableEmailRecipients.map((option) => (
+                          <option key={`mail-${option.id}`} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {!availableEmailRecipients.length && (
+                        <p className="mt-1 text-[11px] text-amber-600">No hay contactos con correo disponible.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {recipientsError && <p className="text-[11px] text-rose-600">{recipientsError}</p>}
+
+                  <p>
+                    <span className="font-semibold">WhatsApp seleccionado:</span>{" "}
+                    {selectedWhatsAppRecipient?.whatsapp || "No seleccionado"}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Correo seleccionado:</span>{" "}
+                    {selectedEmailRecipient?.email || "No seleccionado"}
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="mt-4 flex justify-end gap-2">

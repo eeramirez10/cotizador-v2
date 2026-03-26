@@ -32,6 +32,10 @@ export interface SavedQuoteRecord {
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
+  deliveryPlace: string;
+  paymentTerms: string;
+  validityDays: number;
+  validUntil: string;
   subtotal: number;
   tax: number;
   total: number;
@@ -108,6 +112,10 @@ interface ApiQuote {
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
+  deliveryPlace: string | null;
+  paymentTerms: string;
+  validityDays: number;
+  validUntil: string;
   subtotal: number;
   tax: number;
   total: number;
@@ -246,6 +254,10 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     currency: apiQuote.currency,
     exchangeRate: apiQuote.exchangeRate,
     taxRate: apiQuote.taxRate,
+    deliveryPlace: apiQuote.deliveryPlace || "L.A.B. OBRA",
+    paymentTerms: apiQuote.paymentTerms || "CONTADO",
+    validityDays: apiQuote.validityDays || 10,
+    validUntil: apiQuote.validUntil,
     subtotal: apiQuote.subtotal,
     tax: apiQuote.tax,
     total: apiQuote.total,
@@ -290,6 +302,10 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   branch: stored.branchName ?? "Monterrey",
   currency: stored.currency,
   taxRate: stored.taxRate ?? 0.16,
+  summary:
+    `Entrega: ${stored.deliveryPlace || "Por definir"} · ` +
+    `Pago: ${stored.paymentTerms || "CONTADO"} · ` +
+    `Vigencia: ${stored.validityDays || 10} días`,
   customer: stored.client
     ? {
         id: stored.client.id,
@@ -314,7 +330,6 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   createdAt: formatDate(stored.createdAt),
   updatedAt: stored.updatedAt,
   fileKey: null,
-  summary: undefined,
   chatThreadId: undefined,
   version: "",
   statusVersion: stored.status,
@@ -521,6 +536,9 @@ export class QuotesService {
           exchangeRate: draft.exchangeRate,
           exchangeRateDate: draft.exchangeRateDate,
           taxRate: draft.taxRate,
+          deliveryPlace: draft.deliveryPlace,
+          paymentTerms: draft.paymentTerms,
+          validityDays: draft.validityDays,
           notes: null,
         },
         { headers: requireAuthHeaders() }
@@ -545,6 +563,9 @@ export class QuotesService {
           exchangeRate: draft.exchangeRate,
           exchangeRateDate: draft.exchangeRateDate,
           taxRate: draft.taxRate,
+          deliveryPlace: draft.deliveryPlace,
+          paymentTerms: draft.paymentTerms,
+          validityDays: draft.validityDays,
           origin,
           notes: null,
           items: extractionItems,
@@ -563,6 +584,9 @@ export class QuotesService {
           exchangeRate: draft.exchangeRate,
           exchangeRateDate: draft.exchangeRateDate,
           taxRate: draft.taxRate,
+          deliveryPlace: draft.deliveryPlace,
+          paymentTerms: draft.paymentTerms,
+          validityDays: draft.validityDays,
           origin,
           notes: null,
         },
