@@ -49,7 +49,12 @@ const asByEanRows = (payload: unknown): ErpByEanRow[] => {
   return payload as ErpByEanRow[];
 };
 
-export const mapByEanPayload = (payload: unknown): ErpProduct[] => {
+interface MapByEanOptions {
+  branchCode?: string;
+  branchName?: string;
+}
+
+export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): ErpProduct[] => {
   return asByEanRows(payload)
     .map((row) => {
       const code = toText(row.code);
@@ -70,6 +75,8 @@ export const mapByEanPayload = (payload: unknown): ErpProduct[] => {
         costUsd: resolveCost(row),
         costCurrency,
         stock,
+        branchCode: options?.branchCode,
+        branchName: options?.branchName,
       };
       return mapped;
     })

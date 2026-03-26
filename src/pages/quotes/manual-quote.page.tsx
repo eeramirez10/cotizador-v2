@@ -623,6 +623,8 @@ export const ManualQuotePage = () => {
                         onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
                         className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
                       >
+                        <option value="1-2 dias">1-2 dias</option>
+                        <option value="3-5 dias">3-5 dias</option>
                         <option value="1-2 semanas">1-2 semanas</option>
                         <option value="2-4 semanas">2-4 semanas</option>
                         <option value="4-6 semanas">4-6 semanas</option>
@@ -796,8 +798,8 @@ export const ManualQuotePage = () => {
         title={erpTargetItemId ? "Vincular partida con producto ERP" : "Agregar productos desde ERP"}
         subtitle={
           erpTargetItemId
-            ? "Busca por EAN y selecciona el producto ERP correcto para esta partida extraída."
-            : "Busca por EAN exacto y agrega partidas a la cotización."
+            ? "Busca por ERP directo o IA semántica y selecciona el producto correcto para esta partida."
+            : "Busca por ERP directo (EAN/código) o IA semántica (descripción) y agrega partidas."
         }
         actionLabel={erpTargetItemId ? "Seleccionar" : "Agregar"}
         customerDescription={erpTargetItem?.customerDescription}
