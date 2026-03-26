@@ -369,40 +369,6 @@ export const QuoteDetailPage = () => {
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
 
-  if (isLoading) {
-    return <p className="text-sm text-gray-500">Cargando detalle de cotización...</p>;
-  }
-
-  if (!quote) {
-    return (
-      <div className="rounded-md border border-gray-200 bg-white p-6 text-center">
-        <p className="text-sm text-gray-600">No se encontró la cotización.</p>
-        <NavLink to="/quotes" className="mt-3 inline-block text-sm font-semibold text-blue-600 hover:text-blue-800">
-          Volver a cotizaciones
-        </NavLink>
-      </div>
-    );
-  }
-
-  const badgeClass = statusClass[quote.status] ?? "bg-gray-100 text-gray-700";
-  const showCustomerExtractionColumns = quote.items.some(
-    (item) => (item.customerDescription || "").trim().length > 0 || (item.customerUnit || "").trim().length > 0
-  );
-  const company = quote.client?.companyName?.trim() || "";
-  const contactName = `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
-  const customerDisplayName = company || contactName || "Cliente sin nombre";
-  const deliverySummary = Array.from(
-    new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
-  );
-  const canMarkQuoted = quote.status === "BORRADOR" || quote.status === "PENDIENTE";
-  const canEditQuote = quote.status !== "CANCELADA";
-  const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
-  const canDownloadQuotePdf =
-    quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
-  const canApproveReject = quote.status === "COTIZADA";
-  const canGenerateOrder = quote.status === "APROBADA" && quote.orderStatus !== "GENERADO";
-  const canDownloadOrder =
-    quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
   const isActionLocked =
     actionInProgress ||
     updateStatus.isPending ||
@@ -437,9 +403,9 @@ export const QuoteDetailPage = () => {
       setRecipientsError("");
 
       try {
-        const customerId = quote.client?.id;
+        const customerId = quote?.client?.id;
         const contacts = customerId ? await CustomerContactsService.list(customerId) : [];
-        const options = buildRecipientOptions(quote.client, contacts);
+        const options = buildRecipientOptions(quote?.client ?? null, contacts);
         if (cancelled) return;
 
         setSendRecipientOptions(options);
@@ -449,7 +415,7 @@ export const QuoteDetailPage = () => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "No se pudieron cargar los contactos.";
         setRecipientsError(message);
-        const options = buildRecipientOptions(quote.client, []);
+        const options = buildRecipientOptions(quote?.client ?? null, []);
         setSendRecipientOptions(options);
         setSelectedWhatsAppRecipientId(getDefaultRecipientId(options, "WHATSAPP"));
         setSelectedEmailRecipientId(getDefaultRecipientId(options, "EMAIL"));
@@ -467,13 +433,48 @@ export const QuoteDetailPage = () => {
     };
   }, [
     showSendModal,
-    quote.client?.id,
-    quote.client?.name,
-    quote.client?.lastname,
-    quote.client?.companyName,
-    quote.client?.email,
-    quote.client?.whatsappPhone,
+    quote?.client?.id,
+    quote?.client?.name,
+    quote?.client?.lastname,
+    quote?.client?.companyName,
+    quote?.client?.email,
+    quote?.client?.whatsappPhone,
   ]);
+
+  if (isLoading) {
+    return <p className="text-sm text-gray-500">Cargando detalle de cotización...</p>;
+  }
+
+  if (!quote) {
+    return (
+      <div className="rounded-md border border-gray-200 bg-white p-6 text-center">
+        <p className="text-sm text-gray-600">No se encontró la cotización.</p>
+        <NavLink to="/quotes" className="mt-3 inline-block text-sm font-semibold text-blue-600 hover:text-blue-800">
+          Volver a cotizaciones
+        </NavLink>
+      </div>
+    );
+  }
+
+  const badgeClass = statusClass[quote.status] ?? "bg-gray-100 text-gray-700";
+  const showCustomerExtractionColumns = quote.items.some(
+    (item) => (item.customerDescription || "").trim().length > 0 || (item.customerUnit || "").trim().length > 0
+  );
+  const company = quote.client?.companyName?.trim() || "";
+  const contactName = `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
+  const customerDisplayName = company || contactName || "Cliente sin nombre";
+  const deliverySummary = Array.from(
+    new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
+  );
+  const canMarkQuoted = quote.status === "BORRADOR" || quote.status === "PENDIENTE";
+  const canEditQuote = quote.status !== "CANCELADA";
+  const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
+  const canDownloadQuotePdf =
+    quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
+  const canApproveReject = quote.status === "COTIZADA";
+  const canGenerateOrder = quote.status === "APROBADA" && quote.orderStatus !== "GENERADO";
+  const canDownloadOrder =
+    quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
 
   const runActionWithToast = async <T,>({
     loadingMessage,
