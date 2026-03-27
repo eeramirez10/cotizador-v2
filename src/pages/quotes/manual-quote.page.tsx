@@ -80,7 +80,7 @@ const getMarginVisual = (marginPct: number) => {
   if (marginPct < 0) {
     return {
       inputClass: "border-rose-400 bg-rose-50 text-rose-700",
-      badgeClass: "bg-rose-100 text-rose-700",
+      badgeClass: " text-rose-700",
       label: "Margen negativo",
     };
   }
@@ -88,14 +88,14 @@ const getMarginVisual = (marginPct: number) => {
   if (marginPct < 10) {
     return {
       inputClass: "border-amber-400 bg-amber-50 text-amber-700",
-      badgeClass: "bg-amber-100 text-amber-700",
-      label: "Margen bajo (<10%)",
+      badgeClass: "text-amber-700",
+      label: "Margen bajo",
     };
   }
 
   return {
     inputClass: "border-emerald-400 bg-emerald-50 text-emerald-700",
-    badgeClass: "bg-emerald-100 text-emerald-700",
+    badgeClass: "text-emerald-700",
     label: "Margen saludable",
   };
 };
@@ -401,7 +401,7 @@ export const ManualQuotePage = () => {
               void handleSaveDraft();
             }}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
           >
             <FileText className="h-4 w-4" />
             {saving ? "Guardando..." : "Guardar borrador"}
@@ -412,7 +412,7 @@ export const ManualQuotePage = () => {
               void handleGenerateQuote();
             }}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-2 text-sm font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
+            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-2 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
           >
             <FileCheck2 className="h-4 w-4" />
             {saving ? "Procesando..." : "Generar cotización"}
@@ -423,7 +423,7 @@ export const ManualQuotePage = () => {
               setErpTargetItemId(null);
               setOpenModal(true);
             }}
-            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
+            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
           >
             <Plus className="h-4 w-4" />
             Agregar productos
@@ -593,21 +593,19 @@ export const ManualQuotePage = () => {
         <div className="flex items-center gap-2 text-xs">
           <button
             onClick={() => setOriginFilter("ALL")}
-            className={`rounded-full px-3 py-1 font-semibold ${
-              originFilter === "ALL"
-                ? "bg-gray-800 text-white"
-                : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-            }`}
+            className={`rounded-full px-3 py-1 font-semibold ${originFilter === "ALL"
+              ? "bg-gray-800 text-white"
+              : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+              }`}
           >
             Todas ({draft.items.length})
           </button>
           <button
             onClick={() => setOriginFilter("UNLINKED")}
-            className={`rounded-full px-3 py-1 font-semibold ${
-              originFilter === "UNLINKED"
-                ? "bg-amber-600 text-white"
-                : "border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
-            }`}
+            className={`rounded-full px-3 py-1 font-semibold ${originFilter === "UNLINKED"
+              ? "bg-amber-600 text-white"
+              : "border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+              }`}
           >
             Sin vincular ({totalUnlinked})
           </button>
@@ -686,7 +684,7 @@ export const ManualQuotePage = () => {
                     ) : item.localProductId ? (
                       <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">LOCAL_TEMP</span>
                     ) : (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">SIN VINCULAR</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-semibold text-amber-700">VINCULAR</span>
                     )}
                   </td>
                   {shouldShowCustomerColumns && (
@@ -743,6 +741,8 @@ export const ManualQuotePage = () => {
                     )}
                   </td>
                   <td className="px-4 py-2">
+
+
                     <input
                       type="number"
                       min="-100"
@@ -769,9 +769,11 @@ export const ManualQuotePage = () => {
                       }}
                       className={`w-24 rounded-md border px-2 py-1 text-xs font-semibold ${marginVisual.inputClass}`}
                     />
-                    <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${marginVisual.badgeClass}`}>
+                    <span className={` inline-block  text-[9px] font-semibold ${marginVisual.badgeClass}`}>
                       {marginVisual.label}
                     </span>
+
+
                   </td>
                   <td className="px-4 py-2">
                     <input

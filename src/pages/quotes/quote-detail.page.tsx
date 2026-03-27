@@ -829,18 +829,18 @@ export const QuoteDetailPage = () => {
     <section>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">Cotización #{quote.quoteId.replace("COT-", "")}</h2>
+          <h2 className="text-lg font-semibold text-gray-800">Cotización {quote.quoteNumber}</h2>
           <p className="text-xs text-gray-500">Creada: {new Date(quote.createdAt).toLocaleString("es-MX")}</p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>{quote.status}</span>
+        <div className="flex flex-wrap gap-2">
+          <span className={` flex justify-center items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeClass}`}>{quote.status}</span>
 
           <button
             onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
             disabled={isActionLocked || !canEditQuote}
             title={!canEditQuote ? "No puedes editar una cotización cancelada." : undefined}
-            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <Pencil className="h-4 w-4" />
             Editar
@@ -849,7 +849,7 @@ export const QuoteDetailPage = () => {
           <button
             onClick={() => setShowPdfPreview(true)}
             disabled={isActionLocked}
-            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <FileText className="h-4 w-4" />
             Vista PDF
@@ -859,7 +859,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleDownloadQuotePdf}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <Download className="h-4 w-4" />
               Descargar cotización (PDF)
@@ -870,7 +870,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={() => setShowSendModal(true)}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <Send className="h-4 w-4" />
               Enviar
@@ -881,7 +881,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleGenerateOrder}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <ShoppingCart className="h-4 w-4" />
               Generar pedido (.txt)
@@ -892,7 +892,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleDownloadOrderFile}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <Download className="h-4 w-4" />
               {isActionLocked ? "Procesando..." : "Descargar pedido"}
@@ -903,7 +903,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleMarkQuoted}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
             >
               <CheckCircle2 className="h-4 w-4" />
               Marcar cotizada
@@ -914,7 +914,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleApproveQuote}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 ${disabledActionClass}`}
             >
               <ThumbsUp className="h-4 w-4" />
               Marcar aprobada
@@ -925,7 +925,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleRejectQuote}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-700 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-700 ${disabledActionClass}`}
             >
               <ThumbsDown className="h-4 w-4" />
               Marcar rechazada
@@ -936,7 +936,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={handleCancelQuote}
               disabled={isActionLocked}
-              className={`inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 ${disabledActionClass}`}
+              className={`inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 ${disabledActionClass}`}
             >
               <CircleSlash className="h-4 w-4" />
               Cancelar
