@@ -24,7 +24,6 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         search: params?.search,
         page: 1,
         pageSize: 10,
-        source: "LOCAL",
       });
       set({ clients, loading: false });
     } catch (error) {
