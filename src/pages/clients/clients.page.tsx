@@ -1,6 +1,7 @@
-import { Pencil, Trash2, UserPlus, X } from "lucide-react";
+import { Pencil, Trash2, UserPlus, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ClientInput } from "../../modules/clients/types/client.types";
+import { CustomerContactsModal } from "../../shared/components/modals/customer-contacts.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useClientsStore } from "../../store/clients/clients.store";
 
@@ -27,6 +28,9 @@ export const ClientsPage = () => {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openClientModal, setOpenClientModal] = useState(false);
+  const [contactsModalOpen, setContactsModalOpen] = useState(false);
+  const [contactsCustomerId, setContactsCustomerId] = useState<string | null>(null);
+  const [contactsCustomerLabel, setContactsCustomerLabel] = useState("");
 
   useEffect(() => {
     void loadClients().catch((error) => {
@@ -61,6 +65,7 @@ export const ClientsPage = () => {
 
   const openEditClientModal = (client: {
     id: string;
+    source?: "LOCAL" | "ERP";
     name: string;
     lastname: string;
     whatsappPhone: string;
@@ -80,6 +85,23 @@ export const ClientsPage = () => {
       phone: client.phone ?? "",
     });
     setOpenClientModal(true);
+  };
+
+  const openContactsModal = (client: {
+    id: string;
+    source?: "LOCAL" | "ERP";
+    code?: string | null;
+    companyName: string;
+    name: string;
+    lastname: string;
+  }) => {
+    const personName = `${client.name} ${client.lastname}`.trim();
+    const display = client.companyName.trim() || personName || "Cliente";
+    const sourceLabel = client.source === "ERP" ? "ERP" : "LOCAL";
+    const codeLabel = client.code?.trim() ? ` · ${client.code}` : "";
+    setContactsCustomerId(client.id);
+    setContactsCustomerLabel(`${display} (${sourceLabel}${codeLabel})`);
+    setContactsModalOpen(true);
   };
 
   const validate = () => {
@@ -143,6 +165,7 @@ export const ClientsPage = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Nombre</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Origen</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Empresa</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">WhatsApp</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Correo</th>
@@ -154,7 +177,7 @@ export const ClientsPage = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
                     Cargando clientes...
                   </td>
                 </tr>
@@ -162,7 +185,7 @@ export const ClientsPage = () => {
 
               {!loading && sortedClients.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
                     No hay clientes registrados.
                   </td>
                 </tr>
@@ -173,6 +196,17 @@ export const ClientsPage = () => {
                   <td className="px-3 py-2 text-xs text-gray-700">
                     {client.name} {client.lastname}
                   </td>
+                  <td className="px-3 py-2 text-xs text-gray-700">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        client.source === "ERP"
+                          ? "bg-sky-100 text-sky-700"
+                          : "bg-violet-100 text-violet-700"
+                      }`}
+                    >
+                      {client.source === "ERP" ? "ERP" : "LOCAL"}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-xs text-gray-700">{client.companyName}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{client.whatsappPhone}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{client.email}</td>
@@ -180,6 +214,15 @@ export const ClientsPage = () => {
                   <td className="px-3 py-2 text-xs text-gray-700">{client.createdByName || "Sistema"}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex gap-1">
+                      <button
+                        onClick={() => openContactsModal(client)}
+                        className="rounded-md border border-emerald-300 p-1 text-emerald-700 hover:bg-emerald-50"
+                        aria-label="Gestionar contactos"
+                        title="Gestionar contactos"
+                      >
+                        <Users className="h-4 w-4" />
+                      </button>
+
                       <button
                         onClick={() => openEditClientModal(client)}
                         className="rounded-md border border-gray-300 p-1 text-gray-600 hover:bg-gray-100"
@@ -320,6 +363,13 @@ export const ClientsPage = () => {
           </div>
         </div>
       )}
+
+      <CustomerContactsModal
+        open={contactsModalOpen}
+        onClose={() => setContactsModalOpen(false)}
+        customerId={contactsCustomerId}
+        customerLabel={contactsCustomerLabel}
+      />
     </div>
   );
 };
