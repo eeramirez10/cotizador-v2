@@ -20,6 +20,7 @@ export interface ManualQuoteItem {
   qty: number;
   stock: number;
   deliveryTime: string;
+  itemComment: string;
   costUsd: number;
   costCurrency: ErpProductCurrency;
   marginPct: number;
@@ -124,6 +125,7 @@ interface ManualQuoteState {
   setItemMargin: (itemId: string, marginPct: number) => void;
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
+  setItemComment: (itemId: string, itemComment: string) => void;
   setClient: (client: Client | null) => void;
   hydrateDraftFromQuote: (quote: HydrateQuoteInput) => void;
   loadQuoteForEdit: (quoteId: string) => boolean;
@@ -241,6 +243,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         qty: item.qty,
         stock: item.stock,
         deliveryTime: item.stock > 0 ? "Inmediato" : item.deliveryTime,
+        itemComment: item.itemComment,
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
@@ -344,6 +347,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         qty: 1,
         stock: product.stock,
         deliveryTime: deliverySuggestion(product.stock, product.costUsd),
+        itemComment: "",
         costUsd: product.costUsd,
         costCurrency: product.costCurrency,
         marginPct: 15,
@@ -431,6 +435,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
             qty: item.cantidad ?? 0,
             stock: 0,
             deliveryTime: "Por definir",
+            itemComment: "",
             costUsd: 0,
             costCurrency: "USD",
             marginPct: 0,
@@ -525,6 +530,14 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       },
     })),
 
+  setItemComment: (itemId, itemComment) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        items: state.draft.items.map((item) => (item.id === itemId ? { ...item, itemComment } : item)),
+      },
+    })),
+
   setClient: (client) =>
     set((state) => ({
       draft: {
@@ -541,6 +554,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         ean: item.ean || item.erpCode,
         customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
         customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
+        itemComment: item.itemComment || "",
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
@@ -594,6 +608,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       ean: item.ean || item.erpCode,
       customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
       customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
+      itemComment: item.itemComment || "",
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,

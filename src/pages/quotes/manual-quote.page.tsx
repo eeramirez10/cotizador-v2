@@ -1,4 +1,4 @@
-import { FileCheck2, FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import { FileCheck2, FileText, Loader2, MessageSquare, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -111,7 +111,10 @@ export const ManualQuotePage = () => {
   const [originFilter, setOriginFilter] = useState<OriginFilter>("ALL");
   const [creatingLocalItems, setCreatingLocalItems] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<"draft" | "quote" | null>(null);
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
+  const [commentItemId, setCommentItemId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -135,6 +138,7 @@ export const ManualQuotePage = () => {
   const setItemMargin = useManualQuoteStore((state) => state.setItemMargin);
   const setItemUnitPrice = useManualQuoteStore((state) => state.setItemUnitPrice);
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
+  const setItemComment = useManualQuoteStore((state) => state.setItemComment);
   const setClient = useManualQuoteStore((state) => state.setClient);
   const hydrateDraftFromQuote = useManualQuoteStore((state) => state.hydrateDraftFromQuote);
   const clearDraft = useManualQuoteStore((state) => state.clearDraft);
@@ -164,6 +168,7 @@ export const ManualQuotePage = () => {
             ean: item.ean || "",
             customerDescription: item.customerDescription || "",
             customerUnit: item.customerUnit || "",
+            itemComment: item.itemComment || "",
             costCurrency: item.costCurrency || "USD",
             sourceRequiresReview: Boolean(item.sourceRequiresReview),
           })),
@@ -272,6 +277,23 @@ export const ManualQuotePage = () => {
     });
   };
 
+  const openCommentModal = (itemId: string) => {
+    const target = draft.items.find((item) => item.id === itemId);
+    setCommentItemId(itemId);
+    setCommentDraft(target?.itemComment || "");
+  };
+
+  const closeCommentModal = () => {
+    setCommentItemId(null);
+    setCommentDraft("");
+  };
+
+  const saveCommentModal = () => {
+    if (!commentItemId) return;
+    setItemComment(commentItemId, commentDraft.trim());
+    closeCommentModal();
+  };
+
   const commitExchangeRateDraft = (rawValue: string, fallbackExchangeRate: number) => {
     const raw = rawValue.trim();
     const parsed = raw === "" ? fallbackExchangeRate : Number(raw);
@@ -355,6 +377,7 @@ export const ManualQuotePage = () => {
     if (!validateBeforeSave()) return;
 
     try {
+      setSavingAction("draft");
       setSaving(true);
       const quoteId = await QuotesService.createFromDraft(draft, { status: "BORRADOR", origin: quoteOrigin });
       clearDraft();
@@ -365,6 +388,7 @@ export const ManualQuotePage = () => {
       notifier.error(message);
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -372,6 +396,7 @@ export const ManualQuotePage = () => {
     if (!validateBeforeSave({ enforcePriceFloor: true })) return;
 
     try {
+      setSavingAction("quote");
       setSaving(true);
       const quoteId = await QuotesService.createFromDraft(draft, { status: "COTIZADA", origin: quoteOrigin });
       clearDraft();
@@ -382,11 +407,12 @@ export const ManualQuotePage = () => {
       notifier.error(message);
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
   return (
-    <section>
+    <section aria-busy={saving}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">{draft.savedQuoteId ? "Editar cotización" : "Cotización manual"}</h2>
@@ -404,7 +430,7 @@ export const ManualQuotePage = () => {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
           >
             <FileText className="h-4 w-4" />
-            {saving ? "Guardando..." : "Guardar borrador"}
+            {savingAction === "draft" ? "Guardando..." : "Guardar borrador"}
           </button>
 
           <button
@@ -415,7 +441,7 @@ export const ManualQuotePage = () => {
             className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-2 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
           >
             <FileCheck2 className="h-4 w-4" />
-            {saving ? "Procesando..." : "Generar cotización"}
+            {savingAction === "quote" ? "Procesando..." : "Generar cotización"}
           </button>
 
           <button
@@ -423,6 +449,7 @@ export const ManualQuotePage = () => {
               setErpTargetItemId(null);
               setOpenModal(true);
             }}
+            disabled={saving}
             className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
           >
             <Plus className="h-4 w-4" />
@@ -814,6 +841,16 @@ export const ManualQuotePage = () => {
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-2">
                       <button
+                        onClick={() => openCommentModal(item.id)}
+                        className="rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                        title={item.itemComment?.trim() ? "Editar comentario" : "Agregar comentario"}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {item.itemComment?.trim() ? "Comentario" : "Comentar"}
+                        </span>
+                      </button>
+                      <button
                         onClick={() => {
                           setErpTargetItemId(item.id);
                           setOpenModal(true);
@@ -882,6 +919,51 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
+      {commentItemId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={closeCommentModal} />
+          <div className="relative w-full max-w-lg rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-700">Comentario por partida</h3>
+              <button
+                onClick={closeCommentModal}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
+                aria-label="Cerrar modal de comentario"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <textarea
+                value={commentDraft}
+                onChange={(event) => setCommentDraft(event.target.value)}
+                rows={5}
+                maxLength={500}
+                placeholder="Escribe un comentario para esta partida..."
+                className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="mt-1 text-right text-[11px] text-gray-500">{commentDraft.length}/500</p>
+
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  onClick={closeCommentModal}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveCommentModal}
+                  className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                >
+                  Guardar comentario
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AddErpProductsModal
         open={openModal}
         onClose={() => {
@@ -915,6 +997,23 @@ export const ManualQuotePage = () => {
           setOpenClientModal(false);
         }}
       />
+      {saving && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 shadow-2xl">
+          <div className="rounded-xl bg-white px-6 py-5 shadow-2xl ring-1 ring-black/10">
+            <div className="inline-flex items-center gap-3 text-sm font-semibold text-gray-700">
+              <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+              <span>
+                {savingAction === "draft"
+                  ? "Guardando borrador..."
+                  : savingAction === "quote"
+                    ? "Generando cotización..."
+                    : "Procesando cotización..."}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Espera un momento, por favor.</p>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

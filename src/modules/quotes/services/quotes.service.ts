@@ -61,6 +61,7 @@ export interface SavedQuoteRecord {
     qty: number;
     stock: number;
     deliveryTime: string;
+    itemComment?: string;
     costUsd: number;
     costCurrency?: "MXN" | "USD";
     marginPct: number;
@@ -83,6 +84,7 @@ interface ApiQuoteItem {
   qty: number;
   stock: number | null;
   deliveryTime: string | null;
+  itemComment: string | null;
   cost: number;
   costCurrency: "MXN" | "USD";
   marginPct: number;
@@ -283,6 +285,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       qty: item.qty,
       stock: item.stock ?? 0,
       deliveryTime: item.deliveryTime || "Por definir",
+      itemComment: item.itemComment || "",
       costUsd: item.cost,
       costCurrency: item.costCurrency,
       marginPct: item.marginPct,
@@ -362,6 +365,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     qty: safeQty,
     stock: Number.isFinite(item.stock) ? item.stock : null,
     deliveryTime: item.deliveryTime?.trim() ? item.deliveryTime.trim() : null,
+    itemComment: item.itemComment?.trim() ? item.itemComment.trim() : null,
     cost: safeCost,
     costCurrency: item.costCurrency || "USD",
     marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,

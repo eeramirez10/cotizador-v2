@@ -279,6 +279,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
                 <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Precio unit.</th>
                 <th className="px-2 py-2 text-right font-semibold uppercase text-gray-500">Importe</th>
                 <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Entrega</th>
+                <th className="px-2 py-2 text-left font-semibold uppercase text-gray-500">Comentario</th>
               </tr>
             </thead>
 
@@ -294,6 +295,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
                     {formatCurrency(item.subtotal, quote.currency)}
                   </td>
                   <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
+                  <td className="px-2 py-2 align-top">{item.itemComment || "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -351,6 +353,7 @@ export const QuoteDetailPage = () => {
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
+  const [showItemComments, setShowItemComments] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
@@ -460,6 +463,7 @@ export const QuoteDetailPage = () => {
   const showCustomerExtractionColumns = quote.items.some(
     (item) => (item.customerDescription || "").trim().length > 0 || (item.customerUnit || "").trim().length > 0
   );
+  const hasItemComments = quote.items.some((item) => (item.itemComment || "").trim().length > 0);
   const company = quote.client?.companyName?.trim() || "";
   const contactName = `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
   const customerDisplayName = company || contactName || "Cliente sin nombre";
@@ -1014,16 +1018,30 @@ export const QuoteDetailPage = () => {
       </div>
 
       <div className="max-h-[62vh] overflow-x-auto overflow-y-auto rounded-md border border-gray-200 bg-white">
-        {showCustomerExtractionColumns && (
+        {(showCustomerExtractionColumns || hasItemComments) && (
           <div className="flex justify-end border-b border-gray-200 px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setShowCustomerOrderColumns((prev) => !prev)}
-              disabled={isActionLocked}
-              className={`rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
-            >
-              {showCustomerOrderColumns ? "Ocultar pedido cliente" : "Mostrar pedido cliente"}
-            </button>
+            <div className="flex gap-2">
+              {showCustomerExtractionColumns && (
+                <button
+                  type="button"
+                  onClick={() => setShowCustomerOrderColumns((prev) => !prev)}
+                  disabled={isActionLocked}
+                  className={`rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+                >
+                  {showCustomerOrderColumns ? "Ocultar pedido cliente" : "Mostrar pedido cliente"}
+                </button>
+              )}
+              {hasItemComments && (
+                <button
+                  type="button"
+                  onClick={() => setShowItemComments((prev) => !prev)}
+                  disabled={isActionLocked}
+                  className={`rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+                >
+                  {showItemComments ? "Ocultar comentarios" : "Mostrar comentarios"}
+                </button>
+              )}
+            </div>
           </div>
         )}
         <table className="min-w-full divide-y divide-gray-200">
@@ -1042,6 +1060,9 @@ export const QuoteDetailPage = () => {
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Entrega</th>
+              {showItemComments && (
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Comentario</th>
+              )}
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Cantidad</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Margen</th>
@@ -1074,6 +1095,7 @@ export const QuoteDetailPage = () => {
                 <td className="px-3 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.stock}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">{item.deliveryTime}</td>
+                {showItemComments && <td className="px-3 py-2 text-xs text-gray-700">{item.itemComment || "-"}</td>}
                 <td className="px-3 py-2 text-xs text-gray-700">{item.qty}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">
                   {formatCurrency(
