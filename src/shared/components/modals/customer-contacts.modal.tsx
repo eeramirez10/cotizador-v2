@@ -6,6 +6,7 @@ import type {
   CustomerContactInput,
 } from "../../../modules/clients/types/customer-contact.types";
 import { notifier } from "../../notifications/notifier";
+import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
 
 interface CustomerContactsModalProps {
   open: boolean;
@@ -85,6 +86,18 @@ export const CustomerContactsModal = ({
     );
     if (!hasAnyChannel) {
       notifier.warning("Captura al menos correo, teléfono o móvil.");
+      return;
+    }
+    if (form.email?.trim() && !isValidEmail(form.email)) {
+      notifier.warning("El correo no tiene un formato válido.");
+      return;
+    }
+    if (form.phone?.trim() && !isValidPhoneNumber(form.phone)) {
+      notifier.warning("El teléfono debe ser un número válido de 10 a 15 dígitos.");
+      return;
+    }
+    if (form.mobile?.trim() && !isValidPhoneNumber(form.mobile)) {
+      notifier.warning("El WhatsApp debe ser un número válido de 10 a 15 dígitos.");
       return;
     }
 
@@ -265,16 +278,19 @@ export const CustomerContactsModal = ({
               />
               <Input
                 label="WhatsApp"
+                type="tel"
                 value={form.mobile || ""}
                 onChange={(value) => setForm((prev) => ({ ...prev, mobile: value }))}
               />
               <Input
                 label="Teléfono"
+                type="tel"
                 value={form.phone || ""}
                 onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
               />
               <Input
                 label="Correo"
+                type="email"
                 value={form.email || ""}
                 onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
               />
@@ -310,18 +326,19 @@ export const CustomerContactsModal = ({
 
 interface InputProps {
   label: string;
+  type?: string;
   value: string;
   onChange: (value: string) => void;
 }
 
-const Input = ({ label, value, onChange }: InputProps) => (
+const Input = ({ label, type = "text", value, onChange }: InputProps) => (
   <div>
     <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">{label}</label>
     <input
+      type={type}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
     />
   </div>
 );
-

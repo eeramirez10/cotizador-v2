@@ -1,13 +1,15 @@
-import { Loader2, Pencil, Search, UserMinus, UserPlus, X } from "lucide-react";
+import { Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import type { ErpUserSummary } from "../../modules/users/services/erp-users.service";
 import type { ManagedUser, UserRole } from "../../modules/users/services/users.service";
 import { useErpUserSearch } from "../../queries/users/use-erp-user-search";
 import { notifier } from "../../shared/notifications/notifier";
+import { isValidEmail, isValidPhoneNumber } from "../../shared/utils/contact-validation";
 import { useAuthStore } from "../../store/auth/auth.store";
 import {
   useBranches,
+  useActivateUser,
   useCreateUser,
   useDeactivateUser,
   useUpdateUser,
@@ -119,6 +121,7 @@ export const UsersPage = () => {
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
   const deactivateMutation = useDeactivateUser();
+  const activateMutation = useActivateUser();
 
   const users = usersQuery.data?.items || [];
   const total = usersQuery.data?.total || 0;
@@ -183,7 +186,10 @@ export const UsersPage = () => {
     if (!form.lastName.trim()) return "El apellido es obligatorio.";
     if (!form.username.trim()) return "El usuario es obligatorio.";
     if (!form.email.trim()) return "El correo es obligatorio.";
-    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) return "Correo invalido.";
+    if (!isValidEmail(form.email)) return "Correo inválido.";
+    if (form.phone.trim() && !isValidPhoneNumber(form.phone)) {
+      return "El teléfono debe ser un número válido de 10 a 15 dígitos.";
+    }
     if (!editingUser && form.password.trim().length < 8) return "La contraseña debe tener al menos 8 caracteres.";
 
     const branchCodeToUse = isAdmin ? form.branchCode : actorBranchCode;
@@ -278,6 +284,26 @@ export const UsersPage = () => {
     } catch (deactivateError) {
       const message =
         deactivateError instanceof Error ? deactivateError.message : "No se pudo desactivar el usuario.";
+      notifier.error(message);
+    }
+  };
+
+  const handleActivate = async (user: ManagedUser) => {
+    if (!isAdmin) return;
+
+    const confirmed = window.confirm(`¿Activar usuario?\n\n${user.fullName}\n${user.email}`);
+    if (!confirmed) return;
+
+    try {
+      await activateMutation.mutateAsync(user.id);
+      setLastChangedBy((state) => ({
+        ...state,
+        [user.id]: actorLabel,
+      }));
+      notifier.success(`Usuario activado por ${actorLabel}.`);
+    } catch (activateError) {
+      const message =
+        activateError instanceof Error ? activateError.message : "No se pudo activar el usuario.";
       notifier.error(message);
     }
   };
@@ -405,6 +431,24 @@ export const UsersPage = () => {
                           )}
                         </button>
                       )}
+
+                      {isAdmin && !user.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleActivate(user);
+                          }}
+                          disabled={activateMutation.isPending}
+                          className="rounded-md border border-emerald-300 p-1 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label="Activar usuario"
+                        >
+                          {activateMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <UserCheck className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -455,7 +499,7 @@ export const UsersPage = () => {
                   {editingUser ? "Editar usuario" : "Crear usuario"}
                 </h2>
                 <p className="text-xs text-gray-500">
-                  {editingUser ? "Actualiza los datos del usuario." : "Captura los datos del nuevo usuario."}
+                  {editingUser ? "Actualiza los datos del usuario." : "Captura los datos del nuevo usuario."} Los campos con * son obligatorios.
                 </p>
               </div>
 
@@ -474,32 +518,39 @@ export const UsersPage = () => {
               <div className="max-h-[68vh] space-y-3 overflow-y-auto pr-1">
                 <Input
                   label="Nombre"
+                  required
                   value={form.firstName}
                   onChange={(value) => setForm((prev) => ({ ...prev, firstName: value }))}
                 />
                 <Input
                   label="Apellido"
+                  required
                   value={form.lastName}
                   onChange={(value) => setForm((prev) => ({ ...prev, lastName: value }))}
                 />
                 <Input
                   label="Usuario"
+                  required
                   value={form.username}
                   onChange={(value) => setForm((prev) => ({ ...prev, username: value }))}
                 />
                 <Input
                   label="Correo"
+                  type="email"
+                  required
                   value={form.email}
                   onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
                 />
                 <Input
                   label={editingUser ? "Contraseña (opcional)" : "Contraseña"}
+                  required={!editingUser}
                   value={form.password}
                   onChange={(value) => setForm((prev) => ({ ...prev, password: value }))}
                   type="password"
                 />
                 <Input
                   label="Telefono"
+                  type="tel"
                   value={form.phone}
                   onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
                 />
@@ -537,7 +588,9 @@ export const UsersPage = () => {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Rol</label>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                    Rol<span className="ml-1 text-rose-500">*</span>
+                  </label>
                   <select
                     value={form.role}
                     onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value as UserRole }))}
@@ -557,7 +610,9 @@ export const UsersPage = () => {
 
                 {isAdmin ? (
                   <div>
-                    <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Sucursal</label>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                      Sucursal<span className="ml-1 text-rose-500">*</span>
+                    </label>
                     <select
                       value={form.branchCode}
                       onChange={(event) => setForm((prev) => ({ ...prev, branchCode: event.target.value }))}
@@ -718,15 +773,20 @@ interface InputProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  type?: "text" | "password";
+  type?: "text" | "password" | "email" | "tel";
+  required?: boolean;
 }
 
-const Input = ({ label, value, onChange, type = "text" }: InputProps) => {
+const Input = ({ label, value, onChange, type = "text", required = false }: InputProps) => {
   return (
     <div>
-      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">{label}</label>
+      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+        {label}
+        {required && <span className="ml-1 text-rose-500">*</span>}
+      </label>
       <input
         type={type}
+        required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"

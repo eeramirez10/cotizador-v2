@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { ClientInput } from "../../modules/clients/types/client.types";
 import { CustomerContactsModal } from "../../shared/components/modals/customer-contacts.modal";
 import { notifier } from "../../shared/notifications/notifier";
+import { isValidEmail, isValidPhoneNumber } from "../../shared/utils/contact-validation";
 import { useClientsStore } from "../../store/clients/clients.store";
+import { AxiosError } from "axios";
 
 const EMPTY_FORM: ClientInput = {
   name: "",
@@ -108,6 +110,12 @@ export const ClientsPage = () => {
     if (!form.name.trim()) return "El nombre es obligatorio";
     if (!form.lastname.trim()) return "El apellido es obligatorio";
     if (!form.whatsappPhone.trim()) return "El WhatsApp es obligatorio";
+    if (!form.email.trim()) return "El correo es obligatorio";
+    if (!isValidPhoneNumber(form.whatsappPhone)) return "El WhatsApp debe ser un número válido de 10 a 15 dígitos";
+    if (!isValidEmail(form.email)) return "El correo no tiene un formato válido";
+    if (form.phone?.trim() && !isValidPhoneNumber(form.phone)) {
+      return "El teléfono alterno debe ser un número válido de 10 a 15 dígitos";
+    }
     return null;
   };
 
@@ -134,7 +142,8 @@ export const ClientsPage = () => {
       setOpenClientModal(false);
       resetForm();
     } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : "No se pudo guardar el cliente.";
+      console.log({ submitError })
+      const message = submitError instanceof AxiosError ? submitError.response?.data['error'] : "No se pudo guardar el cliente.";
       notifier.error(message);
     } finally {
       setSaving(false);
@@ -198,11 +207,10 @@ export const ClientsPage = () => {
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-700">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        client.source === "ERP"
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${client.source === "ERP"
                           ? "bg-sky-100 text-sky-700"
                           : "bg-violet-100 text-violet-700"
-                      }`}
+                        }`}
                     >
                       {client.source === "ERP" ? "ERP" : "LOCAL"}
                     </span>
@@ -281,7 +289,7 @@ export const ClientsPage = () => {
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-                <p className="text-xs text-gray-500">Datos obligatorios para cotizar y enviar por WhatsApp/correo.</p>
+                <p className="text-xs text-gray-500">Los campos marcados con * son obligatorios.</p>
               </div>
 
               <button
@@ -299,24 +307,30 @@ export const ClientsPage = () => {
               <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
                 <Input
                   label="Nombre"
+                  required
                   value={form.name}
                   onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
                 />
 
                 <Input
                   label="Apellido"
+                  required
                   value={form.lastname}
                   onChange={(value) => setForm((prev) => ({ ...prev, lastname: value }))}
                 />
 
                 <Input
                   label="WhatsApp"
+                  type="tel"
+                  required
                   value={form.whatsappPhone}
                   onChange={(value) => setForm((prev) => ({ ...prev, whatsappPhone: value }))}
                 />
 
                 <Input
                   label="Correo"
+                  type="email"
+                  required
                   value={form.email}
                   onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
                 />
@@ -335,6 +349,7 @@ export const ClientsPage = () => {
 
                 <Input
                   label="Teléfono alterno"
+                  type="tel"
                   value={form.phone ?? ""}
                   onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
                 />
@@ -376,16 +391,23 @@ export const ClientsPage = () => {
 
 interface InputProps {
   label: string;
+  type?: string;
+  required?: boolean;
   value: string;
   onChange: (value: string) => void;
 }
 
-const Input = ({ label, value, onChange }: InputProps) => {
+const Input = ({ label, type = "text", required = false, value, onChange }: InputProps) => {
   return (
     <div>
-      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">{label}</label>
+      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+        {label}
+        {required && <span className="ml-1 text-rose-500">*</span>}
+      </label>
       <input
+        type={type}
         value={value}
+        required={required}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
       />

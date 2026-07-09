@@ -78,3 +78,14 @@ export const useDeactivateUser = () => {
     },
   });
 };
+
+export const useActivateUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (userId: string) => UsersService.activate(userId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: usersKeys.all, exact: false });
+    },
+  });
+};

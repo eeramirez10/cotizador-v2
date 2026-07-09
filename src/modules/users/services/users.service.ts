@@ -243,4 +243,18 @@ export class UsersService {
       throw mapAxiosError(thirdError, "No se pudo desactivar el usuario.");
     }
   }
+
+  static async activate(userId: string): Promise<void> {
+    try {
+      await coreHttpClient.patch(
+        `/api/users/${encodeURIComponent(userId)}/activate`,
+        {},
+        {
+          headers: requireAuthHeaders(),
+        }
+      );
+    } catch (error) {
+      throw mapAxiosError(error, "No se pudo activar el usuario.");
+    }
+  }
 }

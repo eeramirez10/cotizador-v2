@@ -5,6 +5,7 @@ import type { ClientInput, Client } from "../../../modules/clients/types/client.
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
+import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
 import { useClientsStore } from "../../../store/clients/clients.store";
 import { CustomerContactsModal } from "./customer-contacts.modal";
 
@@ -161,6 +162,22 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     }
     if (!createForm.whatsappPhone.trim()) {
       notifier.warning("El WhatsApp es obligatorio.");
+      return;
+    }
+    if (!isValidPhoneNumber(createForm.whatsappPhone)) {
+      notifier.warning("El WhatsApp debe ser un número válido de 10 a 15 dígitos.");
+      return;
+    }
+    if (!createForm.email.trim()) {
+      notifier.warning("El correo es obligatorio.");
+      return;
+    }
+    if (!isValidEmail(createForm.email)) {
+      notifier.warning("El correo no tiene un formato válido.");
+      return;
+    }
+    if (createForm.phone?.trim() && !isValidPhoneNumber(createForm.phone)) {
+      notifier.warning("El teléfono debe ser un número válido de 10 a 15 dígitos.");
       return;
     }
 
@@ -354,28 +371,47 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
 
           <aside className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <h4 className="text-xs font-semibold uppercase text-gray-600">Crear cliente rápido</h4>
-            <p className="mb-3 text-xs text-gray-500">Mínimo: nombre, apellido y WhatsApp.</p>
+            <p className="mb-3 text-xs text-gray-500">Los campos marcados con * son obligatorios.</p>
 
             <div className="space-y-2">
-              <Input label="Nombre" value={createForm.name} onChange={(value) => setCreateForm((prev) => ({ ...prev, name: value }))} />
+              <Input
+                label="Nombre"
+                required
+                value={createForm.name}
+                onChange={(value) => setCreateForm((prev) => ({ ...prev, name: value }))}
+              />
               <Input
                 label="Apellido"
+                required
                 value={createForm.lastname}
                 onChange={(value) => setCreateForm((prev) => ({ ...prev, lastname: value }))}
               />
               <Input
                 label="WhatsApp"
+                type="tel"
+                required
                 value={createForm.whatsappPhone}
                 onChange={(value) => setCreateForm((prev) => ({ ...prev, whatsappPhone: value }))}
               />
-              <Input label="Correo" value={createForm.email} onChange={(value) => setCreateForm((prev) => ({ ...prev, email: value }))} />
+              <Input
+                label="Correo"
+                type="email"
+                required
+                value={createForm.email}
+                onChange={(value) => setCreateForm((prev) => ({ ...prev, email: value }))}
+              />
               <Input label="RFC" value={createForm.rfc} onChange={(value) => setCreateForm((prev) => ({ ...prev, rfc: value }))} />
               <Input
                 label="Empresa"
                 value={createForm.companyName}
                 onChange={(value) => setCreateForm((prev) => ({ ...prev, companyName: value }))}
               />
-              <Input label="Teléfono" value={createForm.phone ?? ""} onChange={(value) => setCreateForm((prev) => ({ ...prev, phone: value }))} />
+              <Input
+                label="Teléfono"
+                type="tel"
+                value={createForm.phone ?? ""}
+                onChange={(value) => setCreateForm((prev) => ({ ...prev, phone: value }))}
+              />
 
               <button
                 onClick={() => {
@@ -404,16 +440,23 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
 
 interface InputProps {
   label: string;
+  type?: string;
+  required?: boolean;
   value: string;
   onChange: (value: string) => void;
 }
 
-const Input = ({ label, value, onChange }: InputProps) => {
+const Input = ({ label, type = "text", required = false, value, onChange }: InputProps) => {
   return (
     <div>
-      <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">{label}</label>
+      <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">
+        {label}
+        {required && <span className="ml-1 text-rose-500">*</span>}
+      </label>
       <input
+        type={type}
         value={value}
+        required={required}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
       />
