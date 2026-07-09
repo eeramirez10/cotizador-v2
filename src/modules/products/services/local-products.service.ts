@@ -151,7 +151,10 @@ export class LocalProductsService {
       items: LocalProductBatchItemInput[];
       defaultCurrency?: ErpProductCurrency;
     } = {
-      items,
+      items: items.map((item) => ({
+        ...item,
+        description: item.description.trim().toUpperCase(),
+      })),
     };
 
     if (defaultCurrency) {

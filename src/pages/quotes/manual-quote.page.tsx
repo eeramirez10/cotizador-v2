@@ -1,10 +1,11 @@
-import { FileCheck2, FileText, Loader2, MessageSquare, Plus, Trash2, X } from "lucide-react";
+import { FileCheck2, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
+import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
@@ -126,6 +127,8 @@ export const ManualQuotePage = () => {
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
   const [commentItemId, setCommentItemId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
+  const [extractionModal, setExtractionModal] = useState<"file" | "text" | null>(null);
+  const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -157,6 +160,7 @@ export const ManualQuotePage = () => {
   const subtotal = useManualQuoteStore((state) => state.subtotal);
   const tax = useManualQuoteStore((state) => state.tax);
   const total = useManualQuoteStore((state) => state.total);
+  const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
 
   useEffect(() => {
     if (quoteIdFromQuery) {
@@ -197,9 +201,13 @@ export const ManualQuotePage = () => {
       return;
     }
 
-    clearDraft();
+    // Preserve an in-progress quote when the seller leaves and returns to this view.
+    if (hasActiveDraft) {
+      return;
+    }
+
     initializeDraft(user);
-  }, [clearDraft, fromExtractionSource, hydrateDraftFromQuote, initializeDraft, navigate, quoteIdFromQuery, user]);
+  }, [fromExtractionSource, hasActiveDraft, hydrateDraftFromQuote, initializeDraft, navigate, quoteIdFromQuery, user]);
 
   const quoteCurrency = draft.currency;
   const paymentTermsOptions = useMemo(() => {
@@ -230,6 +238,10 @@ export const ManualQuotePage = () => {
     if (!erpTargetItemId) return null;
     return draft.items.find((item) => item.id === erpTargetItemId) ?? null;
   }, [draft.items, erpTargetItemId]);
+  const localProductConfirmationItem = useMemo(() => {
+    if (!localProductConfirmationItemId) return null;
+    return draft.items.find((item) => item.id === localProductConfirmationItemId) ?? null;
+  }, [draft.items, localProductConfirmationItemId]);
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
@@ -358,6 +370,7 @@ export const ManualQuotePage = () => {
   const validateBeforeSave = (options?: {
     enforcePriceFloor?: boolean;
     requireSourceChannel?: boolean;
+    requireCompletedItems?: boolean;
   }) => {
     if (!draft.client) {
       notifier.warning("Selecciona un cliente antes de guardar la cotización.");
@@ -372,6 +385,32 @@ export const ManualQuotePage = () => {
     if (options?.requireSourceChannel && draft.sourceChannel === "UNSPECIFIED") {
       notifier.warning("Selecciona el origen de la cotización antes de generarla.");
       return false;
+    }
+
+    if (options?.requireCompletedItems) {
+      const unlinkedItems = draft.items.filter((item) => !item.erpCode.trim() && !(item.localProductId || "").trim());
+      if (unlinkedItems.length > 0) {
+        notifier.error(
+          `No puedes generar la cotización. Hay ${unlinkedItems.length} partida(s) pendiente(s) de vincular a ERP o producto local.`
+        );
+        return false;
+      }
+
+      const reviewItems = draft.items.filter((item) => item.requiresReview);
+      if (reviewItems.length > 0) {
+        notifier.error(
+          `No puedes generar la cotización. Hay ${reviewItems.length} partida(s) pendiente(s) de revisión.`
+        );
+        return false;
+      }
+
+      const missingPriceItems = draft.items.filter((item) => !Number.isFinite(item.unitPrice) || item.unitPrice <= 0);
+      if (missingPriceItems.length > 0) {
+        notifier.error(
+          `No puedes generar la cotización. Hay ${missingPriceItems.length} partida(s) sin precio vendedor.`
+        );
+        return false;
+      }
     }
 
     if (options?.enforcePriceFloor) {
@@ -413,7 +452,7 @@ export const ManualQuotePage = () => {
   };
 
   const handleGenerateQuote = async () => {
-    if (!validateBeforeSave({ enforcePriceFloor: true, requireSourceChannel: true })) return;
+    if (!validateBeforeSave({ enforcePriceFloor: true, requireSourceChannel: true, requireCompletedItems: true })) return;
 
     try {
       setSavingAction("quote");
@@ -441,7 +480,25 @@ export const ManualQuotePage = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            onClick={() => setExtractionModal("file")}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <FileUp className="h-4 w-4" />
+            Subir archivo
+          </button>
+
+          <button
+            onClick={() => setExtractionModal("text")}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <MessageSquareText className="h-4 w-4" />
+            Pegar texto
+          </button>
+
           <button
             onClick={() => {
               void handleSaveDraft();
@@ -697,9 +754,9 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-auto max-h-100 rounded-md border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 sticky top-0">
             <tr>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
@@ -903,9 +960,7 @@ export const ManualQuotePage = () => {
                       </button>
                       {!item.erpCode.trim() && !(item.localProductId || "").trim() && (
                         <button
-                          onClick={() => {
-                            void handleCreateLocalProduct(item.id);
-                          }}
+                          onClick={() => setLocalProductConfirmationItemId(item.id)}
                           disabled={Boolean(creatingLocalItems[item.id])}
                           className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -1039,6 +1094,56 @@ export const ManualQuotePage = () => {
           setOpenClientModal(false);
         }}
       />
+      {extractionModal && (
+        <QuoteExtractionModal
+          mode={extractionModal}
+          open
+          onClose={() => setExtractionModal(null)}
+          onCompleted={(source) => {
+            setExtractionModal(null);
+            navigate(`/cotizador?source=${source}`, { replace: true });
+          }}
+        />
+      )}
+      {localProductConfirmationItem && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-semibold text-gray-800">Guardar producto local</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              ¿Estás seguro de que deseas guardar este producto en productos locales?
+            </p>
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p className="font-semibold">Descripción que se guardará</p>
+              <p className="mt-1">{(
+                localProductConfirmationItem.customerDescription.trim() ||
+                localProductConfirmationItem.erpDescription.trim() ||
+                `PRODUCTO TEMPORAL ${localProductConfirmationItem.id}`
+              ).toUpperCase()}</p>
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+              El producto quedará como LOCAL_TEMP para que Compras pueda completarlo o activarlo posteriormente.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setLocalProductConfirmationItemId(null)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const itemId = localProductConfirmationItem.id;
+                  setLocalProductConfirmationItemId(null);
+                  void handleCreateLocalProduct(itemId);
+                }}
+                className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Confirmar y guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {saving && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 shadow-2xl">
           <div className="rounded-xl bg-white px-6 py-5 shadow-2xl ring-1 ring-black/10">

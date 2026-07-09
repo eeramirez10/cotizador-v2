@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { User } from "../../interfaces/user.interface";
 import type { Client } from "../../modules/clients/types/client.types";
 import type { ErpProduct, ErpProductCurrency } from "../../modules/products/types/erp-product.types";
@@ -132,6 +133,7 @@ interface ManualQuoteState {
     localProduct: LocalProductBatchResultItem["product"]
   ) => void;
   setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
+  addItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
   removeItem: (itemId: string) => void;
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
@@ -269,6 +271,37 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
   );
 };
 
+const createItemsFromExtraction = (
+  items: ExtractedQuoteItem[],
+  currency: QuoteCurrency,
+  exchangeRate: number
+): ManualQuoteItem[] =>
+  items.map((item) =>
+    computeItem(
+      {
+        id: `itm_${Math.random().toString(36).slice(2, 10)}`,
+        localProductId: null,
+        erpCode: "",
+        ean: "",
+        customerDescription: (item.description_normalizada || item.description_original || "").toString().trim().toUpperCase(),
+        customerUnit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
+        erpDescription: "",
+        unit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
+        qty: item.cantidad ?? 0,
+        stock: 0,
+        deliveryTime: "Por definir",
+        itemComment: "",
+        costUsd: 0,
+        costCurrency: "USD",
+        marginPct: 0,
+        manualUnitPrice: undefined,
+        sourceRequiresReview: item.requiere_revision,
+      },
+      currency,
+      exchangeRate
+    )
+  );
+
 const readStoredQuotes = (): StoredQuote[] => {
   if (typeof window === "undefined") return [];
 
@@ -288,7 +321,7 @@ const writeStoredQuotes = (quotes: StoredQuote[]): void => {
   window.localStorage.setItem(STORAGE_QUOTES_KEY, JSON.stringify(quotes));
 };
 
-export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
+export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get) => ({
   draft: newDraft(),
 
   initializeDraft: (user) =>
@@ -442,31 +475,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
 
   setItemsFromExtraction: (items) =>
     set((state) => {
-      const nextItems = items.map((item) =>
-        computeItem(
-          {
-            id: `itm_${Math.random().toString(36).slice(2, 10)}`,
-            localProductId: null,
-            erpCode: "",
-            ean: "",
-            customerDescription: (item.description_normalizada || item.description_original || "").toString().trim(),
-            customerUnit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
-            erpDescription: "",
-            unit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
-            qty: item.cantidad ?? 0,
-            stock: 0,
-            deliveryTime: "Por definir",
-            itemComment: "",
-            costUsd: 0,
-            costCurrency: "USD",
-            marginPct: 0,
-            manualUnitPrice: undefined,
-            sourceRequiresReview: item.requiere_revision,
-          },
-          state.draft.currency,
-          state.draft.exchangeRate
-        )
-      );
+      const nextItems = createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate);
 
       return {
         draft: {
@@ -477,6 +486,16 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         },
       };
     }),
+
+  addItemsFromExtraction: (items) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        savedQuoteId: null,
+        status: "BORRADOR",
+        items: [...state.draft.items, ...createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate)],
+      },
+    })),
 
   removeItem: (itemId) =>
     set((state) => ({
@@ -723,4 +742,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         branchName: state.draft.branchName,
       },
     })),
+}), {
+  name: "cotizador-v2-manual-quote-draft",
+  partialize: (state) => ({ draft: state.draft }),
 }));

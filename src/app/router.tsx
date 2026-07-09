@@ -5,7 +5,6 @@ import { guestOnlyLoader, indexRedirectLoader, requireAuthLoader, requireRolesLo
 import { LoginPage } from "../pages/auth/login.page";
 import { DashboardPage } from "../pages/dashboard/dashboard.page";
 import { NotFoundPage } from "../pages/not-found.page";
-import { NewQuotePage } from "../pages/quotes/new-quote.page";
 import { QuoteDetailPage } from "../pages/quotes/quote-detail.page";
 import { QuotesPage } from "../pages/quotes/quotes.page";
 import { ManualQuotePage } from "../pages/quotes/manual-quote.page";
@@ -56,7 +55,7 @@ export const appRouter = createBrowserRouter([
       {
         path: "cotizador",
         handle: { title: "Cotizador" },
-        Component: NewQuotePage,
+        Component: ManualQuotePage,
       },
       {
         path: "quotes/manual",
