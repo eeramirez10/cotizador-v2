@@ -18,7 +18,6 @@ export const NewQuotePage = () => {
   const [fileJobProgress, setFileJobProgress] = useState<number>(0);
   const [fileErrorMessage, setFileErrorMessage] = useState<string | null>(null);
   const [inputText, setInputText] = useState("");
-  const [textSource, setTextSource] = useState<"email" | "whatsapp" | "manual">("manual");
   const [textProcessing, setTextProcessing] = useState(false);
   const [textJobStatusText, setTextJobStatusText] = useState<string>("");
   const [textJobProgress, setTextJobProgress] = useState<number>(0);
@@ -86,7 +85,6 @@ export const NewQuotePage = () => {
 
       const job = await QuoteExtractionJobsService.createTextJob({
         text: cleanText,
-        source: textSource,
       });
 
       setTextJobStatusText("Procesando extracción...");
@@ -218,22 +216,6 @@ export const NewQuotePage = () => {
           <p className="mb-3 text-sm text-gray-600">
             Pega el requerimiento del cliente (correo o WhatsApp) para extraer partidas automáticamente.
           </p>
-
-          <div className="mb-3">
-            <label htmlFor="text-source" className="text-xs font-semibold uppercase text-gray-500">
-              Origen
-            </label>
-            <select
-              id="text-source"
-              value={textSource}
-              onChange={(event) => setTextSource(event.target.value as "email" | "whatsapp" | "manual")}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
-            >
-              <option value="manual">Manual</option>
-              <option value="email">Email</option>
-              <option value="whatsapp">WhatsApp</option>
-            </select>
-          </div>
 
           <textarea
             value={inputText}

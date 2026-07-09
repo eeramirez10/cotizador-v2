@@ -7,6 +7,14 @@ import type { LocalProductBatchResultItem } from "../../modules/products/service
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
+export type QuoteSourceChannel =
+  | "UNSPECIFIED"
+  | "EMAIL"
+  | "PHONE"
+  | "WHATSAPP"
+  | "AI_ASSISTANT"
+  | "IN_PERSON"
+  | "OTHER";
 
 export interface ManualQuoteItem {
   id: string;
@@ -43,6 +51,7 @@ export interface ManualQuoteDraft {
   deliveryPlace: string;
   paymentTerms: string;
   validityDays: number;
+  sourceChannel: QuoteSourceChannel;
   createdByUserId: string | null;
   createdByName: string;
   branchId: string | null;
@@ -69,6 +78,7 @@ interface StoredQuote {
   deliveryPlace: string;
   paymentTerms: string;
   validityDays: number;
+  sourceChannel: QuoteSourceChannel;
   subtotal: number;
   tax: number;
   total: number;
@@ -101,6 +111,7 @@ interface HydrateQuoteInput {
   deliveryPlace: string;
   paymentTerms: string;
   validityDays: number;
+  sourceChannel: QuoteSourceChannel;
   client: HydrateQuoteClient | null;
   items: ManualQuoteItem[];
 }
@@ -113,6 +124,7 @@ interface ManualQuoteState {
   setDeliveryPlace: (deliveryPlace: string) => void;
   setPaymentTerms: (paymentTerms: string) => void;
   setValidityDays: (validityDays: number) => void;
+  setSourceChannel: (sourceChannel: QuoteSourceChannel) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
   assignLocalProductToItem: (
@@ -162,6 +174,7 @@ const newDraft = (): ManualQuoteDraft => ({
   deliveryPlace: "L.A.B. OBRA",
   paymentTerms: "CONTADO",
   validityDays: 10,
+  sourceChannel: "UNSPECIFIED",
   createdByUserId: null,
   createdByName: "",
   branchId: null,
@@ -330,6 +343,14 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       draft: {
         ...state.draft,
         validityDays,
+      },
+    })),
+
+  setSourceChannel: (sourceChannel) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        sourceChannel,
       },
     })),
 
@@ -588,6 +609,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
           deliveryPlace: quote.deliveryPlace,
           paymentTerms: quote.paymentTerms,
           validityDays: quote.validityDays,
+          sourceChannel: quote.sourceChannel || "UNSPECIFIED",
           createdByUserId: quote.createdByUserId,
           createdByName: quote.createdByName,
           branchId: quote.branchId,
@@ -631,6 +653,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
         deliveryPlace: stored.deliveryPlace || "L.A.B. OBRA",
         paymentTerms: stored.paymentTerms || "CONTADO",
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
+        sourceChannel: stored.sourceChannel || "UNSPECIFIED",
         createdByUserId: stored.createdByUserId,
         createdByName: stored.createdByName,
         branchId: stored.branchId,
@@ -676,6 +699,7 @@ export const useManualQuoteStore = create<ManualQuoteState>((set, get) => ({
       deliveryPlace: state.draft.deliveryPlace,
       paymentTerms: state.draft.paymentTerms,
       validityDays: state.draft.validityDays,
+      sourceChannel: state.draft.sourceChannel,
       subtotal: state.subtotal(),
       tax: state.tax(),
       total: state.total(),

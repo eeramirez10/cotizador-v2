@@ -8,6 +8,7 @@ import { SelectClientModal } from "../../shared/components/modals/select-client.
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
+import type { QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
@@ -31,6 +32,16 @@ const PAYMENT_TERMS_OPTIONS: string[] = [
 ];
 
 const VALIDITY_DAYS_OPTIONS: number[] = [10, 15, 20, 30, 45, 60, 90];
+
+const SOURCE_CHANNEL_OPTIONS: Array<{ value: QuoteSourceChannel; label: string }> = [
+  { value: "UNSPECIFIED", label: "Seleccionar origen" },
+  { value: "EMAIL", label: "Correo" },
+  { value: "PHONE", label: "Teléfono" },
+  { value: "WHATSAPP", label: "WhatsApp" },
+  { value: "AI_ASSISTANT", label: "Asistente IA" },
+  { value: "IN_PERSON", label: "Presencial" },
+  { value: "OTHER", label: "Otro" },
+];
 
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
@@ -130,6 +141,7 @@ export const ManualQuotePage = () => {
   const setDeliveryPlace = useManualQuoteStore((state) => state.setDeliveryPlace);
   const setPaymentTerms = useManualQuoteStore((state) => state.setPaymentTerms);
   const setValidityDays = useManualQuoteStore((state) => state.setValidityDays);
+  const setSourceChannel = useManualQuoteStore((state) => state.setSourceChannel);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
   const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
   const assignLocalProductToItem = useManualQuoteStore((state) => state.assignLocalProductToItem);
@@ -343,7 +355,10 @@ export const ManualQuotePage = () => {
     }
   };
 
-  const validateBeforeSave = (options?: { enforcePriceFloor?: boolean }) => {
+  const validateBeforeSave = (options?: {
+    enforcePriceFloor?: boolean;
+    requireSourceChannel?: boolean;
+  }) => {
     if (!draft.client) {
       notifier.warning("Selecciona un cliente antes de guardar la cotización.");
       return false;
@@ -351,6 +366,11 @@ export const ManualQuotePage = () => {
 
     if (draft.items.length === 0) {
       notifier.warning("Agrega al menos una partida para guardar la cotización.");
+      return false;
+    }
+
+    if (options?.requireSourceChannel && draft.sourceChannel === "UNSPECIFIED") {
+      notifier.warning("Selecciona el origen de la cotización antes de generarla.");
       return false;
     }
 
@@ -393,7 +413,7 @@ export const ManualQuotePage = () => {
   };
 
   const handleGenerateQuote = async () => {
-    if (!validateBeforeSave({ enforcePriceFloor: true })) return;
+    if (!validateBeforeSave({ enforcePriceFloor: true, requireSourceChannel: true })) return;
 
     try {
       setSavingAction("quote");
@@ -458,7 +478,7 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 lg:grid-cols-5">
+      <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 lg:grid-cols-6">
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Vendedor</p>
           <p className="text-sm text-gray-700">{draft.createdByName || `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim()}</p>
@@ -505,6 +525,28 @@ export const ManualQuotePage = () => {
           >
             <option value="MXN">MXN</option>
             <option value="USD">USD</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="sourceChannel">
+            Origen de la cotización
+          </label>
+          <select
+            id="sourceChannel"
+            value={draft.sourceChannel}
+            onChange={(event) => setSourceChannel(event.target.value as QuoteSourceChannel)}
+            className={`mt-1 w-full rounded-md border px-2 py-1.5 text-sm text-gray-700 ${
+              draft.sourceChannel === "UNSPECIFIED"
+                ? "border-amber-300 bg-amber-50"
+                : "border-gray-300 bg-white"
+            }`}
+          >
+            {SOURCE_CHANNEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -575,7 +617,7 @@ export const ManualQuotePage = () => {
           </select>
         </div>
 
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-2">
           <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="deliveryPlace">
             Lugar de entrega
           </label>

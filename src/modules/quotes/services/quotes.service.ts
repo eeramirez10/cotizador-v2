@@ -3,7 +3,11 @@ import type { Client } from "../../clients/types/client.types";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 import type { PageResult, Quote } from "../types/quote.types";
 import { getAuthToken } from "../../../store/auth/auth.store";
-import type { ManualQuoteDraft, ManualQuoteItem } from "../../../store/quote/manual-quote.store";
+import type {
+  ManualQuoteDraft,
+  ManualQuoteItem,
+  QuoteSourceChannel,
+} from "../../../store/quote/manual-quote.store";
 
 export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
@@ -35,6 +39,7 @@ export interface SavedQuoteRecord {
   deliveryPlace: string;
   paymentTerms: string;
   validityDays: number;
+  sourceChannel: QuoteSourceChannel;
   validUntil: string;
   subtotal: number;
   tax: number;
@@ -111,6 +116,7 @@ interface ApiQuote {
   orderStatus: "NOT_GENERATED" | "GENERATED";
   orderGeneratedAt: string | null;
   orderReference: string | null;
+  sourceChannel: QuoteSourceChannel;
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
@@ -259,6 +265,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     deliveryPlace: apiQuote.deliveryPlace || "L.A.B. OBRA",
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
     validityDays: apiQuote.validityDays || 10,
+    sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
     validUntil: apiQuote.validUntil,
     subtotal: apiQuote.subtotal,
     tax: apiQuote.tax,
@@ -543,6 +550,7 @@ export class QuotesService {
           deliveryPlace: draft.deliveryPlace,
           paymentTerms: draft.paymentTerms,
           validityDays: draft.validityDays,
+          sourceChannel: draft.sourceChannel,
           notes: null,
         },
         { headers: requireAuthHeaders() }
@@ -571,6 +579,7 @@ export class QuotesService {
           paymentTerms: draft.paymentTerms,
           validityDays: draft.validityDays,
           origin,
+          sourceChannel: draft.sourceChannel,
           notes: null,
           items: extractionItems,
         },
@@ -592,6 +601,7 @@ export class QuotesService {
           paymentTerms: draft.paymentTerms,
           validityDays: draft.validityDays,
           origin,
+          sourceChannel: draft.sourceChannel,
           notes: null,
         },
         { headers: requireAuthHeaders() }

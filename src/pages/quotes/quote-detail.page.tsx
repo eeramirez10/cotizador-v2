@@ -36,6 +36,16 @@ const statusClass: Record<string, string> = {
   CANCELADA: "bg-rose-100 text-rose-700",
 };
 
+const sourceChannelLabel: Record<SavedQuoteRecord["sourceChannel"], string> = {
+  UNSPECIFIED: "Sin especificar",
+  EMAIL: "Correo",
+  PHONE: "Teléfono",
+  WHATSAPP: "WhatsApp",
+  AI_ASSISTANT: "Asistente IA",
+  IN_PERSON: "Presencial",
+  OTHER: "Otro",
+};
+
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
@@ -963,6 +973,11 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Moneda</p>
           <p className="text-sm text-gray-700">{quote.currency}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Origen de la cotización</p>
+          <p className="text-sm text-gray-700">{sourceChannelLabel[quote.sourceChannel]}</p>
         </div>
 
         <div>
