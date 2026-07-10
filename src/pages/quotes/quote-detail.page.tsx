@@ -17,7 +17,11 @@ import { forwardRef, useEffect, useMemo, useRef, useState, type CSSProperties } 
 import { NavLink, useNavigate, useParams } from "react-router";
 import { CustomerContactsService } from "../../modules/clients/services/customer-contacts.service";
 import type { CustomerContact } from "../../modules/clients/types/customer-contact.types";
-import type { SavedQuoteRecord } from "../../modules/quotes/services/quotes.service";
+import type {
+  QuoteCancellationReason,
+  QuoteRejectionReason,
+  SavedQuoteRecord,
+} from "../../modules/quotes/services/quotes.service";
 import {
   useDownloadQuoteOrderFile,
   useGenerateQuoteOrder,
@@ -45,6 +49,38 @@ const sourceChannelLabel: Record<SavedQuoteRecord["sourceChannel"], string> = {
   IN_PERSON: "Presencial",
   OTHER: "Otro",
 };
+
+const REJECTION_REASON_OPTIONS: Array<{ value: QuoteRejectionReason; label: string }> = [
+  { value: "PRICE_HIGH", label: "Precio elevado" },
+  { value: "COST_HIGH", label: "Costo elevado" },
+  { value: "MATERIAL_UNAVAILABLE", label: "Falta de material" },
+  { value: "DELIVERY_TIME", label: "Tiempo de entrega" },
+  { value: "COMPETITOR_SELECTED", label: "Cotizó con otro proveedor" },
+  { value: "COMMERCIAL_TERMS", label: "Condiciones comerciales" },
+  { value: "SPECIFICATION_MISMATCH", label: "Especificación no cumple" },
+  { value: "LATE_QUOTATION", label: "Se tardó en cotizar" },
+  { value: "PROJECT_CANCELLED", label: "Proyecto cancelado o pospuesto" },
+  { value: "NO_CUSTOMER_RESPONSE", label: "Sin respuesta del cliente" },
+  { value: "DUPLICATE_OR_ERROR", label: "Solicitud duplicada o error" },
+  { value: "OTHER", label: "Otro" },
+];
+
+const rejectionReasonLabel = (reason: QuoteRejectionReason | null): string =>
+  REJECTION_REASON_OPTIONS.find((option) => option.value === reason)?.label || "Sin especificar";
+
+const CANCELLATION_REASON_OPTIONS: Array<{ value: QuoteCancellationReason; label: string }> = [
+  { value: "DATA_ENTRY_ERROR", label: "Error de captura" },
+  { value: "DUPLICATE_REQUEST", label: "Cotización duplicada" },
+  { value: "INSUFFICIENT_INFORMATION", label: "Información insuficiente" },
+  { value: "INCORRECT_ITEMS", label: "Partidas incorrectas" },
+  { value: "REPLACED_BY_REVISION", label: "Se sustituyó por una revisión" },
+  { value: "OUT_OF_SCOPE", label: "Solicitud fuera de alcance" },
+  { value: "ADMINISTRATIVE", label: "Cancelación administrativa" },
+  { value: "OTHER", label: "Otro" },
+];
+
+const cancellationReasonLabel = (reason: QuoteCancellationReason | null): string =>
+  CANCELLATION_REASON_OPTIONS.find((option) => option.value === reason)?.label || "Sin especificar";
 
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
@@ -369,6 +405,12 @@ export const QuoteDetailPage = () => {
   const [showItemComments, setShowItemComments] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [showCancellationModal, setShowCancellationModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState<QuoteRejectionReason | "">("");
+  const [rejectionComment, setRejectionComment] = useState("");
+  const [cancellationReason, setCancellationReason] = useState<QuoteCancellationReason | "">("");
+  const [cancellationComment, setCancellationComment] = useState("");
   const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
   const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
   const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
@@ -560,17 +602,29 @@ export const QuoteDetailPage = () => {
   };
 
   const handleCancelQuote = async () => {
-    if (isActionLocked) return;
-    const confirmCancel = window.confirm("¿Seguro que quieres cancelar esta cotización?");
-    if (!confirmCancel) return;
+    if (!cancellationReason) {
+      notifier.warning("Selecciona el motivo de cancelación.");
+      return;
+    }
+    if (cancellationReason === "OTHER" && !cancellationComment.trim()) {
+      notifier.warning("Describe el motivo de cancelación.");
+      return;
+    }
 
     await runActionWithToast({
       loadingMessage: "Cancelando cotización...",
-      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "CANCELADA" }),
+      action: () => updateStatus.mutateAsync({
+        quoteId: quote.quoteId,
+        status: "CANCELADA",
+        cancellation: { reason: cancellationReason, comment: cancellationComment.trim() || undefined },
+      }),
       isSuccess: (result) => Boolean(result),
       successMessage: "Cotización cancelada.",
       errorMessage: "No se pudo cancelar la cotización.",
       onSuccess: async () => {
+        setShowCancellationModal(false);
+        setCancellationReason("");
+        setCancellationComment("");
         await refetch();
       },
     });
@@ -603,13 +657,29 @@ export const QuoteDetailPage = () => {
   };
 
   const handleRejectQuote = async () => {
+    if (!rejectionReason) {
+      notifier.warning("Selecciona el motivo de rechazo.");
+      return;
+    }
+    if (rejectionReason === "OTHER" && !rejectionComment.trim()) {
+      notifier.warning("Describe el motivo de rechazo.");
+      return;
+    }
+
     await runActionWithToast({
       loadingMessage: "Marcando cotización como RECHAZADA...",
-      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "RECHAZADA" }),
+      action: () => updateStatus.mutateAsync({
+        quoteId: quote.quoteId,
+        status: "RECHAZADA",
+        rejection: { reason: rejectionReason, comment: rejectionComment.trim() || undefined },
+      }),
       isSuccess: (result) => Boolean(result),
       successMessage: "Cotización marcada como RECHAZADA.",
       errorMessage: "No se pudo marcar la cotización como RECHAZADA.",
       onSuccess: async () => {
+        setShowRejectionModal(false);
+        setRejectionReason("");
+        setRejectionComment("");
         await refetch();
       },
     });
@@ -940,7 +1010,7 @@ export const QuoteDetailPage = () => {
 
           {canApproveReject && (
             <button
-              onClick={handleRejectQuote}
+              onClick={() => setShowRejectionModal(true)}
               disabled={isActionLocked}
               className={`inline-flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-700 ${disabledActionClass}`}
             >
@@ -951,7 +1021,7 @@ export const QuoteDetailPage = () => {
 
           {quote.status !== "CANCELADA" && (
             <button
-              onClick={handleCancelQuote}
+              onClick={() => setShowCancellationModal(true)}
               disabled={isActionLocked}
               className={`inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 ${disabledActionClass}`}
             >
@@ -987,6 +1057,30 @@ export const QuoteDetailPage = () => {
           <p className="text-xs font-semibold uppercase text-gray-500">Origen de la cotización</p>
           <p className="text-sm text-gray-700">{sourceChannelLabel[quote.sourceChannel]}</p>
         </div>
+
+        {quote.rejectionReason && (
+          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 md:col-span-2">
+            <p className="text-xs font-semibold uppercase text-orange-700">Motivo de rechazo</p>
+            <p className="mt-1 text-sm font-semibold text-orange-950">{rejectionReasonLabel(quote.rejectionReason)}</p>
+            {quote.rejectionComment && <p className="mt-1 text-xs text-orange-900">{quote.rejectionComment}</p>}
+            <p className="mt-2 text-[11px] text-orange-700">
+              Registrado {quote.rejectedAt ? formatDate(quote.rejectedAt) : "-"}
+              {quote.rejectedByUser ? ` por ${quote.rejectedByUser.firstName} ${quote.rejectedByUser.lastName}` : ""}
+            </p>
+          </div>
+        )}
+
+        {quote.cancellationReason && (
+          <div className="rounded-md border border-rose-200 bg-rose-50 p-3 md:col-span-2">
+            <p className="text-xs font-semibold uppercase text-rose-700">Motivo de cancelación</p>
+            <p className="mt-1 text-sm font-semibold text-rose-950">{cancellationReasonLabel(quote.cancellationReason)}</p>
+            {quote.cancellationComment && <p className="mt-1 text-xs text-rose-900">{quote.cancellationComment}</p>}
+            <p className="mt-2 text-[11px] text-rose-700">
+              Registrado {quote.cancelledAt ? formatDate(quote.cancelledAt) : "-"}
+              {quote.cancelledByUser ? ` por ${quote.cancelledByUser.firstName} ${quote.cancelledByUser.lastName}` : ""}
+            </p>
+          </div>
+        )}
 
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Tipo de cambio</p>
@@ -1153,6 +1247,140 @@ export const QuoteDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {showRejectionModal && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Motivo de rechazo</h3>
+                <p className="mt-1 text-sm text-gray-500">Registra por qué el cliente no avanzó con la cotización.</p>
+              </div>
+              <button
+                onClick={() => !isActionLocked && setShowRejectionModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-semibold uppercase text-gray-500" htmlFor="rejection-reason">
+              Motivo <span className="text-rose-600">*</span>
+            </label>
+            <select
+              id="rejection-reason"
+              value={rejectionReason}
+              onChange={(event) => setRejectionReason(event.target.value as QuoteRejectionReason | "")}
+              disabled={isActionLocked}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="">Selecciona un motivo...</option>
+              {REJECTION_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+
+            <label className="mt-4 block text-xs font-semibold uppercase text-gray-500" htmlFor="rejection-comment">
+              Comentario {rejectionReason === "OTHER" ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
+            </label>
+            <textarea
+              id="rejection-comment"
+              value={rejectionComment}
+              onChange={(event) => setRejectionComment(event.target.value)}
+              disabled={isActionLocked}
+              rows={4}
+              maxLength={500}
+              placeholder={rejectionReason === "OTHER" ? "Describe el motivo de rechazo..." : "Agrega contexto opcional..."}
+              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-orange-500"
+            />
+            <p className="mt-1 text-right text-[11px] text-gray-500">{rejectionComment.length}/500</p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowRejectionModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void handleRejectQuote()}
+                disabled={isActionLocked || !rejectionReason || (rejectionReason === "OTHER" && !rejectionComment.trim())}
+                className="rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isActionLocked ? "Guardando..." : "Confirmar rechazo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCancellationModal && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Motivo de cancelación</h3>
+                <p className="mt-1 text-sm text-gray-500">Registra el motivo interno por el que se cancela esta cotización.</p>
+              </div>
+              <button
+                onClick={() => !isActionLocked && setShowCancellationModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-semibold uppercase text-gray-500" htmlFor="cancellation-reason">
+              Motivo <span className="text-rose-600">*</span>
+            </label>
+            <select
+              id="cancellation-reason"
+              value={cancellationReason}
+              onChange={(event) => setCancellationReason(event.target.value as QuoteCancellationReason | "")}
+              disabled={isActionLocked}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-rose-500"
+            >
+              <option value="">Selecciona un motivo...</option>
+              {CANCELLATION_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+
+            <label className="mt-4 block text-xs font-semibold uppercase text-gray-500" htmlFor="cancellation-comment">
+              Comentario {cancellationReason === "OTHER" ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
+            </label>
+            <textarea
+              id="cancellation-comment"
+              value={cancellationComment}
+              onChange={(event) => setCancellationComment(event.target.value)}
+              disabled={isActionLocked}
+              rows={4}
+              maxLength={500}
+              placeholder={cancellationReason === "OTHER" ? "Describe el motivo de cancelación..." : "Agrega contexto opcional..."}
+              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-rose-500"
+            />
+            <p className="mt-1 text-right text-[11px] text-gray-500">{cancellationComment.length}/500</p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancellationModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Volver
+              </button>
+              <button
+                onClick={() => void handleCancelQuote()}
+                disabled={isActionLocked || !cancellationReason || (cancellationReason === "OTHER" && !cancellationComment.trim())}
+                className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isActionLocked ? "Guardando..." : "Confirmar cancelación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSendModal && (
         <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">

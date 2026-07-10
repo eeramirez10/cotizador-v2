@@ -308,7 +308,7 @@ export const UsersPage = () => {
     }
   };
 
-  const roleOptions: UserRole[] = isAdmin ? ["SELLER", "MANAGER", "ADMIN"] : ["SELLER"];
+  const roleOptions: UserRole[] = isAdmin ? ["SELLER", "MANAGER", "ADMIN"] : ["SELLER", "MANAGER"];
 
   return (
     <div className="space-y-5">

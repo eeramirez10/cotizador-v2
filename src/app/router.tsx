@@ -49,16 +49,29 @@ export const appRouter = createBrowserRouter([
         Component: QuotesPage,
       },
       {
+        path: "analytics",
+        handle: { title: "Indicadores" },
+        lazy: async () => {
+          const { AnalyticsPage } = await import("../pages/analytics/analytics.page");
+          return { Component: AnalyticsPage };
+        },
+      },
+      {
         path: "quotes/new",
-        loader: async () => redirect("/cotizador"),
+        loader: async () => {
+          await requireRolesLoader(["seller"])();
+          return redirect("/cotizador");
+        },
       },
       {
         path: "cotizador",
+        loader: requireRolesLoader(["seller"]),
         handle: { title: "Cotizador" },
         Component: ManualQuotePage,
       },
       {
         path: "quotes/manual",
+        loader: requireRolesLoader(["seller"]),
         handle: { title: "Cotización Manual" },
         Component: ManualQuotePage,
       },

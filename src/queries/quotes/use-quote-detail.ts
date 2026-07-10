@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { QuotesService, type SavedQuoteStatus } from "../../modules/quotes/services/quotes.service";
+import {
+  QuotesService,
+  type QuoteCancellationReason,
+  type QuoteRejectionReason,
+  type SavedQuoteStatus,
+} from "../../modules/quotes/services/quotes.service";
 
 const quoteDetailKeys = {
   all: ["quotes", "detail"] as const,
@@ -21,8 +26,17 @@ export const useUpdateQuoteStatus = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ quoteId, status }: { quoteId: string; status: SavedQuoteStatus }) =>
-      QuotesService.updateStatus(quoteId, status),
+    mutationFn: ({
+      quoteId,
+      status,
+      rejection,
+      cancellation,
+    }: {
+      quoteId: string;
+      status: SavedQuoteStatus;
+      rejection?: { reason: QuoteRejectionReason; comment?: string };
+      cancellation?: { reason: QuoteCancellationReason; comment?: string };
+    }) => QuotesService.updateStatus(quoteId, status, rejection, cancellation),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });

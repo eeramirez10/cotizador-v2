@@ -135,9 +135,16 @@ export const ManualQuotePage = () => {
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
   const sourceParam = searchParams.get("source");
+  const openExtractionParam = searchParams.get("open");
   const fromExtractionSource = sourceParam === "file" || sourceParam === "text";
 
   const user = useAuthStore((state) => state.user);
+
+  useEffect(() => {
+    if (openExtractionParam !== "file" && openExtractionParam !== "text") return;
+    setExtractionModal(openExtractionParam);
+    navigate("/cotizador", { replace: true });
+  }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
   const initializeDraft = useManualQuoteStore((state) => state.initializeDraft);

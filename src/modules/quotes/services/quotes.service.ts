@@ -14,6 +14,28 @@ export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
 export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
 export type QuoteDeliveryChannel = "WHATSAPP" | "EMAIL";
+export type QuoteRejectionReason =
+  | "PRICE_HIGH"
+  | "COST_HIGH"
+  | "MATERIAL_UNAVAILABLE"
+  | "DELIVERY_TIME"
+  | "COMPETITOR_SELECTED"
+  | "COMMERCIAL_TERMS"
+  | "SPECIFICATION_MISMATCH"
+  | "LATE_QUOTATION"
+  | "PROJECT_CANCELLED"
+  | "NO_CUSTOMER_RESPONSE"
+  | "DUPLICATE_OR_ERROR"
+  | "OTHER";
+export type QuoteCancellationReason =
+  | "DATA_ENTRY_ERROR"
+  | "DUPLICATE_REQUEST"
+  | "INSUFFICIENT_INFORMATION"
+  | "INCORRECT_ITEMS"
+  | "REPLACED_BY_REVISION"
+  | "OUT_OF_SCOPE"
+  | "ADMINISTRATIVE"
+  | "OTHER";
 
 export interface SavedQuoteRecord {
   quoteId: string;
@@ -40,6 +62,14 @@ export interface SavedQuoteRecord {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  rejectionReason: QuoteRejectionReason | null;
+  rejectionComment: string | null;
+  rejectedAt: string | null;
+  rejectedByUser: { id: string; firstName: string; lastName: string } | null;
+  cancellationReason: QuoteCancellationReason | null;
+  cancellationComment: string | null;
+  cancelledAt: string | null;
+  cancelledByUser: { id: string; firstName: string; lastName: string } | null;
   providedBy: { id: string; fullName: string; branchName: string; branchCode: string } | null;
   validUntil: string;
   subtotal: number;
@@ -118,6 +148,14 @@ interface ApiQuote {
   orderGeneratedAt: string | null;
   orderReference: string | null;
   sourceChannel: QuoteSourceChannel;
+  rejectionReason: QuoteRejectionReason | null;
+  rejectionComment: string | null;
+  rejectedAt: string | null;
+  rejectedByUser: { id: string; firstName: string; lastName: string } | null;
+  cancellationReason: QuoteCancellationReason | null;
+  cancellationComment: string | null;
+  cancelledAt: string | null;
+  cancelledByUser: { id: string; firstName: string; lastName: string } | null;
   providedByUserId: string | null;
   providedByNameSnapshot: string | null;
   providedByBranchNameSnapshot: string | null;
@@ -270,6 +308,14 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
+    rejectionReason: apiQuote.rejectionReason || null,
+    rejectionComment: apiQuote.rejectionComment || null,
+    rejectedAt: apiQuote.rejectedAt || null,
+    rejectedByUser: apiQuote.rejectedByUser || null,
+    cancellationReason: apiQuote.cancellationReason || null,
+    cancellationComment: apiQuote.cancellationComment || null,
+    cancelledAt: apiQuote.cancelledAt || null,
+    cancelledByUser: apiQuote.cancelledByUser || null,
     providedBy: apiQuote.providedByUserId && apiQuote.providedByNameSnapshot
       ? {
           id: apiQuote.providedByUserId,
@@ -641,7 +687,12 @@ export class QuotesService {
     return quoteId;
   }
 
-  static async updateStatus(quoteId: string, status: SavedQuoteStatus): Promise<boolean> {
+  static async updateStatus(
+    quoteId: string,
+    status: SavedQuoteStatus,
+    rejection?: { reason: QuoteRejectionReason; comment?: string },
+    cancellation?: { reason: QuoteCancellationReason; comment?: string }
+  ): Promise<boolean> {
     try {
       const current = await getRawQuoteById(quoteId);
       if (!current) return false;
@@ -652,10 +703,19 @@ export class QuotesService {
 
       if (status === "CANCELADA") {
         if (current.status === "CANCELLED") return true;
+        if (!cancellation?.reason) throw new Error("Selecciona el motivo de cancelación.");
+        if (cancellation.reason === "OTHER" && !cancellation.comment?.trim()) {
+          throw new Error("Escribe el detalle del motivo de cancelación.");
+        }
 
         await coreHttpClient.patch(
           `/api/quotes/${quoteId}/status`,
-          { status: "CANCELLED", note: "Cancelled from frontend." },
+          {
+            status: "CANCELLED",
+            note: "Cancelled from frontend.",
+            cancellationReason: cancellation.reason,
+            cancellationComment: cancellation.comment?.trim() || null,
+          },
           { headers: requireAuthHeaders() }
         );
         return true;
@@ -676,10 +736,19 @@ export class QuotesService {
       if (status === "RECHAZADA") {
         if (current.status === "REJECTED") return true;
         if (current.status !== "QUOTED") return false;
+        if (!rejection?.reason) throw new Error("Selecciona el motivo de rechazo.");
+        if (rejection.reason === "OTHER" && !rejection.comment?.trim()) {
+          throw new Error("Escribe el detalle del motivo de rechazo.");
+        }
 
         await coreHttpClient.patch(
           `/api/quotes/${quoteId}/status`,
-          { status: "REJECTED", note: "Rejected from frontend." },
+          {
+            status: "REJECTED",
+            note: "Rejected from frontend.",
+            rejectionReason: rejection.reason,
+            rejectionComment: rejection.comment?.trim() || null,
+          },
           { headers: requireAuthHeaders() }
         );
         return true;
