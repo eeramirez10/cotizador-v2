@@ -17,6 +17,13 @@ export type QuoteSourceChannel =
   | "IN_PERSON"
   | "OTHER";
 
+export interface QuoteProvider {
+  id: string;
+  fullName: string;
+  branchName: string;
+  branchCode: string;
+}
+
 export interface ManualQuoteItem {
   id: string;
   localProductId: string | null;
@@ -53,6 +60,7 @@ export interface ManualQuoteDraft {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  providedBy: QuoteProvider | null;
   createdByUserId: string | null;
   createdByName: string;
   branchId: string | null;
@@ -80,6 +88,7 @@ interface StoredQuote {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  providedBy: QuoteProvider | null;
   subtotal: number;
   tax: number;
   total: number;
@@ -113,6 +122,7 @@ interface HydrateQuoteInput {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  providedBy?: QuoteProvider | null;
   client: HydrateQuoteClient | null;
   items: ManualQuoteItem[];
 }
@@ -126,6 +136,7 @@ interface ManualQuoteState {
   setPaymentTerms: (paymentTerms: string) => void;
   setValidityDays: (validityDays: number) => void;
   setSourceChannel: (sourceChannel: QuoteSourceChannel) => void;
+  setProvidedBy: (providedBy: QuoteProvider | null) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
   assignLocalProductToItem: (
@@ -177,6 +188,7 @@ const newDraft = (): ManualQuoteDraft => ({
   paymentTerms: "CONTADO",
   validityDays: 10,
   sourceChannel: "UNSPECIFIED",
+  providedBy: null,
   createdByUserId: null,
   createdByName: "",
   branchId: null,
@@ -384,6 +396,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       draft: {
         ...state.draft,
         sourceChannel,
+      },
+    })),
+
+  setProvidedBy: (providedBy) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        providedBy,
       },
     })),
 
@@ -629,6 +649,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           paymentTerms: quote.paymentTerms,
           validityDays: quote.validityDays,
           sourceChannel: quote.sourceChannel || "UNSPECIFIED",
+          providedBy: quote.providedBy || null,
           createdByUserId: quote.createdByUserId,
           createdByName: quote.createdByName,
           branchId: quote.branchId,
@@ -673,6 +694,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         paymentTerms: stored.paymentTerms || "CONTADO",
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         sourceChannel: stored.sourceChannel || "UNSPECIFIED",
+        providedBy: stored.providedBy || null,
         createdByUserId: stored.createdByUserId,
         createdByName: stored.createdByName,
         branchId: stored.branchId,
@@ -719,6 +741,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       paymentTerms: state.draft.paymentTerms,
       validityDays: state.draft.validityDays,
       sourceChannel: state.draft.sourceChannel,
+      providedBy: state.draft.providedBy,
       subtotal: state.subtotal(),
       tax: state.tax(),
       total: state.total(),

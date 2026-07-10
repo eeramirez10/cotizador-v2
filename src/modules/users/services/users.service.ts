@@ -112,6 +112,31 @@ const mapAxiosError = (error: unknown, fallback: string): Error => {
 };
 
 export class UsersService {
+  static async listActiveQuoteProviders(params?: Pick<ListUsersParams, "page" | "pageSize" | "search">): Promise<PaginatedUsers> {
+    try {
+      const { data } = await coreHttpClient.get<ApiPaginatedUsersResponse>("/api/users/active-selection", {
+        headers: requireAuthHeaders(),
+        params: {
+          page: params?.page ?? 1,
+          pageSize: params?.pageSize ?? 20,
+          search: params?.search?.trim() || undefined,
+        },
+      });
+
+      return {
+        items: (data.items || []).map(mapApiUser),
+        total: data.total || 0,
+        page: data.page || 1,
+        pageSize: data.pageSize || 20,
+        totalPages: data.totalPages || 1,
+        hasPrevPage: Boolean(data.hasPrevPage),
+        hasNextPage: Boolean(data.hasNextPage),
+      };
+    } catch (error) {
+      throw mapAxiosError(error, "No se pudieron cargar los usuarios disponibles.");
+    }
+  }
+
   static async list(params?: ListUsersParams): Promise<PaginatedUsers> {
     try {
       const { data } = await coreHttpClient.get<ApiPaginatedUsersResponse>("/api/users", {

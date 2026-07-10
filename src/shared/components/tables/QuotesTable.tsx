@@ -27,6 +27,9 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
               Vendedor
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Proporcionada por
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Fecha
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -41,7 +44,7 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
         <tbody className="divide-y divide-gray-200 bg-white">
           {(!quotes || quotes.length === 0) && (
             <tr>
-              <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+              <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
                 Aun no has generado cotizaciones.
               </td>
             </tr>
@@ -66,6 +69,7 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                 </div>
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.createdByName || "-"}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.providedByName || "Directa"}</td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{quote.createdAt}</td>
               <td className="whitespace-nowrap px-6 py-4 text-xs">
                 <span
@@ -112,6 +116,7 @@ const QuotesTableSkelleton: React.FC<QuotesTableSkelletonProps> = (props) => {
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">N° Cotizacion</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Cliente</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Vendedor</div>
+        <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Proporcionada por</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Fecha</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estatus</div>
         <div className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</div>

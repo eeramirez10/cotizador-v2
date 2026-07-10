@@ -40,6 +40,7 @@ export interface SavedQuoteRecord {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  providedBy: { id: string; fullName: string; branchName: string; branchCode: string } | null;
   validUntil: string;
   subtotal: number;
   tax: number;
@@ -117,6 +118,9 @@ interface ApiQuote {
   orderGeneratedAt: string | null;
   orderReference: string | null;
   sourceChannel: QuoteSourceChannel;
+  providedByUserId: string | null;
+  providedByNameSnapshot: string | null;
+  providedByBranchNameSnapshot: string | null;
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
@@ -266,6 +270,14 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
+    providedBy: apiQuote.providedByUserId && apiQuote.providedByNameSnapshot
+      ? {
+          id: apiQuote.providedByUserId,
+          fullName: apiQuote.providedByNameSnapshot,
+          branchName: apiQuote.providedByBranchNameSnapshot || "Sin sucursal",
+          branchCode: "",
+        }
+      : null,
     validUntil: apiQuote.validUntil,
     subtotal: apiQuote.subtotal,
     tax: apiQuote.tax,
@@ -309,6 +321,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   quoteNumber: stored.quoteNumber ?? stored.quoteId,
   status: stored.status,
   createdByName: stored.createdByName,
+  providedByName: stored.providedBy?.fullName ?? null,
   branch: stored.branchName ?? "Monterrey",
   currency: stored.currency,
   taxRate: stored.taxRate ?? 0.16,
@@ -551,6 +564,7 @@ export class QuotesService {
           paymentTerms: draft.paymentTerms,
           validityDays: draft.validityDays,
           sourceChannel: draft.sourceChannel,
+          providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
         },
         { headers: requireAuthHeaders() }
@@ -580,6 +594,7 @@ export class QuotesService {
           validityDays: draft.validityDays,
           origin,
           sourceChannel: draft.sourceChannel,
+          providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
           items: extractionItems,
         },
@@ -602,6 +617,7 @@ export class QuotesService {
           validityDays: draft.validityDays,
           origin,
           sourceChannel: draft.sourceChannel,
+          providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
         },
         { headers: requireAuthHeaders() }

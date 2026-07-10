@@ -259,6 +259,9 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
             <span className="font-semibold">Vendedor:</span> {quote.createdByName || "-"}
           </p>
           <p className="text-xs text-gray-700">
+            <span className="font-semibold">Proporcionada por:</span> {quote.providedBy?.fullName || "Directa"}
+          </p>
+          <p className="text-xs text-gray-700">
             <span className="font-semibold">Sucursal:</span> {quote.branchName || "-"}
           </p>
           <p className="text-xs text-gray-700">
@@ -968,6 +971,11 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Sucursal</p>
           <p className="text-sm text-gray-700">{quote.branchName || "-"}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Proporcionada por</p>
+          <p className="text-sm text-gray-700">{quote.providedBy?.fullName || "Directa"}</p>
         </div>
 
         <div>

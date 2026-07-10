@@ -49,6 +49,7 @@ export interface Quote {
     | "RECHAZADA"
     | "CANCELADA";
   createdByName?: string;
+  providedByName?: string | null;
   branch?: string;
   currency: Currency;
   taxRate: number;

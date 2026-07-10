@@ -6,6 +6,7 @@ import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
 import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
+import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
@@ -129,6 +130,7 @@ export const ManualQuotePage = () => {
   const [commentDraft, setCommentDraft] = useState("");
   const [extractionModal, setExtractionModal] = useState<"file" | "text" | null>(null);
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
+  const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -145,6 +147,7 @@ export const ManualQuotePage = () => {
   const setPaymentTerms = useManualQuoteStore((state) => state.setPaymentTerms);
   const setValidityDays = useManualQuoteStore((state) => state.setValidityDays);
   const setSourceChannel = useManualQuoteStore((state) => state.setSourceChannel);
+  const setProvidedBy = useManualQuoteStore((state) => state.setProvidedBy);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
   const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
   const assignLocalProductToItem = useManualQuoteStore((state) => state.assignLocalProductToItem);
@@ -161,6 +164,7 @@ export const ManualQuotePage = () => {
   const tax = useManualQuoteStore((state) => state.tax);
   const total = useManualQuoteStore((state) => state.total);
   const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
+  const isProviderAttributionLocked = ["COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA"].includes(draft.status);
 
   useEffect(() => {
     if (quoteIdFromQuery) {
@@ -535,7 +539,7 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 lg:grid-cols-6">
+      <div className="mb-4 grid gap-3 rounded-md border shadow-sm border-gray-200 bg-white p-4 lg:grid-cols-6">
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Vendedor</p>
           <p className="text-sm text-gray-700">{draft.createdByName || `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim()}</p>
@@ -568,6 +572,36 @@ export const ManualQuotePage = () => {
               <p className="text-gray-500">Sin cliente seleccionado.</p>
             )}
           </div>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold uppercase text-gray-500">Proporcionada por</label>
+            {!isProviderAttributionLocked && (
+              <button
+                onClick={() => setOpenQuoteProviderModal(true)}
+                className="rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+              >
+                Buscar usuario
+              </button>
+            )}
+          </div>
+          <div className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700">
+            {draft.providedBy ? (
+              <span>{draft.providedBy.fullName} · {draft.providedBy.branchName}</span>
+            ) : (
+              <span className="text-gray-500">Cotización directa, sin usuario asignado.</span>
+            )}
+            {draft.providedBy && !isProviderAttributionLocked && (
+              <button
+                onClick={() => setProvidedBy(null)}
+                className="shrink-0 text-xs font-semibold text-rose-600 hover:text-rose-700"
+              >
+                Quitar
+              </button>
+            )}
+          </div>
+          {isProviderAttributionLocked && <p className="mt-1 text-xs text-gray-500">Atribución bloqueada al quedar cotizada.</p>}
         </div>
 
         <div>
@@ -1105,6 +1139,19 @@ export const ManualQuotePage = () => {
           }}
         />
       )}
+      <SelectQuoteProviderModal
+        open={openQuoteProviderModal}
+        onClose={() => setOpenQuoteProviderModal(false)}
+        onSelect={(selectedUser) => {
+          setProvidedBy({
+            id: selectedUser.id,
+            fullName: selectedUser.fullName,
+            branchName: selectedUser.branch.name,
+            branchCode: selectedUser.branch.code,
+          });
+          setOpenQuoteProviderModal(false);
+        }}
+      />
       {localProductConfirmationItem && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
