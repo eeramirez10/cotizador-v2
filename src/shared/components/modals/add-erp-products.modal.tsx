@@ -1,5 +1,6 @@
 import { Loader2, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { getBranchNameByCode, resolveBranchCode } from "../../../modules/branches/branch.utils";
 import { ErpProductsService } from "../../../modules/products/services/erp-products.service";
@@ -22,6 +23,7 @@ interface AddErpProductsModalProps {
   actionLabel?: string;
   customerDescription?: string;
   customerUnit?: string;
+  aiSearchOnEnter?: boolean;
 }
 
 type SearchMode = "erp" | "ai";
@@ -42,10 +44,12 @@ export const AddErpProductsModal = ({
   actionLabel = "Agregar",
   customerDescription = "",
   customerUnit = "",
+  aiSearchOnEnter = false,
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
+  const [submittedAiTerm, setSubmittedAiTerm] = useState("");
   const [mode, setMode] = useState<SearchMode>("erp");
-  const [aiEngine, setAiEngine] = useState<AiSimilarProductsEngine>("v2");
+  const [aiEngine, setAiEngine] = useState<AiSimilarProductsEngine>("semantic");
   const [verifyingSuggestionKey, setVerifyingSuggestionKey] = useState<string | null>(null);
   const [didInitializeOpenState, setDidInitializeOpenState] = useState(false);
   const [aiNextAllowedAtMs, setAiNextAllowedAtMs] = useState(0);
@@ -60,8 +64,9 @@ export const AddErpProductsModal = ({
   useEffect(() => {
     if (!open) {
       setTerm("");
+      setSubmittedAiTerm("");
       setMode("erp");
-      setAiEngine("v2");
+      setAiEngine("semantic");
       setDidInitializeOpenState(false);
       setAiNextAllowedAtMs(0);
       previousAiFetchingRef.current = false;
@@ -85,15 +90,16 @@ export const AddErpProductsModal = ({
   const branchId = resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
   const enabledErpSearch = open && mode === "erp" && !!branchId && debouncedTerm.trim().length > 0;
   const aiCooldownRemainingMs = Math.max(0, aiNextAllowedAtMs - nowMs);
+  const aiSearchTerm = aiSearchOnEnter ? submittedAiTerm : debouncedTerm;
   const enabledAiSearch =
     open &&
     mode === "ai" &&
     !!branchId &&
-    debouncedTerm.trim().length > 0 &&
+    aiSearchTerm.trim().length > 0 &&
     aiCooldownRemainingMs === 0;
 
   const erpSearch = useErpProductSearch(debouncedTerm, branchId, enabledErpSearch);
-  const aiSearch = useAiSimilarProductSearch(debouncedTerm, branchId, aiEngine, enabledAiSearch);
+  const aiSearch = useAiSimilarProductSearch(aiSearchTerm, branchId, aiEngine, enabledAiSearch);
 
   useEffect(() => {
     const isFetching = aiSearch.isFetching;
@@ -143,6 +149,7 @@ export const AddErpProductsModal = ({
   );
   const rowsCount = mode === "ai" ? sortedAiData.length : sortedErpData.length;
   const colSpan = mode === "ai" ? 11 : 9;
+  const activeSearchTerm = mode === "ai" ? aiSearchTerm : debouncedTerm;
   const currentBranchName = getBranchNameByCode(branchId);
 
   const modeSubtitle = useMemo(() => {
@@ -158,6 +165,20 @@ export const AddErpProductsModal = ({
     setAiEngine(engine);
     setNowMs(Date.now());
     setAiNextAllowedAtMs(0);
+  };
+
+  const handleTermChange = (value: string): void => {
+    setTerm(value);
+    if (aiSearchOnEnter) {
+      setSubmittedAiTerm("");
+    }
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (!aiSearchOnEnter || mode !== "ai" || event.key !== "Enter") return;
+
+    event.preventDefault();
+    setSubmittedAiTerm(term.trim());
   };
 
   if (!open) return null;
@@ -234,7 +255,11 @@ export const AddErpProductsModal = ({
           <div className="mb-3 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setMode("erp")}
+              onClick={() => {
+                setMode("erp");
+                setTerm("");
+                setSubmittedAiTerm("");
+              }}
               className={`rounded-md border px-3 py-1 text-xs font-semibold ${
                 mode === "erp"
                   ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -266,11 +291,16 @@ export const AddErpProductsModal = ({
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input
               value={term}
-              onChange={(event) => setTerm(event.target.value)}
+              onChange={(event) => handleTermChange(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
               className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={mode === "ai" ? "Ej. codo ranurado victaulic 4 pulg" : "Ej. TSC480 o TUBO ACERO"}
             />
           </div>
+
+          {mode === "ai" && aiSearchOnEnter && (
+            <p className="-mt-1 mb-3 text-xs text-gray-500">Presiona Enter para buscar coincidencias con IA.</p>
+          )}
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
@@ -372,7 +402,7 @@ export const AddErpProductsModal = ({
                   </tr>
                 )}
 
-                {!isLoading && debouncedTerm.trim().length > 0 && rowsCount === 0 && (
+                {!isLoading && activeSearchTerm.trim().length > 0 && rowsCount === 0 && (
                   <tr>
                     <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={colSpan}>
                       {mode === "ai"
@@ -382,11 +412,13 @@ export const AddErpProductsModal = ({
                   </tr>
                 )}
 
-                {!isLoading && debouncedTerm.trim().length === 0 && (
+                {!isLoading && activeSearchTerm.trim().length === 0 && (
                   <tr>
                     <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={colSpan}>
                       {mode === "ai"
-                        ? "Captura una descripción para buscar coincidencias semánticas en el catálogo."
+                        ? aiSearchOnEnter && term.trim().length > 0
+                          ? "Presiona Enter para buscar coincidencias semánticas en el catálogo."
+                          : "Captura una descripción para buscar coincidencias semánticas en el catálogo."
                         : "Captura un EAN, código o descripción para consultar el ERP."}
                     </td>
                   </tr>

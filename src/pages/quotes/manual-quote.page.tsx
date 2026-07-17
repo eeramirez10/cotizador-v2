@@ -1117,6 +1117,7 @@ export const ManualQuotePage = () => {
         actionLabel={erpTargetItemId ? "Seleccionar" : "Agregar"}
         customerDescription={erpTargetItem?.customerDescription}
         customerUnit={erpTargetItem?.customerUnit}
+        aiSearchOnEnter={!erpTargetItemId}
         onSelect={(product) => {
           if (erpTargetItemId) {
             assignErpProductToItem(erpTargetItemId, product);
