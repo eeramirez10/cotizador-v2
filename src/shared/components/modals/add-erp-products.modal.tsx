@@ -3,7 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { getBranchNameByCode, resolveBranchCode } from "../../../modules/branches/branch.utils";
 import { ErpProductsService } from "../../../modules/products/services/erp-products.service";
-import type { AiSimilarProductSuggestion } from "../../../modules/ai/types/ai-similar-product.types";
+import type {
+  AiSimilarProductSuggestion,
+  AiSimilarProductsEngine,
+} from "../../../modules/ai/types/ai-similar-product.types";
 import type { ErpProduct } from "../../../modules/products/types/erp-product.types";
 import { useAiSimilarProductSearch } from "../../../queries/products/use-ai-similar-product-search";
 import { useErpProductSearch } from "../../../queries/products/use-erp-product-search";
@@ -42,6 +45,7 @@ export const AddErpProductsModal = ({
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
   const [mode, setMode] = useState<SearchMode>("erp");
+  const [aiEngine, setAiEngine] = useState<AiSimilarProductsEngine>("v2");
   const [verifyingSuggestionKey, setVerifyingSuggestionKey] = useState<string | null>(null);
   const [didInitializeOpenState, setDidInitializeOpenState] = useState(false);
   const [aiNextAllowedAtMs, setAiNextAllowedAtMs] = useState(0);
@@ -57,6 +61,7 @@ export const AddErpProductsModal = ({
     if (!open) {
       setTerm("");
       setMode("erp");
+      setAiEngine("v2");
       setDidInitializeOpenState(false);
       setAiNextAllowedAtMs(0);
       previousAiFetchingRef.current = false;
@@ -88,7 +93,7 @@ export const AddErpProductsModal = ({
     aiCooldownRemainingMs === 0;
 
   const erpSearch = useErpProductSearch(debouncedTerm, branchId, enabledErpSearch);
-  const aiSearch = useAiSimilarProductSearch(debouncedTerm, branchId, enabledAiSearch);
+  const aiSearch = useAiSimilarProductSearch(debouncedTerm, branchId, aiEngine, enabledAiSearch);
 
   useEffect(() => {
     const isFetching = aiSearch.isFetching;
@@ -125,15 +130,16 @@ export const AddErpProductsModal = ({
     [erpData],
   );
   const sortedAiData = useMemo(
-    () =>
-      [...aiData].sort(
+    () => aiEngine === "semantic"
+      ? aiData
+      : [...aiData].sort(
         (a, b) =>
           b.finalSimilarity - a.finalSimilarity ||
           compareByText(a.branchProductCode, b.branchProductCode) ||
           compareByEan(a.ean, b.ean) ||
           compareByText(a.productId, b.productId),
       ),
-    [aiData],
+    [aiData, aiEngine],
   );
   const rowsCount = mode === "ai" ? sortedAiData.length : sortedErpData.length;
   const colSpan = mode === "ai" ? 11 : 9;
@@ -146,6 +152,13 @@ export const AddErpProductsModal = ({
 
     return "Búsqueda semántica con IA usando descripción del cliente y similitud.";
   }, [mode]);
+
+  const handleAiEngineChange = (engine: AiSimilarProductsEngine): void => {
+    if (engine === aiEngine) return;
+    setAiEngine(engine);
+    setNowMs(Date.now());
+    setAiNextAllowedAtMs(0);
+  };
 
   if (!open) return null;
 
@@ -259,18 +272,57 @@ export const AddErpProductsModal = ({
             />
           </div>
 
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
               Sucursal usuario: {branchId ? currentBranchName : "No definida"}
             </p>
-            {mode === "ai" && hasCustomerContext && (
-              <button
-                type="button"
-                onClick={() => setTerm(normalizedCustomerDescription)}
-                className="rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
-              >
-                Usar descripción cliente
-              </button>
+            {mode === "ai" && (
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-md border border-gray-300 bg-gray-50 p-0.5" aria-label="Motor de búsqueda IA">
+                  <button
+                    type="button"
+                    onClick={() => handleAiEngineChange("v2")}
+                    className={`rounded px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      aiEngine === "v2"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-white"
+                    }`}
+                  >
+                    V2 híbrido
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAiEngineChange("semantic")}
+                    className={`rounded px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      aiEngine === "semantic"
+                        ? "bg-cyan-700 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-white"
+                    }`}
+                  >
+                    Embedding puro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAiEngineChange("legacy")}
+                    className={`rounded px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      aiEngine === "legacy"
+                        ? "bg-slate-700 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-white"
+                    }`}
+                  >
+                    Catálogo anterior
+                  </button>
+                </div>
+                {hasCustomerContext && (
+                  <button
+                    type="button"
+                    onClick={() => setTerm(normalizedCustomerDescription)}
+                    className="rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                  >
+                    Usar descripción cliente
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -415,7 +467,19 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-xs text-gray-700">{product?.unit || "-"}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product?.costCurrency || "-"}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product ? `$${product.costUsd.toFixed(2)}` : "-"}</td>
-                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product?.stock ?? "-"}</td>
+                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">
+                          <p>{product?.stock ?? "-"}</p>
+                          {suggestion.codeTotalStock !== null && (
+                            <p className="mt-0.5 text-[10px] font-normal text-gray-500">
+                              ICOD total: {suggestion.codeTotalStock}
+                            </p>
+                          )}
+                          {suggestion.eanTotalStock !== null && (
+                            <p className="text-[10px] font-normal text-gray-500">
+                              EAN total: {suggestion.eanTotalStock}
+                            </p>
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-xs text-gray-700">
                           {suggestionBranchCode ? (
                             <span
@@ -430,8 +494,14 @@ export const AddErpProductsModal = ({
                           )}
                         </td>
                         <td className="px-4 py-2 text-xs text-gray-700">
-                          <p>Final: {suggestion.finalSimilarityPercent.toFixed(2)}%</p>
-                          <p className="text-[10px] text-gray-500">Vector: {suggestion.semanticSimilarityPercent.toFixed(2)}%</p>
+                          {aiEngine === "semantic" ? (
+                            <p>Embedding: {suggestion.semanticSimilarityPercent.toFixed(2)}%</p>
+                          ) : (
+                            <>
+                              <p>Final: {suggestion.finalSimilarityPercent.toFixed(2)}%</p>
+                              <p className="text-[10px] text-gray-500">Vector: {suggestion.semanticSimilarityPercent.toFixed(2)}%</p>
+                            </>
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${confidenceBadgeClass(suggestion.confidence)}`}>

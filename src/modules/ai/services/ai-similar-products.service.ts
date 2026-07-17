@@ -1,7 +1,12 @@
 import type { ErpProduct, ErpProductCurrency } from "../../products/types/erp-product.types";
 import axios from "axios";
 import { aiHttpClient } from "./http/ai-http.client";
-import type { AiSimilarityConfidence, AiSimilarProductSuggestion } from "../types/ai-similar-product.types";
+import { envs } from "../../../config/envs";
+import type {
+  AiSimilarityConfidence,
+  AiSimilarProductSuggestion,
+  AiSimilarProductsEngine,
+} from "../types/ai-similar-product.types";
 
 interface ApiBranchProduct {
   branchCode?: unknown;
@@ -18,6 +23,7 @@ interface ApiBranchProduct {
 }
 
 interface ApiSimilarItem {
+  source?: unknown;
   ean?: unknown;
   productId?: unknown;
   product_id?: unknown;
@@ -37,6 +43,7 @@ interface ApiSimilarItem {
   similarity_percent?: unknown;
   confidence?: unknown;
   reasons?: unknown;
+  rankingStrategy?: unknown;
   branchCode?: unknown;
   branch_code?: unknown;
   branchProductCode?: unknown;
@@ -49,9 +56,15 @@ interface ApiSimilarItem {
   resolved_branch_code?: unknown;
   branchProduct?: unknown;
   branch_product?: unknown;
+  registeredInBranch?: unknown;
+  stockAvailableInBranch?: unknown;
+  stockAvailableInAnyBranch?: unknown;
+  codeTotalStock?: unknown;
+  eanTotalStock?: unknown;
 }
 
 interface ApiSimilarProductsResponse {
+  source?: unknown;
   items?: unknown;
 }
 
@@ -79,6 +92,12 @@ const asBooleanOrNull = (value: unknown): boolean | null => {
     if (normalized === "false" || normalized === "0" || normalized === "no") return false;
   }
   return null;
+};
+
+const asNumberOrNull = (value: unknown): number | null => {
+  if (value === null || typeof value === "undefined" || value === "") return null;
+  const number = asNumber(value);
+  return Number.isFinite(number) ? number : null;
 };
 
 const toCurrency = (value: unknown): ErpProductCurrency => {
@@ -127,7 +146,7 @@ const toReasons = (value: unknown): string[] => {
   return value.map((item) => asText(item)).filter((item) => item.length > 0);
 };
 
-const mapItem = (input: unknown): AiSimilarProductSuggestion | null => {
+const mapItem = (input: unknown, responseSource: string): AiSimilarProductSuggestion | null => {
   if (!input || typeof input !== "object") return null;
 
   const row = input as ApiSimilarItem;
@@ -138,6 +157,7 @@ const mapItem = (input: unknown): AiSimilarProductSuggestion | null => {
   const branchProduct = mapBranchProduct(row.branchProduct ?? row.branch_product);
 
   return {
+    source: asText(row.source) || responseSource || "legacy",
     ean,
     productId: asText(row.productId ?? row.product_id),
     description,
@@ -150,11 +170,17 @@ const mapItem = (input: unknown): AiSimilarProductSuggestion | null => {
     similarityPercent: asNumber(row.similarityPercent ?? row.similarity_percent),
     confidence: asConfidence(row.confidence),
     reasons: toReasons(row.reasons),
+    rankingStrategy: asText(row.rankingStrategy),
     branchCode: asText(row.branchCode ?? row.branch_code),
     branchProductCode: asText(row.branchProductCode ?? row.branch_product_code),
     availableInBranch: asBooleanOrNull(row.availableInBranch ?? row.available_in_branch),
     availableInAnyBranch: asBooleanOrNull(row.availableInAnyBranch ?? row.available_in_any_branch),
     resolvedBranchCode: asText(row.resolvedBranchCode ?? row.resolved_branch_code),
+    registeredInBranch: asBooleanOrNull(row.registeredInBranch),
+    stockAvailableInBranch: asBooleanOrNull(row.stockAvailableInBranch),
+    stockAvailableInAnyBranch: asBooleanOrNull(row.stockAvailableInAnyBranch),
+    codeTotalStock: asNumberOrNull(row.codeTotalStock),
+    eanTotalStock: asNumberOrNull(row.eanTotalStock),
     branchProduct,
   };
 };
@@ -162,15 +188,20 @@ const mapItem = (input: unknown): AiSimilarProductSuggestion | null => {
 const mapResponse = (payload: unknown): AiSimilarProductSuggestion[] => {
   if (!payload || typeof payload !== "object") return [];
 
-  const rows = (payload as ApiSimilarProductsResponse).items;
+  const response = payload as ApiSimilarProductsResponse;
+  const rows = response.items;
   if (!Array.isArray(rows)) return [];
 
-  return rows.map((row) => mapItem(row)).filter((row): row is AiSimilarProductSuggestion => row !== null);
+  const responseSource = asText(response.source);
+  return rows
+    .map((row) => mapItem(row, responseSource))
+    .filter((row): row is AiSimilarProductSuggestion => row !== null);
 };
 
 interface SearchSimilarProductsParams {
   query: string;
   branchCode: string;
+  engine?: AiSimilarProductsEngine;
   topK?: number;
   limit?: number;
   minScore?: number;
@@ -180,32 +211,54 @@ export class AiSimilarProductsService {
   static async search(params: SearchSimilarProductsParams, signal?: AbortSignal): Promise<AiSimilarProductSuggestion[]> {
     const query = params.query.trim();
     const branchCode = params.branchCode.trim();
+    const engine = params.engine ?? "v2";
 
     if (!query || !branchCode) return [];
 
+    const body = {
+      query,
+      branchCode,
+      topK: params.topK ?? 30,
+      limit: params.limit ?? 10,
+      minScore: params.minScore ?? 0.7,
+    };
+    const requestedPath = engine === "legacy"
+      ? envs.AI_SIMILAR_PRODUCTS_FALLBACK_PATH
+      : engine === "semantic"
+        ? envs.AI_SIMILAR_PRODUCTS_SEMANTIC_PATH
+        : envs.AI_SIMILAR_PRODUCTS_PATH;
+
     try {
       const { data } = await aiHttpClient.post<unknown>(
-        "/api/ai/products/similar",
-        {
-          query,
-          branchCode,
-          topK: params.topK ?? 30,
-          limit: params.limit ?? 10,
-          minScore: params.minScore ?? 0.7,
-        },
-        { signal }
+        requestedPath,
+        body,
+        { signal },
       );
-
       return mapResponse(data);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-        if (status === 429) {
-          throw new Error("Límite de IA alcanzado. Espera 20 segundos e intenta de nuevo.");
-        }
+    } catch (primaryError) {
+      const fallbackPath = envs.AI_SIMILAR_PRODUCTS_FALLBACK_PATH;
+      const canFallback =
+        engine === "v2" &&
+        fallbackPath &&
+        fallbackPath !== requestedPath &&
+        this.shouldFallback(primaryError);
+
+      if (canFallback) {
+        const { data } = await aiHttpClient.post<unknown>(fallbackPath, body, { signal });
+        return mapResponse(data);
       }
 
-      throw error;
+      if (axios.isAxiosError(primaryError) && primaryError.response?.status === 429) {
+        throw new Error("Límite de IA alcanzado. Espera 20 segundos e intenta de nuevo.");
+      }
+
+      throw primaryError;
     }
+  }
+
+  private static shouldFallback(error: unknown): boolean {
+    if (!axios.isAxiosError(error)) return false;
+    const status = error.response?.status;
+    return typeof status === "undefined" || status === 404 || status >= 500;
   }
 }

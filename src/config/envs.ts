@@ -34,4 +34,16 @@ export const envs = {
     import.meta.env.VITE_EXTRACTOR_API_URL,
     "http://localhost:4500"
   ),
+  AI_SIMILAR_PRODUCTS_PATH: normalizePath(
+    pickFirst(import.meta.env.VITE_AI_SIMILAR_PRODUCTS_PATH, "/api/ai/products/similar-v2")
+  ),
+  AI_SIMILAR_PRODUCTS_SEMANTIC_PATH: normalizePath(
+    pickFirst(
+      import.meta.env.VITE_AI_SIMILAR_PRODUCTS_SEMANTIC_PATH,
+      "/api/ai/products/similar-v2/semantic"
+    )
+  ),
+  AI_SIMILAR_PRODUCTS_FALLBACK_PATH: normalizePath(
+    pickFirst(import.meta.env.VITE_AI_SIMILAR_PRODUCTS_FALLBACK_PATH, "/api/ai/products/similar")
+  ),
 };
