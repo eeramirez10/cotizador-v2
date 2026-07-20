@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, BadgeDollarSign, CheckCircle2, Clock3, FileChartColumn, PackageCheck, Percent, TrendingUp } from "lucide-react";
+import { Activity, BadgeDollarSign, CheckCircle2, Clock3, FileChartColumn, FileSpreadsheet, PackageCheck, Percent, TrendingUp } from "lucide-react";
 import { NavLink } from "react-router";
 import {
   Area,
@@ -85,6 +85,12 @@ const EmptyChart = () => <div className="flex h-full items-center justify-center
 const DashboardContent = ({ data, tab, currency }: { data: AnalyticsDashboard; tab: DashboardTab; currency: Currency }) => {
   const pipeline = data.pipeline.map((row) => ({ ...row, label: STATUS_LABELS[row.status] || row.status }));
   const channels = data.channels.map((row) => ({ ...row, label: CHANNEL_LABELS[row.channel] || row.channel }));
+  const captureMethods = (data.captureMethods ?? []).map((row) => ({
+    ...row,
+    label: row.method === "EXCEL_IMPORT" ? "Importadas desde Excel" : "Capturadas en el sistema",
+  }));
+  const systemCapture = captureMethods.find((row) => row.method === "SYSTEM") ?? { count: 0, amount: 0 };
+  const excelCapture = captureMethods.find((row) => row.method === "EXCEL_IMPORT") ?? { count: 0, amount: 0 };
   const attribution = [
     { label: "Directas", value: data.attribution.direct },
     { label: "Proporcionadas", value: data.attribution.provided },
@@ -102,6 +108,8 @@ const DashboardContent = ({ data, tab, currency }: { data: AnalyticsDashboard; t
         <KpiCard label="Pedidos generados" value={`${data.kpis.ordersGenerated}`} caption={formatMoney(data.kpis.orderAmount, currency)} icon={<PackageCheck className="h-5 w-5" />} />
         <KpiCard label="Pendientes" value={`${data.kpis.pending}`} caption="Borrador o pendiente" icon={<Clock3 className="h-5 w-5" />} />
         <KpiCard label="Partidas por revisar" value={`${data.kpis.pendingItems}`} caption="Sin vincular o con revisión" icon={<Activity className="h-5 w-5" />} />
+        <KpiCard label="Hechas en el sistema" value={`${systemCapture.count}`} caption="Todas las monedas del periodo" icon={<FileChartColumn className="h-5 w-5" />} />
+        <KpiCard label="Importadas desde Excel" value={`${excelCapture.count}`} caption="Todas las monedas del periodo" icon={<FileSpreadsheet className="h-5 w-5" />} />
       </section>
 
       {tab === "user" && (
@@ -175,6 +183,20 @@ const DashboardContent = ({ data, tab, currency }: { data: AnalyticsDashboard; t
               <PieChart>
                 <Pie data={attribution} dataKey="value" nameKey="label" innerRadius={58} outerRadius={92} paddingAngle={3}>
                   <Cell fill="#2563eb" /><Cell fill="#059669" />
+                </Pie>
+                <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Método de captura" subtitle="Adopción del cotizador frente a cotizaciones elaboradas en Excel.">
+          {captureMethods.length === 0 ? <EmptyChart /> : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={captureMethods} dataKey="count" nameKey="label" innerRadius={58} outerRadius={92} paddingAngle={3}>
+                  <Cell fill="#0f766e" /><Cell fill="#d97706" />
                 </Pie>
                 <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
                 <Legend />

@@ -62,6 +62,8 @@ export interface SavedQuoteRecord {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  captureMethod: "SYSTEM" | "EXCEL_IMPORT";
+  originalQuoteDate: string;
   rejectionReason: QuoteRejectionReason | null;
   rejectionComment: string | null;
   rejectedAt: string | null;
@@ -104,6 +106,7 @@ export interface SavedQuoteRecord {
     unitPrice: number;
     subtotal: number;
     sourceRequiresReview?: boolean;
+    importedFromExcel?: boolean;
     requiresReview: boolean;
   }>;
 }
@@ -148,6 +151,8 @@ interface ApiQuote {
   orderGeneratedAt: string | null;
   orderReference: string | null;
   sourceChannel: QuoteSourceChannel;
+  captureMethod: "SYSTEM" | "EXCEL_IMPORT";
+  originalQuoteDate: string | null;
   rejectionReason: QuoteRejectionReason | null;
   rejectionComment: string | null;
   rejectedAt: string | null;
@@ -308,6 +313,8 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
+    captureMethod: apiQuote.captureMethod || "SYSTEM",
+    originalQuoteDate: apiQuote.originalQuoteDate || "",
     rejectionReason: apiQuote.rejectionReason || null,
     rejectionComment: apiQuote.rejectionComment || null,
     rejectedAt: apiQuote.rejectedAt || null,
@@ -357,6 +364,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       sourceRequiresReview: item.sourceRequiresReview,
+      importedFromExcel: apiQuote.captureMethod === "EXCEL_IMPORT",
       requiresReview: item.requiresReview,
     })),
   };
@@ -368,6 +376,8 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   status: stored.status,
   createdByName: stored.createdByName,
   providedByName: stored.providedBy?.fullName ?? null,
+  captureMethod: stored.captureMethod,
+  originalQuoteDate: stored.originalQuoteDate || undefined,
   branch: stored.branchName ?? "Monterrey",
   currency: stored.currency,
   taxRate: stored.taxRate ?? 0.16,
@@ -610,6 +620,8 @@ export class QuotesService {
           paymentTerms: draft.paymentTerms,
           validityDays: draft.validityDays,
           sourceChannel: draft.sourceChannel,
+          captureMethod: draft.captureMethod,
+          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
           providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
         },
@@ -640,6 +652,8 @@ export class QuotesService {
           validityDays: draft.validityDays,
           origin,
           sourceChannel: draft.sourceChannel,
+          captureMethod: draft.captureMethod,
+          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
           providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
           items: extractionItems,
@@ -663,6 +677,8 @@ export class QuotesService {
           validityDays: draft.validityDays,
           origin,
           sourceChannel: draft.sourceChannel,
+          captureMethod: draft.captureMethod,
+          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
           providedByUserId: draft.providedBy?.id ?? null,
           notes: null,
         },

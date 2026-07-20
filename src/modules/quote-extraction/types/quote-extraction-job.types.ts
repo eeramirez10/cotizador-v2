@@ -10,6 +10,17 @@ export interface ExtractedQuoteItem {
   requiere_revision: boolean;
 }
 
+export interface ExtractedQuotedExcelItem {
+  description_original: string;
+  description_normalizada: string;
+  cantidad: number | null;
+  unidad: string | null;
+  precio_vendedor: number | null;
+  subtotal: number | null;
+  tiempo_entrega: string | null;
+  requiere_revision: boolean;
+}
+
 export interface ExtractionJobCreateResponse {
   job_id: string;
   status: ExtractionJobStatus;
@@ -36,6 +47,19 @@ export interface ExtractionJobResultResponse {
   job_id: string;
   status: ExtractionJobStatus;
   result?: ExtractionJobResultPayload;
+  error?: string | null;
+  message?: string;
+}
+
+export interface QuotedExcelExtractionJobResultResponse {
+  job_id: string;
+  status: ExtractionJobStatus;
+  result?: {
+    file_name: string;
+    file_type: string;
+    items_count: number;
+    items: ExtractedQuotedExcelItem[];
+  };
   error?: string | null;
   message?: string;
 }

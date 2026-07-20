@@ -3,10 +3,14 @@ import { persist } from "zustand/middleware";
 import type { User } from "../../interfaces/user.interface";
 import type { Client } from "../../modules/clients/types/client.types";
 import type { ErpProduct, ErpProductCurrency } from "../../modules/products/types/erp-product.types";
-import type { ExtractedQuoteItem } from "../../modules/quote-extraction/types/quote-extraction-job.types";
+import type {
+  ExtractedQuoteItem,
+  ExtractedQuotedExcelItem,
+} from "../../modules/quote-extraction/types/quote-extraction-job.types";
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 
 export type QuoteCurrency = "MXN" | "USD";
+export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
 export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 export type QuoteSourceChannel =
   | "UNSPECIFIED"
@@ -44,6 +48,7 @@ export interface ManualQuoteItem {
   unitPrice: number;
   subtotal: number;
   sourceRequiresReview: boolean;
+  importedFromExcel?: boolean;
   requiresReview: boolean;
 }
 
@@ -60,6 +65,8 @@ export interface ManualQuoteDraft {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  captureMethod: QuoteCaptureMethod;
+  originalQuoteDate: string;
   providedBy: QuoteProvider | null;
   createdByUserId: string | null;
   createdByName: string;
@@ -88,6 +95,8 @@ interface StoredQuote {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  captureMethod: QuoteCaptureMethod;
+  originalQuoteDate: string;
   providedBy: QuoteProvider | null;
   subtotal: number;
   tax: number;
@@ -122,6 +131,8 @@ interface HydrateQuoteInput {
   paymentTerms: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  captureMethod: QuoteCaptureMethod;
+  originalQuoteDate: string;
   providedBy?: QuoteProvider | null;
   client: HydrateQuoteClient | null;
   items: ManualQuoteItem[];
@@ -136,6 +147,7 @@ interface ManualQuoteState {
   setPaymentTerms: (paymentTerms: string) => void;
   setValidityDays: (validityDays: number) => void;
   setSourceChannel: (sourceChannel: QuoteSourceChannel) => void;
+  setOriginalQuoteDate: (originalQuoteDate: string) => void;
   setProvidedBy: (providedBy: QuoteProvider | null) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
@@ -145,6 +157,8 @@ interface ManualQuoteState {
   ) => void;
   setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
   addItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
+  setItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[]) => void;
+  addItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[]) => void;
   removeItem: (itemId: string) => void;
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
@@ -188,6 +202,8 @@ const newDraft = (): ManualQuoteDraft => ({
   paymentTerms: "CONTADO",
   validityDays: 10,
   sourceChannel: "UNSPECIFIED",
+  captureMethod: "SYSTEM",
+  originalQuoteDate: "",
   providedBy: null,
   createdByUserId: null,
   createdByName: "",
@@ -244,7 +260,9 @@ const computeItem = (
       : round(0);
   const marginPct = hasManualPrice ? calculateMarginPct(unitPrice, sellerPriceCostBase) : normalizedMarginPct;
   const subtotal = round(unitPrice * item.qty);
-  const requiresReview = item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
+  const requiresReview = item.importedFromExcel
+    ? !item.customerDescription.trim() || item.qty <= 0 || !item.unit.trim() || unitPrice <= 0 || !item.deliveryTime.trim()
+    : item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
 
   return {
     ...item,
@@ -269,13 +287,14 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         unit: item.unit,
         qty: item.qty,
         stock: item.stock,
-        deliveryTime: item.stock > 0 ? "Inmediato" : item.deliveryTime,
+        deliveryTime: item.stock > 0 && !item.importedFromExcel ? "Inmediato" : item.deliveryTime,
         itemComment: item.itemComment,
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
         manualUnitPrice: item.manualUnitPrice,
         sourceRequiresReview: item.sourceRequiresReview,
+        importedFromExcel: item.importedFromExcel,
       },
       currency,
       exchangeRate
@@ -308,6 +327,38 @@ const createItemsFromExtraction = (
         marginPct: 0,
         manualUnitPrice: undefined,
         sourceRequiresReview: item.requiere_revision,
+      },
+      currency,
+      exchangeRate
+    )
+  );
+
+const createItemsFromQuotedExcel = (
+  items: ExtractedQuotedExcelItem[],
+  currency: QuoteCurrency,
+  exchangeRate: number
+): ManualQuoteItem[] =>
+  items.map((item) =>
+    computeItem(
+      {
+        id: `itm_${Math.random().toString(36).slice(2, 10)}`,
+        localProductId: null,
+        erpCode: "",
+        ean: "",
+        customerDescription: (item.description_normalizada || item.description_original || "").trim().toUpperCase(),
+        customerUnit: (item.unidad || "").trim(),
+        erpDescription: "",
+        unit: (item.unidad || "").trim(),
+        qty: item.cantidad ?? 0,
+        stock: 0,
+        deliveryTime: (item.tiempo_entrega || "").trim(),
+        itemComment: "",
+        costUsd: 0,
+        costCurrency: currency,
+        marginPct: 0,
+        manualUnitPrice: item.precio_vendedor ?? undefined,
+        sourceRequiresReview: item.requiere_revision,
+        importedFromExcel: true,
       },
       currency,
       exchangeRate
@@ -399,6 +450,11 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       },
     })),
 
+  setOriginalQuoteDate: (originalQuoteDate) =>
+    set((state) => ({
+      draft: { ...state.draft, originalQuoteDate },
+    })),
+
   setProvidedBy: (providedBy) =>
     set((state) => ({
       draft: {
@@ -451,12 +507,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           erpDescription: product.description,
           unit: product.unit,
           stock: product.stock,
-          deliveryTime: deliverySuggestion(product.stock, product.costUsd),
+          deliveryTime: item.importedFromExcel
+            ? item.deliveryTime
+            : deliverySuggestion(product.stock, product.costUsd),
           costUsd: product.costUsd,
           costCurrency: product.costCurrency,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
-          manualUnitPrice: undefined,
+          manualUnitPrice: item.importedFromExcel ? item.manualUnitPrice : undefined,
         };
       });
 
@@ -481,7 +539,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           erpDescription: item.erpDescription.trim() || localProduct.description,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
-          manualUnitPrice: undefined,
+          manualUnitPrice: item.importedFromExcel ? item.manualUnitPrice : undefined,
         };
       });
 
@@ -514,6 +572,33 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         savedQuoteId: null,
         status: "BORRADOR",
         items: [...state.draft.items, ...createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate)],
+      },
+    })),
+
+  setItemsFromQuotedExcel: (items) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        savedQuoteId: null,
+        status: "BORRADOR",
+        captureMethod: "EXCEL_IMPORT",
+        originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
+        items: createItemsFromQuotedExcel(items, state.draft.currency, state.draft.exchangeRate),
+      },
+    })),
+
+  addItemsFromQuotedExcel: (items) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        savedQuoteId: null,
+        status: "BORRADOR",
+        captureMethod: "EXCEL_IMPORT",
+        originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
+        items: [
+          ...state.draft.items,
+          ...createItemsFromQuotedExcel(items, state.draft.currency, state.draft.exchangeRate),
+        ],
       },
     })),
 
@@ -582,11 +667,15 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => ({
       draft: {
         ...state.draft,
-        items: state.draft.items.map((item) => {
-          if (item.id !== itemId) return item;
-          if (item.stock > 0) return { ...item, deliveryTime: "Inmediato" };
-          return { ...item, deliveryTime };
-        }),
+        items: recalcItems(
+          state.draft.items.map((item) => {
+            if (item.id !== itemId) return item;
+            if (item.stock > 0) return { ...item, deliveryTime: "Inmediato" };
+            return { ...item, deliveryTime };
+          }),
+          state.draft.currency,
+          state.draft.exchangeRate
+        ),
       },
     })),
 
@@ -649,6 +738,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           paymentTerms: quote.paymentTerms,
           validityDays: quote.validityDays,
           sourceChannel: quote.sourceChannel || "UNSPECIFIED",
+          captureMethod: quote.captureMethod || "SYSTEM",
+          originalQuoteDate: quote.originalQuoteDate || "",
           providedBy: quote.providedBy || null,
           createdByUserId: quote.createdByUserId,
           createdByName: quote.createdByName,
@@ -694,6 +785,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         paymentTerms: stored.paymentTerms || "CONTADO",
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         sourceChannel: stored.sourceChannel || "UNSPECIFIED",
+        captureMethod: stored.captureMethod || "SYSTEM",
+        originalQuoteDate: stored.originalQuoteDate || "",
         providedBy: stored.providedBy || null,
         createdByUserId: stored.createdByUserId,
         createdByName: stored.createdByName,
@@ -741,6 +834,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       paymentTerms: state.draft.paymentTerms,
       validityDays: state.draft.validityDays,
       sourceChannel: state.draft.sourceChannel,
+      captureMethod: state.draft.captureMethod,
+      originalQuoteDate: state.draft.originalQuoteDate,
       providedBy: state.draft.providedBy,
       subtotal: state.subtotal(),
       tax: state.tax(),

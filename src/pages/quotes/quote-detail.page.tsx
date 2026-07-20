@@ -922,6 +922,11 @@ export const QuoteDetailPage = () => {
 
         <div className="flex flex-wrap gap-2">
           <span className={` flex justify-center items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeClass}`}>{quote.status}</span>
+          {quote.captureMethod === "EXCEL_IMPORT" && (
+            <span className="flex items-center rounded-full bg-teal-100 px-2 py-1 text-xs font-semibold text-teal-700">
+              IMPORTADA EXCEL
+            </span>
+          )}
 
           <button
             onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
@@ -1056,6 +1061,16 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Origen de la cotización</p>
           <p className="text-sm text-gray-700">{sourceChannelLabel[quote.sourceChannel]}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase text-gray-500">Método de captura</p>
+          <p className="text-sm text-gray-700">
+            {quote.captureMethod === "EXCEL_IMPORT" ? "Importada desde Excel" : "Capturada en el sistema"}
+          </p>
+          {quote.captureMethod === "EXCEL_IMPORT" && quote.originalQuoteDate && (
+            <p className="mt-1 text-xs text-gray-500">Fecha original: {formatDate(quote.originalQuoteDate)}</p>
+          )}
         </div>
 
         {quote.rejectionReason && (
@@ -1198,8 +1213,10 @@ export const QuoteDetailPage = () => {
                     <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700">ERP</span>
                   ) : item.localProductId ? (
                     <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">LOCAL_TEMP</span>
+                  ) : quote.captureMethod === "EXCEL_IMPORT" ? (
+                    <span className="rounded-full bg-teal-100 px-2 py-1 text-[10px] font-semibold text-teal-700">EXCEL · SIN VINCULAR</span>
                   ) : (
-                    <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">SIN VINCULAR</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">EXTRACCIÓN · SIN VINCULAR</span>
                   )}
                 </td>
                 {showCustomerExtractionColumns && showCustomerOrderColumns && (

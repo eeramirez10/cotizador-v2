@@ -50,6 +50,8 @@ export interface Quote {
     | "CANCELADA";
   createdByName?: string;
   providedByName?: string | null;
+  captureMethod: "SYSTEM" | "EXCEL_IMPORT";
+  originalQuoteDate?: string;
   branch?: string;
   currency: Currency;
   taxRate: number;

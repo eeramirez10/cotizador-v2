@@ -33,6 +33,9 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
               Fecha
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Captura
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Estatus
             </th>
             <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -44,7 +47,7 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
         <tbody className="divide-y divide-gray-200 bg-white">
           {(!quotes || quotes.length === 0) && (
             <tr>
-              <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
+              <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
                 Aun no has generado cotizaciones.
               </td>
             </tr>
@@ -71,6 +74,15 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.createdByName || "-"}</td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{quote.providedByName || "Directa"}</td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{quote.createdAt}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-xs">
+                <span className={`rounded-full px-2 py-1 font-semibold ${
+                  quote.captureMethod === "EXCEL_IMPORT"
+                    ? "bg-teal-100 text-teal-700"
+                    : "bg-slate-100 text-slate-600"
+                }`}>
+                  {quote.captureMethod === "EXCEL_IMPORT" ? "EXCEL" : "SISTEMA"}
+                </span>
+              </td>
               <td className="whitespace-nowrap px-6 py-4 text-xs">
                 <span
                   className={`rounded-full px-2 py-1 font-semibold ${
@@ -118,6 +130,7 @@ const QuotesTableSkelleton: React.FC<QuotesTableSkelletonProps> = (props) => {
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Vendedor</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ">Proporcionada por</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Fecha</div>
+        <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Captura</div>
         <div className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estatus</div>
         <div className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</div>
       </div>

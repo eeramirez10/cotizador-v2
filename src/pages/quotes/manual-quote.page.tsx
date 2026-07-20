@@ -1,4 +1,4 @@
-import { FileCheck2, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, Trash2, X } from "lucide-react";
+import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -6,6 +6,7 @@ import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
 import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
+import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -129,6 +130,8 @@ export const ManualQuotePage = () => {
   const [commentItemId, setCommentItemId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [extractionModal, setExtractionModal] = useState<"file" | "text" | null>(null);
+  const [openQuotedExcelImport, setOpenQuotedExcelImport] = useState(false);
+  const [showCancelEditConfirmation, setShowCancelEditConfirmation] = useState(false);
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
   const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
   const navigate = useNavigate();
@@ -154,6 +157,7 @@ export const ManualQuotePage = () => {
   const setPaymentTerms = useManualQuoteStore((state) => state.setPaymentTerms);
   const setValidityDays = useManualQuoteStore((state) => state.setValidityDays);
   const setSourceChannel = useManualQuoteStore((state) => state.setSourceChannel);
+  const setOriginalQuoteDate = useManualQuoteStore((state) => state.setOriginalQuoteDate);
   const setProvidedBy = useManualQuoteStore((state) => state.setProvidedBy);
   const addProductFromErp = useManualQuoteStore((state) => state.addProductFromErp);
   const assignErpProductToItem = useManualQuoteStore((state) => state.assignErpProductToItem);
@@ -398,9 +402,14 @@ export const ManualQuotePage = () => {
       return false;
     }
 
+    if (draft.captureMethod === "EXCEL_IMPORT" && !draft.originalQuoteDate) {
+      notifier.warning("Indica la fecha original de la cotización importada.");
+      return false;
+    }
+
     if (options?.requireCompletedItems) {
       const unlinkedItems = draft.items.filter((item) => !item.erpCode.trim() && !(item.localProductId || "").trim());
-      if (unlinkedItems.length > 0) {
+      if (draft.captureMethod !== "EXCEL_IMPORT" && unlinkedItems.length > 0) {
         notifier.error(
           `No puedes generar la cotización. Hay ${unlinkedItems.length} partida(s) pendiente(s) de vincular a ERP o producto local.`
         );
@@ -492,6 +501,26 @@ export const ManualQuotePage = () => {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {draft.savedQuoteId && (
+            <button
+              onClick={() => setShowCancelEditConfirmation(true)}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <X className="h-4 w-4" />
+              Cancelar edición
+            </button>
+          )}
+
+          <button
+            onClick={() => setOpenQuotedExcelImport(true)}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Importar cotización Excel
+          </button>
+
           <button
             onClick={() => setExtractionModal("file")}
             disabled={saving}
@@ -545,6 +574,25 @@ export const ManualQuotePage = () => {
           </button>
         </div>
       </div>
+
+      {draft.captureMethod === "EXCEL_IMPORT" && (
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase text-teal-800">Cotización importada desde Excel</p>
+            <p className="mt-1 text-xs text-teal-700">Las partidas pueden cotizarse sin vincular. La vinculación con ERP será obligatoria al generar el pedido.</p>
+          </div>
+          <label className="text-xs font-semibold uppercase text-teal-800" htmlFor="originalQuoteDate">
+            Fecha original *
+            <input
+              id="originalQuoteDate"
+              type="date"
+              value={draft.originalQuoteDate}
+              onChange={(event) => setOriginalQuoteDate(event.target.value)}
+              className="mt-1 block rounded-md border border-teal-300 bg-white px-2 py-1.5 text-sm font-normal text-gray-700"
+            />
+          </label>
+        </div>
+      )}
 
       <div className="mb-4 grid gap-3 rounded-md border shadow-sm border-gray-200 bg-white p-4 lg:grid-cols-6">
         <div>
@@ -808,7 +856,9 @@ export const ManualQuotePage = () => {
               {shouldShowCustomerColumns && (
                 <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM cliente</th>
               )}
-              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción ERP</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">
+                {draft.captureMethod === "EXCEL_IMPORT" ? "Descripción" : "Descripción ERP"}
+              </th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Tiempo entrega</th>
@@ -850,19 +900,30 @@ export const ManualQuotePage = () => {
                       <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700">ERP</span>
                     ) : item.localProductId ? (
                       <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">LOCAL_TEMP</span>
+                    ) : item.importedFromExcel ? (
+                      <span className="rounded-full bg-teal-100 px-2 py-1 text-[9px] font-semibold text-teal-700">EXCEL · SIN VINCULAR</span>
                     ) : (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-semibold text-amber-700">VINCULAR</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-semibold text-amber-700">EXTRACCIÓN · VINCULAR</span>
                     )}
                   </td>
                   {shouldShowCustomerColumns && (
                     <td className="px-4 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>
                   )}
                   {shouldShowCustomerColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
-                  <td className="px-4 py-2 text-xs text-gray-700">{item.erpDescription || "-"}</td>
+                  <td className="px-4 py-2 text-xs text-gray-700">
+                    {item.erpDescription || (item.importedFromExcel ? item.customerDescription : "-")}
+                  </td>
                   <td className="px-4 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.stock}</td>
                   <td className="px-4 py-2">
-                    {item.stock > 0 ? (
+                    {item.importedFromExcel ? (
+                      <input
+                        value={item.deliveryTime}
+                        onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
+                        placeholder="Ej. 3-5 días"
+                        className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
+                      />
+                    ) : item.stock > 0 ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
                         Inmediato
                       </span>
@@ -1147,6 +1208,14 @@ export const ManualQuotePage = () => {
           }}
         />
       )}
+      <QuotedExcelImportModal
+        open={openQuotedExcelImport}
+        onClose={() => setOpenQuotedExcelImport(false)}
+        onCompleted={(itemsCount) => {
+          setOpenQuotedExcelImport(false);
+          notifier.success(`${itemsCount} partida(s) importada(s) desde Excel.`);
+        }}
+      />
       <SelectQuoteProviderModal
         open={openQuoteProviderModal}
         onClose={() => setOpenQuoteProviderModal(false)}
@@ -1194,6 +1263,35 @@ export const ManualQuotePage = () => {
                 className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
               >
                 Confirmar y guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCancelEditConfirmation && draft.savedQuoteId && (
+        <div className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-semibold text-gray-800">Cancelar edición</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Se descartarán todos los cambios que no hayas guardado en esta cotización.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancelEditConfirmation(false)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Continuar editando
+              </button>
+              <button
+                onClick={() => {
+                  const quoteId = draft.savedQuoteId;
+                  setShowCancelEditConfirmation(false);
+                  clearDraft();
+                  navigate(`/quotes/${quoteId}`);
+                }}
+                className="rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Descartar cambios
               </button>
             </div>
           </div>

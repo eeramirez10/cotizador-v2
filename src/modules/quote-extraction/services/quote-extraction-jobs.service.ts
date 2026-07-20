@@ -3,6 +3,7 @@ import type {
   ExtractionJobCreateResponse,
   ExtractionJobResultResponse,
   ExtractionJobStatusResponse,
+  QuotedExcelExtractionJobResultResponse,
 } from "../types/quote-extraction-job.types";
 
 const sleep = (ms: number) =>
@@ -28,6 +29,17 @@ export class QuoteExtractionJobsService {
     const { data } = await aiHttpClient.post<ExtractionJobCreateResponse>("/api/extract/jobs/text", {
       text: payload.text,
       source: payload.source ?? "manual",
+    });
+
+    return data;
+  }
+
+  static async createQuotedExcelJob(file: File): Promise<ExtractionJobCreateResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const { data } = await aiHttpClient.post<ExtractionJobCreateResponse>("/api/extract/jobs/quoted-excel", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
 
     return data;
@@ -79,5 +91,17 @@ export class QuoteExtractionJobsService {
     }
 
     throw new Error("Tiempo de espera agotado al procesar la extracción.");
+  }
+
+  static async waitForQuotedExcelCompletion(
+    jobId: string,
+    options?: {
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+      onStatus?: (status: ExtractionJobStatusResponse) => void;
+    }
+  ): Promise<QuotedExcelExtractionJobResultResponse> {
+    const result = await this.waitForCompletion(jobId, options);
+    return result as unknown as QuotedExcelExtractionJobResultResponse;
   }
 }
