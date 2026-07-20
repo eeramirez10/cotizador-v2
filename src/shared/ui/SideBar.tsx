@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Building2, ContactRound, DollarSign, FileUp, LucideLayoutDashboard, Package, Power, UserRound, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, ContactRound, DollarSign, FileUp, LucideLayoutDashboard, Package, Power, ShieldCheck, UserRound, Users } from "lucide-react";
 import { Form, NavLink } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
@@ -12,6 +12,7 @@ export const SideBar = () => {
   const canGenerateQuotes = role === "seller";
   const canAccessUsers = role === "admin" || role === "manager";
   const canAccessBranches = role === "admin";
+  const canApproveQuotes = role === "admin" || role === "manager";
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
   const active = "bg-gray-100 text-gray-900";
@@ -23,6 +24,7 @@ export const SideBar = () => {
     { name: "Dashboard", to: "/home", icon: <LucideLayoutDashboard /> },
     ...(canGenerateQuotes ? [{ name: "Cotizador", to: "/cotizador", icon: <FileUp /> }] : []),
     { name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> },
+    ...(canApproveQuotes ? [{ name: "Aprobar cotizaciones", to: "/quote-approvals", icon: <ShieldCheck /> }] : []),
     { name: "Indicadores", to: "/analytics", icon: <BarChart3 /> },
     { name: "Clientes", to: "/clients", icon: <ContactRound /> },
     { name: "Productos", to: "/products", icon: <Package /> },

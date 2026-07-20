@@ -3,10 +3,10 @@ import { QuotesService } from "../../modules/quotes/services/quotes.service";
 
 const quotesKeys = {
   all: ["quotes"] as const,
-  list: (params: { page: number; pageSize: number }) => [...quotesKeys.all, "list", params] as const,
+  list: (params: { page: number; pageSize: number; status?: "PENDING_APPROVAL" }) => [...quotesKeys.all, "list", params] as const,
 };
 
-export const useQuotes = (params: { page: number; pageSize: number }) => {
+export const useQuotes = (params: { page: number; pageSize: number; status?: "PENDING_APPROVAL" }) => {
   return useQuery({
     queryKey: quotesKeys.list(params),
     queryFn: () => QuotesService.list(params),

@@ -11,7 +11,7 @@ import type { LocalProductBatchResultItem } from "../../modules/products/service
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
-export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
+export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 export type QuoteSourceChannel =
   | "UNSPECIFIED"
   | "EMAIL"

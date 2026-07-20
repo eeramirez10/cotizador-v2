@@ -9,7 +9,7 @@ import type {
   QuoteSourceChannel,
 } from "../../../store/quote/manual-quote.store";
 
-export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
+export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
 export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
@@ -35,6 +35,15 @@ export type QuoteCancellationReason =
   | "REPLACED_BY_REVISION"
   | "OUT_OF_SCOPE"
   | "ADMINISTRATIVE"
+  | "OTHER";
+export type QuoteApprovalReturnReason =
+  | "MARGIN_TOO_LOW"
+  | "PRICE_BELOW_POLICY"
+  | "INCORRECT_COST"
+  | "INCORRECT_PRICE"
+  | "MISSING_INFORMATION"
+  | "COMMERCIAL_TERMS"
+  | "DELIVERY_TIME"
   | "OTHER";
 
 export interface SavedQuoteRecord {
@@ -72,6 +81,10 @@ export interface SavedQuoteRecord {
   cancellationComment: string | null;
   cancelledAt: string | null;
   cancelledByUser: { id: string; firstName: string; lastName: string } | null;
+  approvalReturnReason: QuoteApprovalReturnReason | null;
+  approvalReturnComment: string | null;
+  authorizedByUser: { id: string; firstName: string; lastName: string } | null;
+  authorizedAt: string | null;
   providedBy: { id: string; fullName: string; branchName: string; branchCode: string } | null;
   validUntil: string;
   subtotal: number;
@@ -144,7 +157,7 @@ interface ApiQuoteItem {
 interface ApiQuote {
   id: string;
   quoteNumber: string;
-  status: "DRAFT" | "PENDING" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status: "DRAFT" | "PENDING" | "PENDING_APPROVAL" | "CHANGES_REQUESTED" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED";
   deliveryStatus: "NOT_SENT" | "SENT";
   firstSentAt: string | null;
   orderStatus: "NOT_GENERATED" | "GENERATED";
@@ -161,6 +174,8 @@ interface ApiQuote {
   cancellationComment: string | null;
   cancelledAt: string | null;
   cancelledByUser: { id: string; firstName: string; lastName: string } | null;
+  approvalReturnReason: QuoteApprovalReturnReason | null;
+  approvalReturnComment: string | null;
   providedByUserId: string | null;
   providedByNameSnapshot: string | null;
   providedByBranchNameSnapshot: string | null;
@@ -191,6 +206,11 @@ interface ApiQuote {
     firstName: string;
     lastName: string;
   };
+  events: Array<{
+    status: string;
+    createdAt: string;
+    actorUser: { id: string; firstName: string; lastName: string } | null;
+  }>;
   items: ApiQuoteItem[];
   createdAt: string;
   updatedAt: string;
@@ -250,6 +270,8 @@ const formatDate = (iso: string): string => {
 const mapApiStatusToSaved = (status: ApiQuote["status"]): SavedQuoteStatus => {
   if (status === "DRAFT") return "BORRADOR";
   if (status === "PENDING") return "PENDIENTE";
+  if (status === "PENDING_APPROVAL") return "PENDIENTE_APROBACION";
+  if (status === "CHANGES_REQUESTED") return "CAMBIOS_SOLICITADOS";
   if (status === "QUOTED") return "COTIZADA";
   if (status === "APPROVED") return "APROBADA";
   if (status === "REJECTED") return "RECHAZADA";
@@ -287,6 +309,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
   const customerName = legalName || person.name || apiQuote.customer.displayName;
   const customerLastName = legalName ? "" : person.lastname;
   const companyName = legalName || apiQuote.customer.displayName;
+  const authorizationEvent = apiQuote.events.find(
+    (event) => event.status === "QUOTED" && event.actorUser
+  );
 
   return {
     quoteId: apiQuote.id,
@@ -323,6 +348,10 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     cancellationComment: apiQuote.cancellationComment || null,
     cancelledAt: apiQuote.cancelledAt || null,
     cancelledByUser: apiQuote.cancelledByUser || null,
+    approvalReturnReason: apiQuote.approvalReturnReason || null,
+    approvalReturnComment: apiQuote.approvalReturnComment || null,
+    authorizedByUser: authorizationEvent?.actorUser || null,
+    authorizedAt: authorizationEvent?.createdAt || null,
     providedBy: apiQuote.providedByUserId && apiQuote.providedByNameSnapshot
       ? {
           id: apiQuote.providedByUserId,
@@ -539,30 +568,26 @@ const getRawQuoteById = async (quoteId: string): Promise<ApiQuote | null> => {
   }
 };
 
-const ensureQuotedStatus = async (quoteId: string): Promise<boolean> => {
+const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
   const current = await getRawQuoteById(quoteId);
   if (!current) return false;
 
-  if (current.status === "QUOTED" || current.status === "APPROVED") {
+  if (current.status === "QUOTED" || current.status === "APPROVED" || current.status === "PENDING_APPROVAL") {
+    if (current.status !== "PENDING_APPROVAL") return true;
+
+    await coreHttpClient.patch(
+      `/api/quotes/${quoteId}/status`,
+      { status: "QUOTED", note: "Quote approved internally." },
+      { headers: requireAuthHeaders() }
+    );
     return true;
   }
 
-  if (current.status === "DRAFT") {
-    await coreHttpClient.patch(
-      `/api/quotes/${quoteId}/status`,
-      { status: "PENDING", note: "Moved to pending from frontend workflow." },
-      { headers: requireAuthHeaders() }
-    );
-  }
-
-  const refreshed = await getRawQuoteById(quoteId);
-  if (!refreshed) return false;
-  if (refreshed.status === "QUOTED" || refreshed.status === "APPROVED") return true;
-  if (refreshed.status !== "PENDING") return false;
+  if (!["DRAFT", "PENDING", "CHANGES_REQUESTED"].includes(current.status)) return false;
 
   await coreHttpClient.patch(
     `/api/quotes/${quoteId}/status`,
-    { status: "QUOTED", note: "Marked as quoted from frontend workflow." },
+    { status: "PENDING_APPROVAL", note: "Quote submitted for internal approval." },
     { headers: requireAuthHeaders() }
   );
 
@@ -570,12 +595,12 @@ const ensureQuotedStatus = async (quoteId: string): Promise<boolean> => {
 };
 
 export class QuotesService {
-  static async list(params: { page?: number; pageSize?: number }): Promise<PageResult<Quote>> {
+  static async list(params: { page?: number; pageSize?: number; status?: ApiQuote["status"] }): Promise<PageResult<Quote>> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;
 
     const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuote>>("/api/quotes", {
-      params: { page, pageSize },
+      params: { page, pageSize, status: params.status },
       headers: requireAuthHeaders(),
     });
 
@@ -696,8 +721,8 @@ export class QuotesService {
     }
 
     if (options.status === "COTIZADA") {
-      const success = await ensureQuotedStatus(quoteId);
-      if (!success) throw new Error("No se pudo mover la cotización a COTIZADA.");
+      const success = await advanceQuoteApproval(quoteId);
+      if (!success) throw new Error("No se pudo enviar la cotización a aprobación.");
     }
 
     return quoteId;
@@ -707,14 +732,44 @@ export class QuotesService {
     quoteId: string,
     status: SavedQuoteStatus,
     rejection?: { reason: QuoteRejectionReason; comment?: string },
-    cancellation?: { reason: QuoteCancellationReason; comment?: string }
+    cancellation?: { reason: QuoteCancellationReason; comment?: string },
+    approvalReturn?: { reason: QuoteApprovalReturnReason; comment?: string }
   ): Promise<boolean> {
     try {
       const current = await getRawQuoteById(quoteId);
       if (!current) return false;
 
       if (status === "COTIZADA") {
-        return ensureQuotedStatus(quoteId);
+        return advanceQuoteApproval(quoteId);
+      }
+
+      if (status === "PENDIENTE_APROBACION") {
+        if (current.status === "PENDING_APPROVAL") return true;
+        if (!["DRAFT", "PENDING", "CHANGES_REQUESTED"].includes(current.status)) return false;
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          { status: "PENDING_APPROVAL", note: "Quote submitted for internal approval." },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
+      }
+
+      if (status === "CAMBIOS_SOLICITADOS") {
+        if (current.status === "CHANGES_REQUESTED") return true;
+        if (current.status !== "PENDING_APPROVAL" || !approvalReturn?.reason) return false;
+        if (approvalReturn.reason === "OTHER" && !approvalReturn.comment?.trim()) {
+          throw new Error("Escribe el detalle del motivo de devolución.");
+        }
+        await coreHttpClient.patch(
+          `/api/quotes/${quoteId}/status`,
+          {
+            status: "CHANGES_REQUESTED",
+            approvalReturnReason: approvalReturn.reason,
+            approvalReturnComment: approvalReturn.comment?.trim() || null,
+          },
+          { headers: requireAuthHeaders() }
+        );
+        return true;
       }
 
       if (status === "CANCELADA") {

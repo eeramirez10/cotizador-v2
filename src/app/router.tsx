@@ -13,6 +13,7 @@ import { ClientsPage } from "../pages/clients/clients.page";
 import { ProductsPage } from "../pages/products/products.page";
 import { UsersPage } from "../pages/users/users.page";
 import { BranchesPage } from "../pages/branches/branches.page";
+import { QuoteApprovalsPage } from "../pages/quotes/quote-approvals.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -79,6 +80,12 @@ export const appRouter = createBrowserRouter([
         path: "quotes/:quoteId",
         handle: { title: "Detalle de Cotización" },
         Component: QuoteDetailPage,
+      },
+      {
+        path: "quote-approvals",
+        loader: requireRolesLoader(["admin", "manager"]),
+        handle: { title: "Aprobación de Cotizaciones" },
+        Component: QuoteApprovalsPage,
       },
       {
         path: "user",

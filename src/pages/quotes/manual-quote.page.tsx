@@ -175,7 +175,7 @@ export const ManualQuotePage = () => {
   const tax = useManualQuoteStore((state) => state.tax);
   const total = useManualQuoteStore((state) => state.total);
   const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
-  const isProviderAttributionLocked = ["COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA"].includes(draft.status);
+  const isProviderAttributionLocked = ["PENDIENTE_APROBACION", "COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA"].includes(draft.status);
 
   useEffect(() => {
     if (quoteIdFromQuery) {
@@ -479,7 +479,7 @@ export const ManualQuotePage = () => {
       setSaving(true);
       const quoteId = await QuotesService.createFromDraft(draft, { status: "COTIZADA", origin: quoteOrigin });
       clearDraft();
-      notifier.success(`Cotización ${quoteId} generada como COTIZADA.`);
+      notifier.success(`Cotización ${quoteId} enviada a aprobación.`);
       navigate("/quotes");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo generar la cotización.";

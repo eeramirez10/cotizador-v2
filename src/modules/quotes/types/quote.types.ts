@@ -44,6 +44,8 @@ export interface Quote {
     | "PENDING"
     | "BORRADOR"
     | "PENDIENTE"
+    | "PENDIENTE_APROBACION"
+    | "CAMBIOS_SOLICITADOS"
     | "COTIZADA"
     | "APROBADA"
     | "RECHAZADA"

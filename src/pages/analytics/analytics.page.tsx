@@ -30,6 +30,8 @@ const CHART_COLORS = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Borrador",
   PENDING: "Pendiente",
+  PENDING_APPROVAL: "Pendiente de aprobación",
+  CHANGES_REQUESTED: "Cambios solicitados",
   QUOTED: "Cotizada",
   APPROVED: "Aprobada",
   REJECTED: "Rechazada",

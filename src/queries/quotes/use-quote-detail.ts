@@ -3,6 +3,7 @@ import {
   QuotesService,
   type QuoteCancellationReason,
   type QuoteRejectionReason,
+  type QuoteApprovalReturnReason,
   type SavedQuoteStatus,
 } from "../../modules/quotes/services/quotes.service";
 
@@ -31,12 +32,14 @@ export const useUpdateQuoteStatus = () => {
       status,
       rejection,
       cancellation,
+      approvalReturn,
     }: {
       quoteId: string;
       status: SavedQuoteStatus;
       rejection?: { reason: QuoteRejectionReason; comment?: string };
       cancellation?: { reason: QuoteCancellationReason; comment?: string };
-    }) => QuotesService.updateStatus(quoteId, status, rejection, cancellation),
+      approvalReturn?: { reason: QuoteApprovalReturnReason; comment?: string };
+    }) => QuotesService.updateStatus(quoteId, status, rejection, cancellation, approvalReturn),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });

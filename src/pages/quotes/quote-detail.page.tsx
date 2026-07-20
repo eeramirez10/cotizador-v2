@@ -8,6 +8,7 @@ import {
   Pencil,
   Printer,
   Send,
+  ShieldCheck,
   ShoppingCart,
   ThumbsDown,
   ThumbsUp,
@@ -30,10 +31,13 @@ import {
   useUpdateQuoteStatus,
 } from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
+import { useAuthStore } from "../../store/auth/auth.store";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
   PENDIENTE: "bg-amber-100 text-amber-700",
+  PENDIENTE_APROBACION: "bg-cyan-100 text-cyan-700",
+  CAMBIOS_SOLICITADOS: "bg-amber-100 text-amber-800",
   COTIZADA: "bg-emerald-100 text-emerald-700",
   APROBADA: "bg-blue-100 text-blue-700",
   RECHAZADA: "bg-orange-100 text-orange-700",
@@ -399,6 +403,8 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
 });
 
 export const QuoteDetailPage = () => {
+  const currentUser = useAuthStore((state) => state.user);
+  const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
@@ -525,8 +531,9 @@ export const QuoteDetailPage = () => {
   const deliverySummary = Array.from(
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
   );
-  const canMarkQuoted = quote.status === "BORRADOR" || quote.status === "PENDIENTE";
-  const canEditQuote = quote.status !== "CANCELADA";
+  const canSubmitApproval = currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
+  const canApproveInternally = ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
+  const canEditQuote = currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
   const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
@@ -630,16 +637,27 @@ export const QuoteDetailPage = () => {
     });
   };
 
-  const handleMarkQuoted = async () => {
+  const handleSubmitApproval = async () => {
     await runActionWithToast({
-      loadingMessage: "Actualizando estatus a COTIZADA...",
-      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "COTIZADA" }),
+      loadingMessage: "Enviando cotización a aprobación...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "PENDIENTE_APROBACION" }),
       isSuccess: (result) => Boolean(result),
-      successMessage: "Estatus actualizado a COTIZADA.",
-      errorMessage: "No se pudo actualizar el estatus.",
+      successMessage: "Cotización enviada a aprobación.",
+      errorMessage: "No se pudo enviar a aprobación.",
       onSuccess: async () => {
         await refetch();
       },
+    });
+  };
+
+  const handleInternalApproval = async () => {
+    await runActionWithToast({
+      loadingMessage: "Autorizando cotización...",
+      action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "COTIZADA" }),
+      isSuccess: (result) => Boolean(result),
+      successMessage: "Cotización autorizada y marcada como COTIZADA.",
+      errorMessage: "No se pudo autorizar la cotización.",
+      onSuccess: async () => { await refetch(); },
     });
   };
 
@@ -991,14 +1009,25 @@ export const QuoteDetailPage = () => {
             </button>
           )}
 
-          {canMarkQuoted && (
+          {canSubmitApproval && (
             <button
-              onClick={handleMarkQuoted}
+              onClick={handleSubmitApproval}
               disabled={isActionLocked}
               className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
             >
               <CheckCircle2 className="h-4 w-4" />
-              Marcar cotizada
+              Enviar a aprobación
+            </button>
+          )}
+
+          {canApproveInternally && (
+            <button
+              onClick={handleInternalApproval}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Autorizar cotización
             </button>
           )}
 
@@ -1042,6 +1071,18 @@ export const QuoteDetailPage = () => {
           <p className="text-xs font-semibold uppercase text-gray-500">Vendedor</p>
           <p className="text-sm text-gray-700">{quote.createdByName || "-"}</p>
         </div>
+
+        {quote.authorizedByUser && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-500">Autorizada por</p>
+            <p className="text-sm text-gray-700">
+              {`${quote.authorizedByUser.firstName} ${quote.authorizedByUser.lastName}`.trim()}
+            </p>
+            {quote.authorizedAt && (
+              <p className="mt-1 text-xs text-gray-500">{formatDate(quote.authorizedAt)}</p>
+            )}
+          </div>
+        )}
 
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Sucursal</p>
@@ -1094,6 +1135,14 @@ export const QuoteDetailPage = () => {
               Registrado {quote.cancelledAt ? formatDate(quote.cancelledAt) : "-"}
               {quote.cancelledByUser ? ` por ${quote.cancelledByUser.firstName} ${quote.cancelledByUser.lastName}` : ""}
             </p>
+          </div>
+        )}
+
+        {quote.approvalReturnReason && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 md:col-span-2">
+            <p className="text-xs font-semibold uppercase text-amber-700">Cambios solicitados por aprobación</p>
+            <p className="mt-1 text-sm font-semibold text-amber-950">{quote.approvalReturnReason.replaceAll("_", " ")}</p>
+            {quote.approvalReturnComment && <p className="mt-1 text-xs text-amber-900">{quote.approvalReturnComment}</p>}
           </div>
         )}
 
