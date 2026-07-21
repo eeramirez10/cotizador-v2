@@ -3,13 +3,17 @@ import { useState } from "react";
 import { NavLink } from "react-router";
 import { useQuotes } from "../../queries/quotes/quotes-queries";
 import { QuotesTable } from "../../shared/components/tables/QuotesTable";
+import { useAuthStore } from "../../store/auth/auth.store";
 
 const PAGE_SIZE = 10;
 
 export const QuotesPage = () => {
   const [page, setPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = (user?.role || "").toLowerCase() === "admin";
 
-  const { data, isFetching } = useQuotes({ page, pageSize: PAGE_SIZE });
+  const { data, isFetching } = useQuotes({ page, pageSize: PAGE_SIZE, archived: showArchived });
 
   return (
     <div>
@@ -24,14 +28,29 @@ export const QuotesPage = () => {
           <button className="rounded-md border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-800 shadow">
             Aprobadas
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setShowArchived((current) => !current);
+                setPage(1);
+              }}
+              className={`rounded-md border px-4 py-2 text-xs font-semibold shadow ${
+                showArchived ? "border-slate-800 bg-slate-800 text-white" : "border-gray-300 bg-white text-gray-800"
+              }`}
+            >
+              {showArchived ? "Ver activas" : "Archivadas"}
+            </button>
+          )}
         </div>
 
-        <NavLink
-          to="/cotizador"
-          className="rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
-        >
-          Nuevo cotizador
-        </NavLink>
+        {!isAdmin && (
+          <NavLink
+            to="/cotizador"
+            className="rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
+          >
+            Nuevo cotizador
+          </NavLink>
+        )}
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-sm bg-white shadow-md">

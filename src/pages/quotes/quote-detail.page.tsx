@@ -1,4 +1,6 @@
 import {
+  Archive,
+  ArchiveRestore,
   CheckCircle2,
   CircleSlash,
   Download,
@@ -7,11 +9,13 @@ import {
   MessageCircle,
   Pencil,
   Printer,
+  RefreshCw,
   Send,
   ShieldCheck,
   ShoppingCart,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   X,
 } from "lucide-react";
 import { forwardRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -21,11 +25,16 @@ import type { CustomerContact } from "../../modules/clients/types/customer-conta
 import type {
   QuoteCancellationReason,
   QuoteRejectionReason,
+  QuoteRevisionReason,
   SavedQuoteRecord,
 } from "../../modules/quotes/services/quotes.service";
 import {
   useDownloadQuoteOrderFile,
   useGenerateQuoteOrder,
+  useCreateQuoteRevision,
+  useArchiveQuote,
+  useRestoreQuote,
+  useDeleteQuotePermanently,
   useQuoteDetail,
   useRegisterQuoteDeliveryAttempt,
   useUpdateQuoteStatus,
@@ -42,7 +51,20 @@ const statusClass: Record<string, string> = {
   APROBADA: "bg-blue-100 text-blue-700",
   RECHAZADA: "bg-orange-100 text-orange-700",
   CANCELADA: "bg-rose-100 text-rose-700",
+  REEMPLAZADA: "bg-gray-200 text-gray-700",
 };
+
+const REVISION_REASON_OPTIONS: Array<{ value: QuoteRevisionReason; label: string }> = [
+  { value: "CUSTOMER_REQUEST", label: "Solicitud del cliente" },
+  { value: "ADD_REMOVE_ITEMS", label: "Agregar o eliminar partidas" },
+  { value: "PRICE_OR_QUANTITY_CHANGE", label: "Cambiar precio o cantidad" },
+  { value: "INFORMATION_CORRECTION", label: "Corregir información" },
+  { value: "COMMERCIAL_TERMS", label: "Cambiar condiciones comerciales" },
+  { value: "OTHER", label: "Otro" },
+];
+
+const revisionReasonLabel = (reason: QuoteRevisionReason): string =>
+  REVISION_REASON_OPTIONS.find((option) => option.value === reason)?.label || reason;
 
 const sourceChannelLabel: Record<SavedQuoteRecord["sourceChannel"], string> = {
   UNSPECIFIED: "Sin especificar",
@@ -413,10 +435,18 @@ export const QuoteDetailPage = () => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<QuoteRejectionReason | "">("");
   const [rejectionComment, setRejectionComment] = useState("");
   const [cancellationReason, setCancellationReason] = useState<QuoteCancellationReason | "">("");
   const [cancellationComment, setCancellationComment] = useState("");
+  const [revisionReason, setRevisionReason] = useState<QuoteRevisionReason | "">("");
+  const [revisionComment, setRevisionComment] = useState("");
+  const [archiveReason, setArchiveReason] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
   const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
   const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
@@ -429,6 +459,10 @@ export const QuoteDetailPage = () => {
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
   const updateStatus = useUpdateQuoteStatus();
+  const createRevision = useCreateQuoteRevision();
+  const archiveQuote = useArchiveQuote();
+  const restoreQuote = useRestoreQuote();
+  const deleteQuote = useDeleteQuotePermanently();
   const generateOrder = useGenerateQuoteOrder();
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
@@ -436,6 +470,10 @@ export const QuoteDetailPage = () => {
   const isActionLocked =
     actionInProgress ||
     updateStatus.isPending ||
+    createRevision.isPending ||
+    archiveQuote.isPending ||
+    restoreQuote.isPending ||
+    deleteQuote.isPending ||
     generateOrder.isPending ||
     downloadOrderFile.isPending ||
     registerDeliveryAttempt.isPending;
@@ -531,16 +569,37 @@ export const QuoteDetailPage = () => {
   const deliverySummary = Array.from(
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
   );
-  const canSubmitApproval = currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
-  const canApproveInternally = ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
-  const canEditQuote = currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
-  const canSendQuote = quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
+  const isArchived = Boolean(quote.archivedAt);
+  const canSubmitApproval = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
+  const canApproveInternally = !isArchived && ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
+  const canEditQuote = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
+  const hasRevisionInProgress = Boolean(
+    quote.nextRevision && ["DRAFT", "PENDING", "PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(quote.nextRevision.status)
+  );
+  const canCreateRevision =
+    currentRole === "seller" &&
+    !isArchived &&
+    ["COTIZADA", "APROBADA", "RECHAZADA"].includes(quote.status) &&
+    quote.orderStatus !== "GENERADO" &&
+    !quote.supersededByQuoteId &&
+    !hasRevisionInProgress;
+  const canSendQuote =
+    !isArchived && !hasRevisionInProgress && (quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA");
   const canDownloadQuotePdf =
-    quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA";
-  const canApproveReject = quote.status === "COTIZADA";
-  const canGenerateOrder = quote.status === "APROBADA" && quote.orderStatus !== "GENERADO";
+    quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
+  const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
+  const canGenerateOrder = !isArchived && quote.status === "APROBADA" && quote.orderStatus !== "GENERADO" && !hasRevisionInProgress;
   const canDownloadOrder =
     quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
+  const canPermanentlyDelete =
+    currentRole === "admin" &&
+    ["BORRADOR", "CANCELADA"].includes(quote.status) &&
+    quote.orderStatus !== "GENERADO" &&
+    quote.revisionNumber === 0 &&
+    !quote.rootQuoteId &&
+    !quote.previousVersionId &&
+    !quote.supersededByQuoteId &&
+    !quote.nextRevision;
 
   const runActionWithToast = async <T,>({
     loadingMessage,
@@ -634,6 +693,77 @@ export const QuoteDetailPage = () => {
         setCancellationComment("");
         await refetch();
       },
+    });
+  };
+
+  const handleCreateRevision = async () => {
+    if (!revisionReason) {
+      notifier.warning("Selecciona el motivo de la revisión.");
+      return;
+    }
+    if (revisionReason === "OTHER" && !revisionComment.trim()) {
+      notifier.warning("Describe el motivo de la revisión.");
+      return;
+    }
+
+    await runActionWithToast({
+      loadingMessage: "Creando revisión...",
+      action: () => createRevision.mutateAsync({
+        quoteId: quote.quoteId,
+        reason: revisionReason,
+        comment: revisionComment.trim() || undefined,
+      }),
+      successMessage: (revision) => `Revisión ${revision.quoteNumber} creada como borrador.`,
+      errorMessage: "No se pudo crear la revisión.",
+      onSuccess: (revision) => {
+        setShowRevisionModal(false);
+        setRevisionReason("");
+        setRevisionComment("");
+        navigate(`/quotes/manual?quoteId=${revision.quoteId}`);
+      },
+    });
+  };
+
+  const handleArchiveQuote = async () => {
+    if (!archiveReason.trim()) {
+      notifier.warning("Escribe el motivo del archivado.");
+      return;
+    }
+    await runActionWithToast({
+      loadingMessage: "Archivando cotización...",
+      action: () => archiveQuote.mutateAsync({ quoteId: quote.quoteId, reason: archiveReason.trim() }),
+      successMessage: "Cotización archivada.",
+      onSuccess: async () => {
+        setShowArchiveModal(false);
+        setArchiveReason("");
+        await refetch();
+      },
+    });
+  };
+
+  const handleRestoreQuote = async () => {
+    await runActionWithToast({
+      loadingMessage: "Restaurando cotización...",
+      action: () => restoreQuote.mutateAsync({ quoteId: quote.quoteId }),
+      successMessage: "Cotización restaurada.",
+      onSuccess: async () => { await refetch(); },
+    });
+  };
+
+  const handleDeleteQuote = async () => {
+    if (!deleteReason.trim() || deleteConfirmation.trim() !== quote.quoteNumber) {
+      notifier.warning("Escribe el motivo y confirma el folio exactamente.");
+      return;
+    }
+    await runActionWithToast({
+      loadingMessage: "Eliminando cotización definitivamente...",
+      action: () => deleteQuote.mutateAsync({
+        quoteId: quote.quoteId,
+        confirmation: deleteConfirmation.trim(),
+        reason: deleteReason.trim(),
+      }),
+      successMessage: "Cotización eliminada definitivamente.",
+      onSuccess: () => navigate("/quotes"),
     });
   };
 
@@ -956,6 +1086,50 @@ export const QuoteDetailPage = () => {
             Editar
           </button>
 
+          {canCreateRevision && (
+            <button
+              onClick={() => setShowRevisionModal(true)}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 ${disabledActionClass}`}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Crear revisión
+            </button>
+          )}
+
+          {currentRole === "admin" && !isArchived && (
+            <button
+              onClick={() => setShowArchiveModal(true)}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 ${disabledActionClass}`}
+            >
+              <Archive className="h-4 w-4" />
+              Archivar
+            </button>
+          )}
+
+          {currentRole === "admin" && isArchived && (
+            <button
+              onClick={() => void handleRestoreQuote()}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900 ${disabledActionClass}`}
+            >
+              <ArchiveRestore className="h-4 w-4" />
+              Restaurar
+            </button>
+          )}
+
+          {canPermanentlyDelete && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 ${disabledActionClass}`}
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar definitivamente
+            </button>
+          )}
+
           <button
             onClick={() => setShowPdfPreview(true)}
             disabled={isActionLocked}
@@ -1053,7 +1227,7 @@ export const QuoteDetailPage = () => {
             </button>
           )}
 
-          {quote.status !== "CANCELADA" && (
+          {!isArchived && !["CANCELADA", "REEMPLAZADA"].includes(quote.status) && !hasRevisionInProgress && (
             <button
               onClick={() => setShowCancellationModal(true)}
               disabled={isActionLocked}
@@ -1065,6 +1239,50 @@ export const QuoteDetailPage = () => {
           )}
         </div>
       </div>
+
+      {isArchived && (
+        <div className="mb-4 rounded-md border border-slate-300 bg-slate-100 p-4">
+          <p className="text-sm font-semibold text-slate-900">Cotización archivada</p>
+          <p className="mt-1 text-xs text-slate-700">
+            {quote.archiveReason || "Sin motivo registrado."}
+            {quote.archivedByUser
+              ? ` Archivada por ${quote.archivedByUser.firstName} ${quote.archivedByUser.lastName}.`
+              : ""}
+          </p>
+        </div>
+      )}
+
+      {hasRevisionInProgress && quote.nextRevision && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-950">Revisión en proceso</p>
+            <p className="text-xs text-amber-800">
+              El envío y la generación de pedido están bloqueados hasta resolver {quote.nextRevision.quoteNumber}.
+            </p>
+          </div>
+          <NavLink
+            to={`/quotes/${quote.nextRevision.id}`}
+            className="rounded-md bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800"
+          >
+            Ver revisión
+          </NavLink>
+        </div>
+      )}
+
+      {quote.status === "REEMPLAZADA" && quote.supersededByQuoteId && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-gray-50 p-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Esta versión fue reemplazada</p>
+            <p className="text-xs text-gray-600">Consulta la revisión autorizada que sustituyó esta cotización.</p>
+          </div>
+          <NavLink
+            to={`/quotes/${quote.supersededByQuoteId}`}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+          >
+            Ver versión vigente
+          </NavLink>
+        </div>
+      )}
 
       <div className="mb-4 grid gap-3 rounded-md border border-gray-200 bg-white p-4 md:grid-cols-2 lg:grid-cols-3">
         <div>
@@ -1093,6 +1311,26 @@ export const QuoteDetailPage = () => {
           <p className="text-xs font-semibold uppercase text-gray-500">Proporcionada por</p>
           <p className="text-sm text-gray-700">{quote.providedBy?.fullName || "Directa"}</p>
         </div>
+
+        {quote.revisionNumber > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-500">Revisión</p>
+            <p className="text-sm font-semibold text-amber-700">R{String(quote.revisionNumber).padStart(2, "0")}</p>
+            {quote.revisionReason && <p className="text-xs text-gray-600">{revisionReasonLabel(quote.revisionReason)}</p>}
+            {quote.previousVersionId && (
+              <NavLink to={`/quotes/${quote.previousVersionId}`} className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:text-blue-800">
+                Ver versión anterior
+              </NavLink>
+            )}
+          </div>
+        )}
+
+        {quote.revisionComment && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 md:col-span-2">
+            <p className="text-xs font-semibold uppercase text-amber-700">Detalle de la revisión</p>
+            <p className="mt-1 text-sm text-amber-950">{quote.revisionComment}</p>
+          </div>
+        )}
 
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Moneda</p>
@@ -1313,6 +1551,167 @@ export const QuoteDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {showArchiveModal && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-md bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Archivar cotización</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Se ocultará de los listados activos, pero conservará historial, métricas y auditoría.
+            </p>
+            <label className="mt-4 block text-xs font-semibold uppercase text-slate-600">Motivo *</label>
+            <textarea
+              value={archiveReason}
+              onChange={(event) => setArchiveReason(event.target.value)}
+              rows={4}
+              maxLength={500}
+              disabled={isActionLocked}
+              className="mt-1 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-500"
+              placeholder="Indica por qué se archiva..."
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowArchiveModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void handleArchiveQuote()}
+                disabled={isActionLocked || !archiveReason.trim()}
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+              >
+                {isActionLocked ? "Archivando..." : "Confirmar archivado"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-md border border-red-200 bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-800">Eliminar cotización definitivamente</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Esta operación elimina partidas y eventos relacionados. El registro resumido de auditoría permanecerá.
+            </p>
+            <label className="mt-4 block text-xs font-semibold uppercase text-slate-600">Motivo *</label>
+            <textarea
+              value={deleteReason}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              rows={3}
+              maxLength={500}
+              disabled={isActionLocked}
+              className="mt-1 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="Explica por qué debe eliminarse..."
+            />
+            <label className="mt-4 block text-xs font-semibold uppercase text-slate-600">
+              Escribe {quote.quoteNumber} para confirmar *
+            </label>
+            <input
+              value={deleteConfirmation}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              disabled={isActionLocked}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
+              autoComplete="off"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void handleDeleteQuote()}
+                disabled={isActionLocked || !deleteReason.trim() || deleteConfirmation.trim() !== quote.quoteNumber}
+                className="rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isActionLocked ? "Eliminando..." : "Eliminar definitivamente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRevisionModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => !isActionLocked && setShowRevisionModal(false)}
+            disabled={isActionLocked}
+            className="absolute inset-0 bg-black/45"
+            aria-label="Cerrar creación de revisión"
+          />
+          <div className="relative w-full max-w-lg rounded-md border border-gray-200 bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Crear revisión de cotización</h3>
+                <p className="mt-1 text-xs text-gray-600">
+                  Se creará una copia editable. Esta versión permanecerá intacta hasta que la revisión sea autorizada.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRevisionModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-semibold uppercase text-gray-600">Motivo de la revisión *</label>
+            <select
+              value={revisionReason}
+              onChange={(event) => setRevisionReason(event.target.value as QuoteRevisionReason | "")}
+              disabled={isActionLocked}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              <option value="">Selecciona un motivo...</option>
+              {REVISION_REASON_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+
+            <label className="mt-4 block text-xs font-semibold uppercase text-gray-600">
+              Comentario {revisionReason === "OTHER" ? "*" : "(opcional)"}
+            </label>
+            <textarea
+              value={revisionComment}
+              onChange={(event) => setRevisionComment(event.target.value)}
+              disabled={isActionLocked}
+              rows={4}
+              maxLength={500}
+              placeholder="Describe los cambios que deben realizarse..."
+              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <p className="mt-1 text-right text-[11px] text-gray-500">{revisionComment.length}/500</p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRevisionModal(false)}
+                disabled={isActionLocked}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCreateRevision()}
+                disabled={isActionLocked || !revisionReason || (revisionReason === "OTHER" && !revisionComment.trim())}
+                className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isActionLocked ? "Creando..." : "Crear revisión"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRejectionModal && (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">

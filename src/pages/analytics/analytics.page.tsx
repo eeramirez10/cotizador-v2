@@ -36,6 +36,7 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED: "Aprobada",
   REJECTED: "Rechazada",
   CANCELLED: "Cancelada",
+  SUPERSEDED: "Reemplazada",
 };
 const CHANNEL_LABELS: Record<string, string> = {
   UNSPECIFIED: "Sin especificar",

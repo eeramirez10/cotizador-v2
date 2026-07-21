@@ -4,6 +4,7 @@ import {
   type QuoteCancellationReason,
   type QuoteRejectionReason,
   type QuoteApprovalReturnReason,
+  type QuoteRevisionReason,
   type SavedQuoteStatus,
 } from "../../modules/quotes/services/quotes.service";
 
@@ -43,6 +44,51 @@ export const useUpdateQuoteStatus = () => {
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
+export const useCreateQuoteRevision = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ quoteId, reason, comment }: { quoteId: string; reason: QuoteRevisionReason; comment?: string }) =>
+      QuotesService.createRevision(quoteId, reason, comment),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+    },
+  });
+};
+
+export const useArchiveQuote = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, reason }: { quoteId: string; reason: string }) => QuotesService.archiveQuote(quoteId, reason),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
+export const useRestoreQuote = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId }: { quoteId: string }) => QuotesService.restoreQuote(quoteId),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
+export const useDeleteQuotePermanently = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, confirmation, reason }: { quoteId: string; confirmation: string; reason: string }) =>
+      QuotesService.deleteQuotePermanently(quoteId, confirmation, reason),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
     },
   });
 };

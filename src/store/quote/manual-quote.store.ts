@@ -11,7 +11,7 @@ import type { LocalProductBatchResultItem } from "../../modules/products/service
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
-export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
+export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA" | "REEMPLAZADA";
 export type QuoteSourceChannel =
   | "UNSPECIFIED"
   | "EMAIL"
@@ -260,9 +260,11 @@ const computeItem = (
       : round(0);
   const marginPct = hasManualPrice ? calculateMarginPct(unitPrice, sellerPriceCostBase) : normalizedMarginPct;
   const subtotal = round(unitPrice * item.qty);
+  const hasCurrentProduct = Boolean(item.localProductId?.trim() || item.erpCode.trim() || item.ean.trim());
+  const hasCurrentDescription = Boolean(item.erpDescription.trim());
   const requiresReview = item.importedFromExcel
     ? !item.customerDescription.trim() || item.qty <= 0 || !item.unit.trim() || unitPrice <= 0 || !item.deliveryTime.trim()
-    : item.sourceRequiresReview || item.qty <= 0 || !item.unit.trim();
+    : !hasCurrentProduct || !hasCurrentDescription || item.qty <= 0 || !item.unit.trim();
 
   return {
     ...item,

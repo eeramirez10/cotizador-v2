@@ -49,7 +49,8 @@ export interface Quote {
     | "COTIZADA"
     | "APROBADA"
     | "RECHAZADA"
-    | "CANCELADA";
+    | "CANCELADA"
+    | "REEMPLAZADA";
   createdByName?: string;
   providedByName?: string | null;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";

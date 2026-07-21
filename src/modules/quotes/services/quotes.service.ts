@@ -9,7 +9,7 @@ import type {
   QuoteSourceChannel,
 } from "../../../store/quote/manual-quote.store";
 
-export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA";
+export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA" | "REEMPLAZADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
 export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
@@ -44,6 +44,14 @@ export type QuoteApprovalReturnReason =
   | "MISSING_INFORMATION"
   | "COMMERCIAL_TERMS"
   | "DELIVERY_TIME"
+  | "OTHER";
+
+export type QuoteRevisionReason =
+  | "CUSTOMER_REQUEST"
+  | "ADD_REMOVE_ITEMS"
+  | "PRICE_OR_QUANTITY_CHANGE"
+  | "INFORMATION_CORRECTION"
+  | "COMMERCIAL_TERMS"
   | "OTHER";
 
 export interface SavedQuoteRecord {
@@ -83,6 +91,17 @@ export interface SavedQuoteRecord {
   cancelledByUser: { id: string; firstName: string; lastName: string } | null;
   approvalReturnReason: QuoteApprovalReturnReason | null;
   approvalReturnComment: string | null;
+  rootQuoteId: string | null;
+  previousVersionId: string | null;
+  supersededByQuoteId: string | null;
+  revisionNumber: number;
+  revisionReason: QuoteRevisionReason | null;
+  revisionComment: string | null;
+  supersededAt: string | null;
+  nextRevision: { id: string; quoteNumber: string; status: string; revisionNumber: number } | null;
+  archivedAt: string | null;
+  archivedByUser: { id: string; firstName: string; lastName: string } | null;
+  archiveReason: string | null;
   authorizedByUser: { id: string; firstName: string; lastName: string } | null;
   authorizedAt: string | null;
   providedBy: { id: string; fullName: string; branchName: string; branchCode: string } | null;
@@ -157,7 +176,7 @@ interface ApiQuoteItem {
 interface ApiQuote {
   id: string;
   quoteNumber: string;
-  status: "DRAFT" | "PENDING" | "PENDING_APPROVAL" | "CHANGES_REQUESTED" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  status: "DRAFT" | "PENDING" | "PENDING_APPROVAL" | "CHANGES_REQUESTED" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED" | "SUPERSEDED";
   deliveryStatus: "NOT_SENT" | "SENT";
   firstSentAt: string | null;
   orderStatus: "NOT_GENERATED" | "GENERATED";
@@ -176,6 +195,17 @@ interface ApiQuote {
   cancelledByUser: { id: string; firstName: string; lastName: string } | null;
   approvalReturnReason: QuoteApprovalReturnReason | null;
   approvalReturnComment: string | null;
+  rootQuoteId: string | null;
+  previousVersionId: string | null;
+  supersededByQuoteId: string | null;
+  revisionNumber: number;
+  revisionReason: QuoteRevisionReason | null;
+  revisionComment: string | null;
+  supersededAt: string | null;
+  nextRevision: { id: string; quoteNumber: string; status: string; revisionNumber: number } | null;
+  archivedAt: string | null;
+  archivedByUser: { id: string; firstName: string; lastName: string } | null;
+  archiveReason: string | null;
   providedByUserId: string | null;
   providedByNameSnapshot: string | null;
   providedByBranchNameSnapshot: string | null;
@@ -275,6 +305,7 @@ const mapApiStatusToSaved = (status: ApiQuote["status"]): SavedQuoteStatus => {
   if (status === "QUOTED") return "COTIZADA";
   if (status === "APPROVED") return "APROBADA";
   if (status === "REJECTED") return "RECHAZADA";
+  if (status === "SUPERSEDED") return "REEMPLAZADA";
   return "CANCELADA";
 };
 
@@ -350,6 +381,17 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     cancelledByUser: apiQuote.cancelledByUser || null,
     approvalReturnReason: apiQuote.approvalReturnReason || null,
     approvalReturnComment: apiQuote.approvalReturnComment || null,
+    rootQuoteId: apiQuote.rootQuoteId || null,
+    previousVersionId: apiQuote.previousVersionId || null,
+    supersededByQuoteId: apiQuote.supersededByQuoteId || null,
+    revisionNumber: apiQuote.revisionNumber || 0,
+    revisionReason: apiQuote.revisionReason || null,
+    revisionComment: apiQuote.revisionComment || null,
+    supersededAt: apiQuote.supersededAt || null,
+    nextRevision: apiQuote.nextRevision || null,
+    archivedAt: apiQuote.archivedAt || null,
+    archivedByUser: apiQuote.archivedByUser || null,
+    archiveReason: apiQuote.archiveReason || null,
     authorizedByUser: authorizationEvent?.actorUser || null,
     authorizedAt: authorizationEvent?.createdAt || null,
     providedBy: apiQuote.providedByUserId && apiQuote.providedByNameSnapshot
@@ -480,6 +522,35 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
   };
 };
 
+const hasItemChanges = (
+  current: ApiQuoteItem,
+  payload: ReturnType<typeof mapDraftItemToPayload>
+): boolean => {
+  const text = (value: string | null | undefined): string => (value || "").trim();
+  const numberChanged = (left: number | null | undefined, right: number | null | undefined): boolean =>
+    Math.abs(Number(left ?? 0) - Number(right ?? 0)) > 0.0001;
+
+  return (
+    text(current.productId) !== text(payload.productId) ||
+    text(current.externalProductCode) !== text(payload.externalProductCode) ||
+    text(current.ean) !== text(payload.ean) ||
+    text(current.customerDescription) !== text(payload.customerDescription) ||
+    text(current.customerUnit) !== text(payload.customerUnit) ||
+    text(current.erpDescription) !== text(payload.erpDescription) ||
+    text(current.unit) !== text(payload.unit) ||
+    numberChanged(current.qty, payload.qty) ||
+    numberChanged(current.stock, payload.stock) ||
+    text(current.deliveryTime) !== text(payload.deliveryTime) ||
+    text(current.itemComment) !== text(payload.itemComment) ||
+    numberChanged(current.cost, payload.cost) ||
+    current.costCurrency !== payload.costCurrency ||
+    numberChanged(current.marginPct, payload.marginPct) ||
+    numberChanged(current.unitPrice, payload.unitPrice) ||
+    current.sourceRequiresReview !== payload.sourceRequiresReview ||
+    current.requiresReview !== payload.requiresReview
+  );
+};
+
 const mapDraftItemToExtractionPayload = (item: ManualQuoteItem) => {
   const description = item.customerDescription?.trim() || item.erpDescription?.trim() || "Descripcion pendiente";
   const customerUnit = item.customerUnit?.trim() || null;
@@ -595,12 +666,12 @@ const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
 };
 
 export class QuotesService {
-  static async list(params: { page?: number; pageSize?: number; status?: ApiQuote["status"] }): Promise<PageResult<Quote>> {
+  static async list(params: { page?: number; pageSize?: number; status?: ApiQuote["status"]; archived?: boolean }): Promise<PageResult<Quote>> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;
 
     const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuote>>("/api/quotes", {
-      params: { page, pageSize, status: params.status },
+      params: { page, pageSize, status: params.status, archived: params.archived || undefined },
       headers: requireAuthHeaders(),
     });
 
@@ -631,6 +702,7 @@ export class QuotesService {
     const draftItemsWithLocalProducts = draft.items;
 
     let quoteId = draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null;
+    const isExistingQuote = Boolean(quoteId);
 
     if (quoteId) {
       await coreHttpClient.patch(
@@ -656,10 +728,28 @@ export class QuotesService {
       const current = await getRawQuoteById(quoteId);
       if (!current) throw new Error("No se encontró la cotización para actualizar.");
 
+      const draftItemIds = new Set(draftItemsWithLocalProducts.map((item) => item.id));
       for (const item of current.items) {
-        await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${item.id}`, {
-          headers: requireAuthHeaders(),
-        });
+        if (!draftItemIds.has(item.id)) {
+          await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${item.id}`, {
+            headers: requireAuthHeaders(),
+          });
+        }
+      }
+
+      const currentItemsById = new Map(current.items.map((item) => [item.id, item]));
+      for (const item of draftItemsWithLocalProducts) {
+        const payload = mapDraftItemToPayload(item);
+        const currentItem = currentItemsById.get(item.id);
+        if (!currentItem) {
+          await coreHttpClient.post(`/api/quotes/${quoteId}/items`, payload, {
+            headers: requireAuthHeaders(),
+          });
+        } else if (hasItemChanges(currentItem, payload)) {
+          await coreHttpClient.patch(`/api/quotes/${quoteId}/items/${item.id}`, payload, {
+            headers: requireAuthHeaders(),
+          });
+        }
       }
     } else if (origin !== "MANUAL") {
       const extractionItems = draft.items.map(mapDraftItemToExtractionPayload);
@@ -712,7 +802,7 @@ export class QuotesService {
       quoteId = data.id;
     }
 
-    if (origin === "MANUAL" || draft.savedQuoteId) {
+    if (!isExistingQuote && (origin === "MANUAL" || draft.savedQuoteId)) {
       for (const item of draftItemsWithLocalProducts) {
         await coreHttpClient.post(`/api/quotes/${quoteId}/items`, mapDraftItemToPayload(item), {
           headers: requireAuthHeaders(),
@@ -726,6 +816,44 @@ export class QuotesService {
     }
 
     return quoteId;
+  }
+
+  static async createRevision(
+    quoteId: string,
+    reason: QuoteRevisionReason,
+    comment?: string
+  ): Promise<SavedQuoteRecord> {
+    const { data } = await coreHttpClient.post<ApiQuote>(
+      `/api/quotes/${quoteId}/revisions`,
+      { reason, comment: comment?.trim() || null },
+      { headers: requireAuthHeaders() }
+    );
+    return mapApiQuoteToSavedRecord(data);
+  }
+
+  static async archiveQuote(quoteId: string, reason: string): Promise<SavedQuoteRecord> {
+    const { data } = await coreHttpClient.patch<ApiQuote>(
+      `/api/quotes/${quoteId}/archive`,
+      { reason: reason.trim() },
+      { headers: requireAuthHeaders() }
+    );
+    return mapApiQuoteToSavedRecord(data);
+  }
+
+  static async restoreQuote(quoteId: string): Promise<SavedQuoteRecord> {
+    const { data } = await coreHttpClient.patch<ApiQuote>(
+      `/api/quotes/${quoteId}/restore`,
+      {},
+      { headers: requireAuthHeaders() }
+    );
+    return mapApiQuoteToSavedRecord(data);
+  }
+
+  static async deleteQuotePermanently(quoteId: string, confirmation: string, reason: string): Promise<void> {
+    await coreHttpClient.delete(`/api/quotes/${quoteId}`, {
+      headers: requireAuthHeaders(),
+      data: { confirmation: confirmation.trim(), reason: reason.trim() },
+    });
   }
 
   static async updateStatus(

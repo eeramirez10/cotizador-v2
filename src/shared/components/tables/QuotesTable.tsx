@@ -100,6 +100,8 @@ export const QuotesTable: FC<Props> = ({ quotes, isLoading }) => {
                         ? "bg-slate-100 text-slate-700"
                         : quote.status === "CANCELADA"
                           ? "bg-rose-100 text-rose-700"
+                          : quote.status === "REEMPLAZADA"
+                            ? "bg-gray-200 text-gray-700"
                           : "bg-amber-100 text-amber-700"
                   }`}
                 >

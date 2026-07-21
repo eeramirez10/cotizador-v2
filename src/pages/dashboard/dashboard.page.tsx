@@ -27,6 +27,7 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED: "Aprobada",
   REJECTED: "Rechazada",
   CANCELLED: "Cancelada",
+  SUPERSEDED: "Reemplazada",
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -38,6 +39,7 @@ const STATUS_STYLES: Record<string, string> = {
   APPROVED: "bg-emerald-100 text-emerald-800",
   REJECTED: "bg-orange-100 text-orange-800",
   CANCELLED: "bg-rose-100 text-rose-800",
+  SUPERSEDED: "bg-gray-200 text-gray-700",
 };
 
 const getDateOnly = (date: Date): string => {
