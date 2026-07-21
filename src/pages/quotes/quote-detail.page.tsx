@@ -7,6 +7,7 @@ import {
   FileText,
   Mail,
   MessageCircle,
+  Palette,
   Pencil,
   Printer,
   RefreshCw,
@@ -114,6 +115,13 @@ const formatCurrency = (value: number, currency: "MXN" | "USD") => {
     currency,
     maximumFractionDigits: 2,
   }).format(value);
+};
+
+const formatLineAmount = (value: number) => {
+  return `$${new Intl.NumberFormat("es-MX", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)}`;
 };
 
 const getDisplayCost = (
@@ -259,19 +267,180 @@ const printableColorVars: CSSProperties = {
   "--color-gray-900": "#111827",
 } as CSSProperties;
 
+type QuotePdfStyle = "CLASSIC" | "CONTEMPORARY";
+
 interface QuotePrintableDocumentProps {
   quote: SavedQuoteRecord;
   customerDisplayName: string;
   contactName: string;
   deliverySummary: string[];
+  pdfStyle: QuotePdfStyle;
   className?: string;
   style?: CSSProperties;
 }
 
 const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentProps>(function QuotePrintableDocument(
-  { quote, customerDisplayName, contactName, deliverySummary, className, style },
+  { quote, customerDisplayName, contactName, deliverySummary, pdfStyle, className, style },
   ref
 ) {
+  if (pdfStyle === "CONTEMPORARY") {
+    const brand = "#fcce01";
+    const brandStrong = "#e9b900";
+    const brandBright = "#ffdc3d";
+    const brandSoft = "#fff9dc";
+    const line = "#eadb91";
+    const ink = "#282b30";
+    const muted = "#62666b";
+    const commercialConditions = [
+      "PRECIOS: UNITARIOS MAS IVA.",
+      "COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.",
+      `CONDICIONES DE PAGO: ${(quote.paymentTerms || "CONTADO").toUpperCase()}.`,
+      `LUGAR DE ENTREGA: ${(quote.deliveryPlace || "POR DEFINIR").toUpperCase()}.`,
+      "TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.",
+      "EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O REPRESENTANTE DE LA EMPRESA.",
+      "MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.",
+      "PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.",
+      "NO SE ACEPTAN DEVOLUCIONES.",
+      `VIGENCIA ${quote.validityDays} DIAS.`,
+    ];
+
+    return (
+      <article
+        ref={ref}
+        data-print-root
+        data-pdf-style="contemporary"
+        className={className}
+        style={{
+          width: "8.5in",
+          minHeight: "11in",
+          padding: "0.38in 0.42in 0.32in",
+          color: ink,
+          boxSizing: "border-box",
+          ...printableColorVars,
+          ...style,
+        }}
+      >
+        <header className="relative overflow-hidden rounded-md px-5 py-4" style={{ background: `linear-gradient(90deg, ${brandStrong}, ${brandBright})`, color: "#ffffff" }}>
+          <div className="absolute -right-7 -top-10 h-24 w-32 rotate-45 opacity-20" style={{ backgroundColor: "#ffffff" }} />
+          <div className="relative flex items-center justify-between gap-4">
+            <h1 className="text-[22px] font-bold uppercase tracking-[0.16em]">Cotización</h1>
+            <div className="rounded px-3 py-2 text-[12px] font-semibold" style={{ backgroundColor: "rgba(40,43,48,0.10)" }}>
+              N.° {quote.quoteNumber || quote.quoteId}
+            </div>
+          </div>
+        </header>
+
+        <section className="mt-4 flex items-start justify-between gap-6">
+          <div className="flex items-start gap-3">
+            <img className="h-11 w-auto object-contain" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" loading="eager" />
+            <div>
+              <p className="text-[15px] font-bold" style={{ color: ink }}>TUVANSA</p>
+              <p className="mt-1 text-[9px] leading-4" style={{ color: muted }}>
+                Soluciones industriales<br />
+                Sucursal: {quote.branchName || "-"}<br />
+                www.tuvansa.com.mx
+              </p>
+            </div>
+          </div>
+
+          <div className="w-[2.35in] border-l-[3px] px-3 py-2 text-[9px]" style={{ borderColor: brand, backgroundColor: brandSoft }}>
+            <div className="flex justify-between gap-4"><span className="font-semibold" style={{ color: ink }}>Fecha de emisión</span><span>{formatDate(quote.updatedAt || quote.createdAt)}</span></div>
+            <div className="mt-1.5 flex justify-between gap-4"><span className="font-semibold" style={{ color: ink }}>Válido hasta</span><span>{formatDate(quote.validUntil)}</span></div>
+            <div className="mt-1.5 flex justify-between gap-4"><span className="font-semibold" style={{ color: ink }}>Moneda</span><span>{quote.currency}</span></div>
+          </div>
+        </section>
+
+        <section className="mt-5 grid grid-cols-2 gap-4 text-[9px] leading-4">
+          <div className="border-l-[3px] p-3" style={{ borderColor: brand, backgroundColor: "#ffffff", boxShadow: `0 0 0 1px ${line}` }}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: ink }}>› Cliente</p>
+            <p className="mt-2 text-[11px] font-bold" style={{ color: ink }}>{customerDisplayName}</p>
+            <p style={{ color: muted }}>Contacto: {contactName || "-"}</p>
+            <p style={{ color: muted }}>Correo: {quote.client?.email || "-"}</p>
+            <p style={{ color: muted }}>WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
+          </div>
+
+          <div className="border-l-[3px] p-3" style={{ borderColor: brand, backgroundColor: brandSoft }}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: ink }}>› Ejecutivo de ventas</p>
+            <p className="mt-2 text-[11px] font-bold" style={{ color: ink }}>{quote.createdByName || "-"}</p>
+            <p style={{ color: muted }}>Sucursal: {quote.branchName || "-"}</p>
+            <p style={{ color: muted }}>Condición de pago: {quote.paymentTerms || "CONTADO"}</p>
+            <p style={{ color: muted }}>Lugar de entrega: {quote.deliveryPlace || "Por definir"}</p>
+          </div>
+        </section>
+
+        <section className="mt-4 overflow-hidden rounded-md">
+          <table className="w-full table-fixed border-collapse text-[8px]">
+            <thead style={{ background: `linear-gradient(90deg, ${brandStrong}, ${brandBright})`, color: "#ffffff" }}>
+              <tr>
+                <th className="w-[0.28in] px-1.5 py-2 text-center font-semibold">#</th>
+                <th className="w-[0.75in] px-1.5 py-2 text-left font-semibold uppercase">Código</th>
+                <th className="px-1.5 py-2 text-left font-semibold uppercase">Descripción</th>
+                <th className="w-[0.36in] px-1 py-2 text-center font-semibold uppercase">UM</th>
+                <th className="w-[0.48in] px-1 py-2 text-right font-semibold uppercase">Cant.</th>
+                <th className="w-[0.86in] px-1.5 py-2 text-right font-semibold uppercase">Precio unit.</th>
+                <th className="w-[0.72in] px-1.5 py-2 text-left font-semibold uppercase">Entrega</th>
+                <th className="w-[0.88in] px-1.5 py-2 text-right font-semibold uppercase">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quote.items.map((item, index) => (
+                <tr key={item.id} style={{ borderBottom: `1px solid ${line}`, backgroundColor: index % 2 === 0 ? "#ffffff" : "#fbfffe" }}>
+                  <td className="px-1.5 py-3 text-center align-top font-bold" style={{ color: ink }}>{index + 1}.</td>
+                  <td className="px-1.5 py-3 align-top font-medium" style={{ color: muted }}>{item.erpCode || "-"}</td>
+                  <td className="px-1.5 py-3 align-top">
+                    <p className="font-semibold" style={{ color: ink }}>{item.erpDescription || item.customerDescription || "-"}</p>
+                    {item.itemComment && <p className="mt-1 text-[7px] leading-3" style={{ color: muted }}>{item.itemComment}</p>}
+                  </td>
+                  <td className="px-1 py-3 text-center align-top">{item.unit || "-"}</td>
+                  <td className="px-1 py-3 text-right align-top">{item.qty}</td>
+                  <td className="px-1.5 py-3 text-right align-top">{formatLineAmount(item.unitPrice)}</td>
+                  <td className="px-1.5 py-3 align-top">{item.deliveryTime || "Por definir"}</td>
+                  <td className="px-1.5 py-3 text-right align-top font-semibold">{formatLineAmount(item.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="mt-4 flex items-start justify-between gap-8 border-t-2 pt-4" style={{ borderColor: line }}>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: muted }}>Total de la propuesta</p>
+            <p className="mt-1 text-[24px] font-bold" style={{ color: ink }}>{formatCurrency(quote.total, quote.currency)}</p>
+            <p className="mt-1 text-[8px]" style={{ color: muted }}>Importes expresados en {quote.currency}.</p>
+          </div>
+
+          <div className="w-[2.45in] text-[9px]">
+            <div className="flex justify-between px-3 py-1.5"><span className="font-semibold" style={{ color: ink }}>Subtotal</span><span>{formatCurrency(quote.subtotal, quote.currency)}</span></div>
+            <div className="flex justify-between px-3 py-1.5"><span className="font-semibold" style={{ color: ink }}>IVA ({(quote.taxRate * 100).toFixed(0)}%)</span><span>{formatCurrency(quote.tax, quote.currency)}</span></div>
+            <div className="mt-1 flex justify-between px-3 py-2.5 text-[11px] font-bold" style={{ background: `linear-gradient(90deg, ${brandStrong}, ${brandBright})`, color: "#ffffff" }}>
+              <span>Total</span><span>{formatCurrency(quote.total, quote.currency)}</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-5 border-l-[4px] px-4 py-3" style={{ borderColor: brand, backgroundColor: brandSoft }}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: ink }}>Condiciones comerciales</p>
+          <div className="mt-2 grid grid-cols-2 gap-x-6 text-[7px] leading-3" style={{ color: muted }}>
+            <ol className="list-decimal space-y-1 pl-3">
+              {commercialConditions.slice(0, 5).map((condition) => <li key={condition}>{condition}</li>)}
+            </ol>
+            <ol start={6} className="list-decimal space-y-1 pl-3">
+              {commercialConditions.slice(5).map((condition) => <li key={condition}>{condition}</li>)}
+            </ol>
+          </div>
+        </section>
+
+        <footer className="mt-6 border-t-2 px-1 pt-3 text-[8px]" style={{ borderColor: brand, color: muted }}>
+          <div className="flex items-end justify-between gap-6">
+            <div><p className="font-bold" style={{ color: ink }}>TUVANSA</p><p>Soluciones industriales</p></div>
+            <div className="text-center"><p>{quote.branchName || "Sucursal"}</p><p>{quote.paymentTerms || "CONTADO"}</p></div>
+            <div className="text-right"><p>{quote.currency}</p><p>{quote.quoteNumber || quote.quoteId}</p></div>
+          </div>
+        </footer>
+      </article>
+    );
+  }
+
   return (
     <article
       ref={ref}
@@ -432,6 +601,7 @@ export const QuoteDetailPage = () => {
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
   const [showItemComments, setShowItemComments] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CLASSIC");
   const [showSendModal, setShowSendModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
@@ -2018,12 +2188,31 @@ export const QuoteDetailPage = () => {
           />
 
           <div className="relative max-h-[92vh] w-full max-w-[95vw] overflow-auto rounded-md border border-gray-200 bg-slate-100 p-4 shadow-xl">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Vista previa PDF</h3>
-                <p className="text-xs text-gray-500">Diseño carta antes de generar y enviar al cliente.</p>
+                <p className="text-xs text-gray-500">Elige el estilo antes de descargar, imprimir o enviar al cliente.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="mr-1 inline-flex items-center rounded-lg border border-gray-300 bg-white p-1 shadow-sm" aria-label="Estilo del PDF">
+                  <span className="px-2 text-gray-400" aria-hidden="true"><Palette className="h-4 w-4" /></span>
+                  <button
+                    type="button"
+                    onClick={() => setPdfStyle("CLASSIC")}
+                    disabled={isActionLocked}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${pdfStyle === "CLASSIC" ? "bg-slate-800 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"} ${disabledActionClass}`}
+                  >
+                    Clásico
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfStyle("CONTEMPORARY")}
+                    disabled={isActionLocked}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${pdfStyle === "CONTEMPORARY" ? "bg-[#fcce01] text-slate-900 shadow-sm" : "text-gray-600 hover:bg-gray-100"} ${disabledActionClass}`}
+                  >
+                    Contemporáneo
+                  </button>
+                </div>
                 {canDownloadQuotePdf && (
                   <button
                     type="button"
@@ -2061,6 +2250,7 @@ export const QuoteDetailPage = () => {
               customerDisplayName={customerDisplayName}
               contactName={contactName}
               deliverySummary={deliverySummary}
+              pdfStyle={pdfStyle}
               className="mx-auto bg-white text-gray-900 shadow-lg"
             />
           </div>
@@ -2074,6 +2264,7 @@ export const QuoteDetailPage = () => {
           customerDisplayName={customerDisplayName}
           contactName={contactName}
           deliverySummary={deliverySummary}
+          pdfStyle={pdfStyle}
           className="bg-white text-gray-900"
         />
       </div>
