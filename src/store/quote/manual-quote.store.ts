@@ -63,6 +63,7 @@ export interface ManualQuoteDraft {
   taxRate: number;
   deliveryPlace: string;
   paymentTerms: string;
+  commercialConditions: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
   captureMethod: QuoteCaptureMethod;
@@ -93,6 +94,7 @@ interface StoredQuote {
   taxRate: number;
   deliveryPlace: string;
   paymentTerms: string;
+  commercialConditions: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
   captureMethod: QuoteCaptureMethod;
@@ -129,6 +131,7 @@ interface HydrateQuoteInput {
   taxRate: number;
   deliveryPlace: string;
   paymentTerms: string;
+  commercialConditions: string | null;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
   captureMethod: QuoteCaptureMethod;
@@ -145,6 +148,7 @@ interface ManualQuoteState {
   setExchangeRate: (exchangeRate: number) => void;
   setDeliveryPlace: (deliveryPlace: string) => void;
   setPaymentTerms: (paymentTerms: string) => void;
+  setCommercialConditions: (commercialConditions: string) => void;
   setValidityDays: (validityDays: number) => void;
   setSourceChannel: (sourceChannel: QuoteSourceChannel) => void;
   setOriginalQuoteDate: (originalQuoteDate: string) => void;
@@ -205,6 +209,7 @@ const newDraft = (): ManualQuoteDraft => ({
   taxRate: 0.16,
   deliveryPlace: "L.A.B. OBRA",
   paymentTerms: "CONTADO",
+  commercialConditions: "",
   validityDays: 10,
   sourceChannel: "UNSPECIFIED",
   captureMethod: "SYSTEM",
@@ -440,6 +445,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         paymentTerms,
       },
     })),
+
+  setCommercialConditions: (commercialConditions) =>
+    set((state) => ({ draft: { ...state.draft, commercialConditions } })),
 
   setValidityDays: (validityDays) =>
     set((state) => ({
@@ -739,6 +747,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           taxRate: quote.taxRate,
           deliveryPlace: quote.deliveryPlace,
           paymentTerms: quote.paymentTerms,
+          commercialConditions: quote.commercialConditions || "",
           validityDays: quote.validityDays,
           sourceChannel: quote.sourceChannel || "UNSPECIFIED",
           captureMethod: quote.captureMethod || "SYSTEM",
@@ -786,6 +795,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         taxRate: stored.taxRate,
         deliveryPlace: stored.deliveryPlace || "L.A.B. OBRA",
         paymentTerms: stored.paymentTerms || "CONTADO",
+        commercialConditions: stored.commercialConditions || "",
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         sourceChannel: stored.sourceChannel || "UNSPECIFIED",
         captureMethod: stored.captureMethod || "SYSTEM",
@@ -835,6 +845,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       taxRate: state.draft.taxRate,
       deliveryPlace: state.draft.deliveryPlace,
       paymentTerms: state.draft.paymentTerms,
+      commercialConditions: state.draft.commercialConditions,
       validityDays: state.draft.validityDays,
       sourceChannel: state.draft.sourceChannel,
       captureMethod: state.draft.captureMethod,

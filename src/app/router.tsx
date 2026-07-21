@@ -14,6 +14,7 @@ import { ProductsPage } from "../pages/products/products.page";
 import { UsersPage } from "../pages/users/users.page";
 import { BranchesPage } from "../pages/branches/branches.page";
 import { QuoteApprovalsPage } from "../pages/quotes/quote-approvals.page";
+import { QuoteCatalogsPage } from "../pages/quote-catalogs/quote-catalogs.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -113,6 +114,12 @@ export const appRouter = createBrowserRouter([
         loader: requireRolesLoader(["admin", "manager"]),
         handle: { title: "Usuarios" },
         Component: UsersPage,
+      },
+      {
+        path: "quote-catalogs",
+        loader: requireRolesLoader(["admin", "manager"]),
+        handle: { title: "Catálogos de cotización" },
+        Component: QuoteCatalogsPage,
       },
     ],
   },

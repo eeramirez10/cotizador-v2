@@ -6,6 +6,7 @@ import {
   type QuoteApprovalReturnReason,
 } from "../../modules/quotes/services/quotes.service";
 import { useQuotes } from "../../queries/quotes/quotes-queries";
+import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { notifier } from "../../shared/notifications/notifier";
 
 const RETURN_REASONS: Array<{ value: QuoteApprovalReturnReason; label: string }> = [
@@ -25,6 +26,9 @@ export const QuoteApprovalsPage = () => {
   const [returnQuoteId, setReturnQuoteId] = useState<string | null>(null);
   const [reason, setReason] = useState<QuoteApprovalReturnReason | "">("");
   const [comment, setComment] = useState("");
+  const returnCatalog = useQuoteCatalogs("APPROVAL_RETURN_REASON");
+  const returnReasons = returnCatalog.data?.map((option) => ({ value: option.code, label: option.label, requiresComment: option.requiresComment })) ?? RETURN_REASONS.map((option) => ({ ...option, requiresComment: option.value === "OTHER" }));
+  const requiresComment = returnReasons.find((option) => option.value === reason)?.requiresComment || false;
 
   const approve = async (quoteId: string) => {
     const toastId = notifier.loading("Aprobando cotización...");
@@ -46,7 +50,7 @@ export const QuoteApprovalsPage = () => {
 
   const requestChanges = async () => {
     if (!returnQuoteId || !reason) return;
-    if (reason === "OTHER" && !comment.trim()) {
+    if (requiresComment && !comment.trim()) {
       notifier.warning("Describe el motivo de devolución.");
       return;
     }
@@ -135,8 +139,8 @@ export const QuoteApprovalsPage = () => {
               <button onClick={() => setReturnQuoteId(null)} className="rounded p-1 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
             </div>
             <label className="mt-5 block text-xs font-semibold uppercase text-gray-500">Motivo *</label>
-            <select value={reason} onChange={(event) => setReason(event.target.value as QuoteApprovalReturnReason | "")} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Selecciona un motivo...</option>{RETURN_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-            <label className="mt-4 block text-xs font-semibold uppercase text-gray-500">Comentario {reason === "OTHER" ? "*" : "(opcional)"}</label>
+            <select value={reason} onChange={(event) => setReason(event.target.value as QuoteApprovalReturnReason | "")} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Selecciona un motivo...</option>{returnReasons.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+            <label className="mt-4 block text-xs font-semibold uppercase text-gray-500">Comentario {requiresComment ? "*" : "(opcional)"}</label>
             <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={4} maxLength={500} className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Explica qué debe corregir el vendedor..." />
             <div className="mt-5 flex justify-end gap-2"><button onClick={() => setReturnQuoteId(null)} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700">Cancelar</button><button onClick={() => void requestChanges()} disabled={!reason || Boolean(actionQuoteId)} className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Solicitar cambios</button></div>
           </div>

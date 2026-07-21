@@ -14,46 +14,10 @@ export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
 export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
 export type QuoteDeliveryChannel = "WHATSAPP" | "EMAIL";
-export type QuoteRejectionReason =
-  | "PRICE_HIGH"
-  | "COST_HIGH"
-  | "MATERIAL_UNAVAILABLE"
-  | "DELIVERY_TIME"
-  | "COMPETITOR_SELECTED"
-  | "COMMERCIAL_TERMS"
-  | "SPECIFICATION_MISMATCH"
-  | "LATE_QUOTATION"
-  | "PROJECT_CANCELLED"
-  | "NO_CUSTOMER_RESPONSE"
-  | "DUPLICATE_OR_ERROR"
-  | "OTHER";
-export type QuoteCancellationReason =
-  | "DATA_ENTRY_ERROR"
-  | "DUPLICATE_REQUEST"
-  | "INSUFFICIENT_INFORMATION"
-  | "INCORRECT_ITEMS"
-  | "REPLACED_BY_REVISION"
-  | "OUT_OF_SCOPE"
-  | "ADMINISTRATIVE"
-  | "OTHER";
-export type QuoteApprovalReturnReason =
-  | "MARGIN_TOO_LOW"
-  | "PRICE_BELOW_POLICY"
-  | "INCORRECT_COST"
-  | "INCORRECT_PRICE"
-  | "MISSING_INFORMATION"
-  | "COMMERCIAL_TERMS"
-  | "DELIVERY_TIME"
-  | "OTHER";
-
-export type QuoteRevisionReason =
-  | "CUSTOMER_REQUEST"
-  | "ADD_REMOVE_ITEMS"
-  | "PRICE_OR_QUANTITY_CHANGE"
-  | "EXCHANGE_RATE_CHANGE"
-  | "INFORMATION_CORRECTION"
-  | "COMMERCIAL_TERMS"
-  | "OTHER";
+export type QuoteRejectionReason = string;
+export type QuoteCancellationReason = string;
+export type QuoteApprovalReturnReason = string;
+export type QuoteRevisionReason = string;
 
 export interface QuoteBranchDetails {
   id: string;
@@ -99,6 +63,7 @@ export interface SavedQuoteRecord {
   taxRate: number;
   deliveryPlace: string;
   paymentTerms: string;
+  commercialConditions: string | null;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
@@ -238,6 +203,7 @@ interface ApiQuote {
   taxRate: number;
   deliveryPlace: string | null;
   paymentTerms: string;
+  commercialConditions: string | null;
   validityDays: number;
   validUntil: string;
   subtotal: number;
@@ -410,6 +376,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     taxRate: apiQuote.taxRate,
     deliveryPlace: apiQuote.deliveryPlace || "L.A.B. OBRA",
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
+    commercialConditions: apiQuote.commercialConditions || null,
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
     captureMethod: apiQuote.captureMethod || "SYSTEM",
@@ -686,6 +653,7 @@ export class QuotesService {
         taxRate: draft.taxRate,
         deliveryPlace: draft.deliveryPlace,
         paymentTerms: draft.paymentTerms,
+        commercialConditions: draft.commercialConditions || null,
         validityDays: draft.validityDays,
         origin,
         sourceChannel: draft.sourceChannel,

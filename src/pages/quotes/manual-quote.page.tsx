@@ -9,32 +9,12 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { notifier } from "../../shared/notifications/notifier";
+import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 
 type OriginFilter = "ALL" | "UNLINKED";
-
-const PAYMENT_TERMS_OPTIONS: string[] = [
-  "CONTADO",
-  "30% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "40% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "50% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "60% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "70% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "80% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "90% DE ANTICIPO RESTO CONTRA ENTREGA",
-  "CREDITO 7 DIAS",
-  "CREDITO 10 DIAS",
-  "CREDITO 15 DIAS",
-  "CREDITO 20 DIAS",
-  "CREDITO 30 DIAS",
-  "CREDITO 45 DIAS",
-  "CREDITO 60 DIAS",
-  "CREDITO 90 DIAS",
-];
-
-const VALIDITY_DAYS_OPTIONS: number[] = [10, 15, 20, 30, 45, 60, 90];
 
 const SOURCE_CHANNEL_OPTIONS: Array<{ value: QuoteSourceChannel; label: string }> = [
   { value: "UNSPECIFIED", label: "Seleccionar origen" },
@@ -155,6 +135,7 @@ export const ManualQuotePage = () => {
   const setExchangeRate = useManualQuoteStore((state) => state.setExchangeRate);
   const setDeliveryPlace = useManualQuoteStore((state) => state.setDeliveryPlace);
   const setPaymentTerms = useManualQuoteStore((state) => state.setPaymentTerms);
+  const setCommercialConditions = useManualQuoteStore((state) => state.setCommercialConditions);
   const setValidityDays = useManualQuoteStore((state) => state.setValidityDays);
   const setSourceChannel = useManualQuoteStore((state) => state.setSourceChannel);
   const setOriginalQuoteDate = useManualQuoteStore((state) => state.setOriginalQuoteDate);
@@ -174,6 +155,10 @@ export const ManualQuotePage = () => {
   const subtotal = useManualQuoteStore((state) => state.subtotal);
   const tax = useManualQuoteStore((state) => state.tax);
   const total = useManualQuoteStore((state) => state.total);
+  const validityCatalog = useQuoteCatalogs("VALIDITY_DAYS");
+  const paymentCatalog = useQuoteCatalogs("PAYMENT_TERMS");
+  const commercialCatalog = useQuoteCatalogs("COMMERCIAL_CONDITIONS");
+  const deliveryCatalog = useQuoteCatalogs("DELIVERY_TIME");
   const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
   const isProviderAttributionLocked = ["PENDIENTE_APROBACION", "COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA", "REEMPLAZADA"].includes(draft.status);
 
@@ -227,14 +212,22 @@ export const ManualQuotePage = () => {
   const quoteCurrency = draft.currency;
   const paymentTermsOptions = useMemo(() => {
     const current = (draft.paymentTerms || "").trim();
-    if (!current) return PAYMENT_TERMS_OPTIONS;
-    if (PAYMENT_TERMS_OPTIONS.includes(current)) return PAYMENT_TERMS_OPTIONS;
-    return [current, ...PAYMENT_TERMS_OPTIONS];
-  }, [draft.paymentTerms]);
+    const options = paymentCatalog.data || [];
+    if (!current || options.some((option) => option.value === current)) return options;
+    return [{ id: "current-payment", label: current, value: current } as (typeof options)[number], ...options];
+  }, [draft.paymentTerms, paymentCatalog.data]);
   const validityDaysOptions = useMemo(() => {
-    if (VALIDITY_DAYS_OPTIONS.includes(draft.validityDays)) return VALIDITY_DAYS_OPTIONS;
-    return [draft.validityDays, ...VALIDITY_DAYS_OPTIONS].sort((a, b) => a - b);
-  }, [draft.validityDays]);
+    const options = validityCatalog.data || [];
+    if (options.some((option) => option.numericValue === draft.validityDays)) return options;
+    return [{ id: "current-validity", label: `${draft.validityDays} días`, numericValue: draft.validityDays } as (typeof options)[number], ...options];
+  }, [draft.validityDays, validityCatalog.data]);
+  const commercialConditionsOptions = useMemo(() => {
+    const current = (draft.commercialConditions || "").trim();
+    const options = commercialCatalog.data || [];
+    if (!current || options.some((option) => option.value === current)) return options;
+    return [{ id: "current-commercial-conditions", label: "Condiciones guardadas", value: current } as (typeof options)[number], ...options];
+  }, [commercialCatalog.data, draft.commercialConditions]);
+  const deliveryTimeOptions = deliveryCatalog.data || [];
 
   const totalRequiresReview = useMemo(() => {
     return draft.items.filter((item) => item.requiresReview).length;
@@ -737,9 +730,9 @@ export const ManualQuotePage = () => {
             onChange={(event) => setValidityDays(Number(event.target.value))}
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
           >
-            {validityDaysOptions.map((days) => (
-              <option key={days} value={days}>
-                {days} dias
+            {validityDaysOptions.map((option) => (
+              <option key={option.id} value={option.numericValue || 0}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -756,10 +749,18 @@ export const ManualQuotePage = () => {
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
           >
             {paymentTermsOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
+              <option key={option.id} value={option.value || option.label}>
+                {option.label}
               </option>
             ))}
+          </select>
+        </div>
+
+        <div className="lg:col-span-2">
+          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="commercialConditions">Condiciones comerciales</label>
+          <select id="commercialConditions" value={draft.commercialConditions} onChange={(event) => setCommercialConditions(event.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+            <option value="">Selecciona condiciones...</option>
+            {commercialConditionsOptions.map((option) => <option key={option.id} value={option.value || ""}>{option.label}</option>)}
           </select>
         </div>
 
@@ -933,11 +934,8 @@ export const ManualQuotePage = () => {
                         onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
                         className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
                       >
-                        <option value="1-2 dias">1-2 dias</option>
-                        <option value="3-5 dias">3-5 dias</option>
-                        <option value="1-2 semanas">1-2 semanas</option>
-                        <option value="2-4 semanas">2-4 semanas</option>
-                        <option value="4-6 semanas">4-6 semanas</option>
+                        {!deliveryTimeOptions.some((option) => (option.value || option.label) === item.deliveryTime) && <option value={item.deliveryTime}>{item.deliveryTime}</option>}
+                        {deliveryTimeOptions.map((option) => <option key={option.id} value={option.value || option.label}>{option.label}</option>)}
                       </select>
                     )}
                   </td>

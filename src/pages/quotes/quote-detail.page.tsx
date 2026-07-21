@@ -41,6 +41,7 @@ import {
   useUpdateQuoteStatus,
 } from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
+import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
 
 const statusClass: Record<string, string> = {
@@ -65,8 +66,8 @@ const REVISION_REASON_OPTIONS: Array<{ value: QuoteRevisionReason; label: string
   { value: "OTHER", label: "Otro" },
 ];
 
-const revisionReasonLabel = (reason: QuoteRevisionReason): string =>
-  REVISION_REASON_OPTIONS.find((option) => option.value === reason)?.label || reason;
+const revisionReasonLabel = (reason: QuoteRevisionReason | null): string =>
+  REVISION_REASON_OPTIONS.find((option) => option.value === reason)?.label || reason || "Sin especificar";
 
 const sourceChannelLabel: Record<SavedQuoteRecord["sourceChannel"], string> = {
   UNSPECIFIED: "Sin especificar",
@@ -109,6 +110,12 @@ const CANCELLATION_REASON_OPTIONS: Array<{ value: QuoteCancellationReason; label
 
 const cancellationReasonLabel = (reason: QuoteCancellationReason | null): string =>
   CANCELLATION_REASON_OPTIONS.find((option) => option.value === reason)?.label || "Sin especificar";
+
+const catalogReasonLabel = (
+  reason: string | null,
+  options: Array<{ value: string; label: string }>,
+  fallback: (reason: string | null) => string
+): string => reason ? options.find((option) => option.value === reason)?.label || fallback(reason) : "Sin especificar";
 
 const formatCurrency = (value: number, currency: "MXN" | "USD") => {
   return new Intl.NumberFormat("es-MX", {
@@ -154,6 +161,12 @@ const formatPhoneNumber = (value: string | null | undefined): string => {
 
 const formatBranchPhones = (branch: SavedQuoteRecord["branch"]): string =>
   [branch.phone, branch.secondaryPhone].filter(Boolean).map(formatPhoneNumber).join(" · ");
+
+const getCommercialConditions = (quote: SavedQuoteRecord): string[] => {
+  const configured = (quote.commercialConditions || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const fallback = ["PRECIOS: UNITARIOS MAS IVA.", "COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.", "TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.", "MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.", "PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.", "NO SE ACEPTAN DEVOLUCIONES."];
+  return [`CONDICIONES DE PAGO: ${(quote.paymentTerms || "CONTADO").toUpperCase()}.`, `LUGAR DE ENTREGA: ${(quote.deliveryPlace || "POR DEFINIR").toUpperCase()}.`, ...(configured.length ? configured : fallback), `VIGENCIA ${quote.validityDays} DIAS.`];
+};
 
 const getDisplayCost = (
   cost: number,
@@ -325,18 +338,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
     const line = "#eadb91";
     const ink = "#282b30";
     const muted = "#62666b";
-    const commercialConditions = [
-      "PRECIOS: UNITARIOS MAS IVA.",
-      "COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.",
-      `CONDICIONES DE PAGO: ${(quote.paymentTerms || "CONTADO").toUpperCase()}.`,
-      `LUGAR DE ENTREGA: ${(quote.deliveryPlace || "POR DEFINIR").toUpperCase()}.`,
-      "TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.",
-      "EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O REPRESENTANTE DE LA EMPRESA.",
-      "MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.",
-      "PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.",
-      "NO SE ACEPTAN DEVOLUCIONES.",
-      `VIGENCIA ${quote.validityDays} DIAS.`,
-    ];
+    const commercialConditions = getCommercialConditions(quote);
 
     return (
       <article
@@ -610,19 +612,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
       <section className="mt-4 rounded-md border border-gray-200 p-3">
         <p className="text-[11px] font-semibold uppercase text-gray-500">Condiciones comerciales</p>
         <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
-          <li>PRECIOS: UNITARIOS MAS IVA.</li>
-          <li>COTIZACION: DOLARES PAGADEROS AL TIPO DE CAMBIO DEL DIARIO OFICIAL EL DIA DE LA OPERACION.</li>
-          <li>CONDICIONES DE PAGO: {(quote.paymentTerms || "CONTADO").toUpperCase()}.</li>
-          <li>LUGAR DE ENTREGA: {(quote.deliveryPlace || "POR DEFINIR").toUpperCase()}.</li>
-          <li>TIEMPO DE ENTREGA: EL MARCADO POR PARTIDA.</li>
-          <li>
-            EN CASO DE ACEPTACION, SU O.C. DEBE VENIR DEBIDAMENTE FIRMADA POR EL JEFE DE COMPRAS Y/O REPRESENTANTE DE
-            LA EMPRESA.
-          </li>
-          <li>MATERIALES COTIZADOS SUJETOS A PREVIA VENTA.</li>
-          <li>PRECIOS SUJETOS A CAMBIO SIN PREVIO AVISO.</li>
-          <li>NO SE ACEPTAN DEVOLUCIONES.</li>
-          <li>VIGENCIA {quote.validityDays} DIAS.</li>
+          {getCommercialConditions(quote).map((condition) => <li key={condition}>{condition}</li>)}
         </ol>
       </section>
 
@@ -679,6 +669,17 @@ export const QuoteDetailPage = () => {
   const generateOrder = useGenerateQuoteOrder();
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
+  const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
+  const rejectionCatalog = useQuoteCatalogs("REJECTION_REASON");
+  const cancellationCatalog = useQuoteCatalogs("CANCELLATION_REASON");
+  const approvalReturnCatalog = useQuoteCatalogs("APPROVAL_RETURN_REASON");
+  const revisionOptions = revisionCatalog.data?.map((option) => ({ value: option.code, label: option.label, requiresComment: option.requiresComment })) ?? REVISION_REASON_OPTIONS.map((option) => ({ ...option, requiresComment: option.value === "OTHER" }));
+  const rejectionOptions = rejectionCatalog.data?.map((option) => ({ value: option.code, label: option.label, requiresComment: option.requiresComment })) ?? REJECTION_REASON_OPTIONS.map((option) => ({ ...option, requiresComment: option.value === "OTHER" }));
+  const cancellationOptions = cancellationCatalog.data?.map((option) => ({ value: option.code, label: option.label, requiresComment: option.requiresComment })) ?? CANCELLATION_REASON_OPTIONS.map((option) => ({ ...option, requiresComment: option.value === "OTHER" }));
+  const approvalReturnOptions = approvalReturnCatalog.data?.map((option) => ({ value: option.code, label: option.label })) ?? [];
+  const revisionRequiresComment = revisionOptions.find((option) => option.value === revisionReason)?.requiresComment || false;
+  const rejectionRequiresComment = rejectionOptions.find((option) => option.value === rejectionReason)?.requiresComment || false;
+  const cancellationRequiresComment = cancellationOptions.find((option) => option.value === cancellationReason)?.requiresComment || false;
 
   const isActionLocked =
     actionInProgress ||
@@ -885,7 +886,7 @@ export const QuoteDetailPage = () => {
       notifier.warning("Selecciona el motivo de cancelación.");
       return;
     }
-    if (cancellationReason === "OTHER" && !cancellationComment.trim()) {
+    if (cancellationRequiresComment && !cancellationComment.trim()) {
       notifier.warning("Describe el motivo de cancelación.");
       return;
     }
@@ -914,7 +915,7 @@ export const QuoteDetailPage = () => {
       notifier.warning("Selecciona el motivo de la revisión.");
       return;
     }
-    if (revisionReason === "OTHER" && !revisionComment.trim()) {
+    if (revisionRequiresComment && !revisionComment.trim()) {
       notifier.warning("Describe el motivo de la revisión.");
       return;
     }
@@ -1022,7 +1023,7 @@ export const QuoteDetailPage = () => {
       notifier.warning("Selecciona el motivo de rechazo.");
       return;
     }
-    if (rejectionReason === "OTHER" && !rejectionComment.trim()) {
+    if (rejectionRequiresComment && !rejectionComment.trim()) {
       notifier.warning("Describe el motivo de rechazo.");
       return;
     }
@@ -1529,7 +1530,7 @@ export const QuoteDetailPage = () => {
           <div>
             <p className="text-xs font-semibold uppercase text-gray-500">Revisión</p>
             <p className="text-sm font-semibold text-amber-700">R{String(quote.revisionNumber).padStart(2, "0")}</p>
-            {quote.revisionReason && <p className="text-xs text-gray-600">{revisionReasonLabel(quote.revisionReason)}</p>}
+            {quote.revisionReason && <p className="text-xs text-gray-600">{catalogReasonLabel(quote.revisionReason, revisionOptions, revisionReasonLabel)}</p>}
             {quote.previousVersionId && (
               <NavLink to={`/quotes/${quote.previousVersionId}`} className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:text-blue-800">
                 Ver versión anterior
@@ -1568,7 +1569,7 @@ export const QuoteDetailPage = () => {
         {quote.rejectionReason && (
           <div className="rounded-md border border-orange-200 bg-orange-50 p-3 md:col-span-2">
             <p className="text-xs font-semibold uppercase text-orange-700">Motivo de rechazo</p>
-            <p className="mt-1 text-sm font-semibold text-orange-950">{rejectionReasonLabel(quote.rejectionReason)}</p>
+            <p className="mt-1 text-sm font-semibold text-orange-950">{catalogReasonLabel(quote.rejectionReason, rejectionOptions, rejectionReasonLabel)}</p>
             {quote.rejectionComment && <p className="mt-1 text-xs text-orange-900">{quote.rejectionComment}</p>}
             <p className="mt-2 text-[11px] text-orange-700">
               Registrado {quote.rejectedAt ? formatDate(quote.rejectedAt) : "-"}
@@ -1580,7 +1581,7 @@ export const QuoteDetailPage = () => {
         {quote.cancellationReason && (
           <div className="rounded-md border border-rose-200 bg-rose-50 p-3 md:col-span-2">
             <p className="text-xs font-semibold uppercase text-rose-700">Motivo de cancelación</p>
-            <p className="mt-1 text-sm font-semibold text-rose-950">{cancellationReasonLabel(quote.cancellationReason)}</p>
+            <p className="mt-1 text-sm font-semibold text-rose-950">{catalogReasonLabel(quote.cancellationReason, cancellationOptions, cancellationReasonLabel)}</p>
             {quote.cancellationComment && <p className="mt-1 text-xs text-rose-900">{quote.cancellationComment}</p>}
             <p className="mt-2 text-[11px] text-rose-700">
               Registrado {quote.cancelledAt ? formatDate(quote.cancelledAt) : "-"}
@@ -1592,7 +1593,7 @@ export const QuoteDetailPage = () => {
         {quote.approvalReturnReason && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 md:col-span-2">
             <p className="text-xs font-semibold uppercase text-amber-700">Cambios solicitados por aprobación</p>
-            <p className="mt-1 text-sm font-semibold text-amber-950">{quote.approvalReturnReason.replaceAll("_", " ")}</p>
+            <p className="mt-1 text-sm font-semibold text-amber-950">{catalogReasonLabel(quote.approvalReturnReason, approvalReturnOptions, (reason) => reason?.replaceAll("_", " ") || "Sin especificar")}</p>
             {quote.approvalReturnComment && <p className="mt-1 text-xs text-amber-900">{quote.approvalReturnComment}</p>}
           </div>
         )}
@@ -1885,13 +1886,13 @@ export const QuoteDetailPage = () => {
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="">Selecciona un motivo...</option>
-              {REVISION_REASON_OPTIONS.map((option) => (
+              {revisionOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
 
             <label className="mt-4 block text-xs font-semibold uppercase text-gray-600">
-              Comentario {revisionReason === "OTHER" ? "*" : "(opcional)"}
+              Comentario {revisionRequiresComment ? "*" : "(opcional)"}
             </label>
             <textarea
               value={revisionComment}
@@ -1916,7 +1917,7 @@ export const QuoteDetailPage = () => {
               <button
                 type="button"
                 onClick={() => void handleCreateRevision()}
-                disabled={isActionLocked || !revisionReason || (revisionReason === "OTHER" && !revisionComment.trim())}
+                disabled={isActionLocked || !revisionReason || (revisionRequiresComment && !revisionComment.trim())}
                 className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isActionLocked ? "Creando..." : "Crear revisión"}
@@ -1955,11 +1956,11 @@ export const QuoteDetailPage = () => {
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="">Selecciona un motivo...</option>
-              {REJECTION_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {rejectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
 
             <label className="mt-4 block text-xs font-semibold uppercase text-gray-500" htmlFor="rejection-comment">
-              Comentario {rejectionReason === "OTHER" ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
+              Comentario {rejectionRequiresComment ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
             </label>
             <textarea
               id="rejection-comment"
@@ -1968,7 +1969,7 @@ export const QuoteDetailPage = () => {
               disabled={isActionLocked}
               rows={4}
               maxLength={500}
-              placeholder={rejectionReason === "OTHER" ? "Describe el motivo de rechazo..." : "Agrega contexto opcional..."}
+              placeholder={rejectionRequiresComment ? "Describe el motivo de rechazo..." : "Agrega contexto opcional..."}
               className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-orange-500"
             />
             <p className="mt-1 text-right text-[11px] text-gray-500">{rejectionComment.length}/500</p>
@@ -1983,7 +1984,7 @@ export const QuoteDetailPage = () => {
               </button>
               <button
                 onClick={() => void handleRejectQuote()}
-                disabled={isActionLocked || !rejectionReason || (rejectionReason === "OTHER" && !rejectionComment.trim())}
+                disabled={isActionLocked || !rejectionReason || (rejectionRequiresComment && !rejectionComment.trim())}
                 className="rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isActionLocked ? "Guardando..." : "Confirmar rechazo"}
@@ -2022,11 +2023,11 @@ export const QuoteDetailPage = () => {
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-rose-500"
             >
               <option value="">Selecciona un motivo...</option>
-              {CANCELLATION_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {cancellationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
 
             <label className="mt-4 block text-xs font-semibold uppercase text-gray-500" htmlFor="cancellation-comment">
-              Comentario {cancellationReason === "OTHER" ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
+              Comentario {cancellationRequiresComment ? <span className="text-rose-600">*</span> : <span className="normal-case text-gray-400">(opcional)</span>}
             </label>
             <textarea
               id="cancellation-comment"
@@ -2035,7 +2036,7 @@ export const QuoteDetailPage = () => {
               disabled={isActionLocked}
               rows={4}
               maxLength={500}
-              placeholder={cancellationReason === "OTHER" ? "Describe el motivo de cancelación..." : "Agrega contexto opcional..."}
+              placeholder={cancellationRequiresComment ? "Describe el motivo de cancelación..." : "Agrega contexto opcional..."}
               className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-rose-500"
             />
             <p className="mt-1 text-right text-[11px] text-gray-500">{cancellationComment.length}/500</p>
@@ -2050,7 +2051,7 @@ export const QuoteDetailPage = () => {
               </button>
               <button
                 onClick={() => void handleCancelQuote()}
-                disabled={isActionLocked || !cancellationReason || (cancellationReason === "OTHER" && !cancellationComment.trim())}
+                disabled={isActionLocked || !cancellationReason || (cancellationRequiresComment && !cancellationComment.trim())}
                 className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isActionLocked ? "Guardando..." : "Confirmar cancelación"}
