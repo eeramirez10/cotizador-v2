@@ -67,6 +67,8 @@ export interface Quote {
   chatThreadId?: string;
   version: string;
   statusVersion: string;
+  revisionNumber: number;
+  relatedVersions: Quote[];
   quoteMeta: QuoteMeta;
 }
 

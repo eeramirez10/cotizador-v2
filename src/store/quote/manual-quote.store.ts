@@ -189,8 +189,13 @@ const deliverySuggestion = (stock: number, costUsd: number): string => {
   return "1-2 semanas";
 };
 
+const createClientDraftId = (): string =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `mq_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
 const newDraft = (): ManualQuoteDraft => ({
-  id: `mq_${Math.random().toString(36).slice(2, 10)}`,
+  id: createClientDraftId(),
   savedQuoteId: null,
   status: "BORRADOR",
   currency: "MXN",
@@ -560,7 +565,6 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       return {
         draft: {
           ...state.draft,
-          savedQuoteId: null,
           status: "BORRADOR",
           items: nextItems,
         },
@@ -571,7 +575,6 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => ({
       draft: {
         ...state.draft,
-        savedQuoteId: null,
         status: "BORRADOR",
         items: [...state.draft.items, ...createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate)],
       },
@@ -581,7 +584,6 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => ({
       draft: {
         ...state.draft,
-        savedQuoteId: null,
         status: "BORRADOR",
         captureMethod: "EXCEL_IMPORT",
         originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
@@ -593,7 +595,6 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => ({
       draft: {
         ...state.draft,
-        savedQuoteId: null,
         status: "BORRADOR",
         captureMethod: "EXCEL_IMPORT",
         originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),

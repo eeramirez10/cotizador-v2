@@ -141,6 +141,7 @@ export interface SavedQuoteRecord {
     importedFromExcel?: boolean;
     requiresReview: boolean;
   }>;
+  relatedVersions: SavedQuoteRecord[];
 }
 
 interface ApiQuoteItem {
@@ -176,6 +177,7 @@ interface ApiQuoteItem {
 interface ApiQuote {
   id: string;
   quoteNumber: string;
+  clientDraftId: string | null;
   status: "DRAFT" | "PENDING" | "PENDING_APPROVAL" | "CHANGES_REQUESTED" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED" | "SUPERSEDED";
   deliveryStatus: "NOT_SENT" | "SENT";
   firstSentAt: string | null;
@@ -244,6 +246,7 @@ interface ApiQuote {
   items: ApiQuoteItem[];
   createdAt: string;
   updatedAt: string;
+  relatedVersions?: ApiQuote[];
 }
 
 interface ApiPaginatedResponse<T> {
@@ -347,7 +350,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
   return {
     quoteId: apiQuote.id,
     quoteNumber: apiQuote.quoteNumber,
-    quoteDraftId: apiQuote.id,
+    quoteDraftId: apiQuote.clientDraftId || apiQuote.id,
     status: mapApiStatusToSaved(apiQuote.status),
     deliveryStatus: mapApiDeliveryStatusToSaved(apiQuote.deliveryStatus),
     firstSentAt: apiQuote.firstSentAt,
@@ -438,6 +441,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       importedFromExcel: apiQuote.captureMethod === "EXCEL_IMPORT",
       requiresReview: item.requiresReview,
     })),
+    relatedVersions: (apiQuote.relatedVersions ?? []).map((version) =>
+      mapApiQuoteToSavedRecord({ ...version, relatedVersions: [] })
+    ),
   };
 };
 
@@ -483,6 +489,8 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   chatThreadId: undefined,
   version: "",
   statusVersion: stored.status,
+  revisionNumber: stored.revisionNumber,
+  relatedVersions: stored.relatedVersions.map(toQuote),
   quoteMeta: {
     pdfSentAt: stored.firstSentAt,
     quoteCreatedAt: stored.createdAt,
@@ -520,72 +528,6 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     sourceRequiresReview: Boolean(item.sourceRequiresReview),
     requiresReview: Boolean(item.requiresReview),
   };
-};
-
-const hasItemChanges = (
-  current: ApiQuoteItem,
-  payload: ReturnType<typeof mapDraftItemToPayload>
-): boolean => {
-  const text = (value: string | null | undefined): string => (value || "").trim();
-  const numberChanged = (left: number | null | undefined, right: number | null | undefined): boolean =>
-    Math.abs(Number(left ?? 0) - Number(right ?? 0)) > 0.0001;
-
-  return (
-    text(current.productId) !== text(payload.productId) ||
-    text(current.externalProductCode) !== text(payload.externalProductCode) ||
-    text(current.ean) !== text(payload.ean) ||
-    text(current.customerDescription) !== text(payload.customerDescription) ||
-    text(current.customerUnit) !== text(payload.customerUnit) ||
-    text(current.erpDescription) !== text(payload.erpDescription) ||
-    text(current.unit) !== text(payload.unit) ||
-    numberChanged(current.qty, payload.qty) ||
-    numberChanged(current.stock, payload.stock) ||
-    text(current.deliveryTime) !== text(payload.deliveryTime) ||
-    text(current.itemComment) !== text(payload.itemComment) ||
-    numberChanged(current.cost, payload.cost) ||
-    current.costCurrency !== payload.costCurrency ||
-    numberChanged(current.marginPct, payload.marginPct) ||
-    numberChanged(current.unitPrice, payload.unitPrice) ||
-    current.sourceRequiresReview !== payload.sourceRequiresReview ||
-    current.requiresReview !== payload.requiresReview
-  );
-};
-
-const mapDraftItemToExtractionPayload = (item: ManualQuoteItem) => {
-  const description = item.customerDescription?.trim() || item.erpDescription?.trim() || "Descripcion pendiente";
-  const customerUnit = item.customerUnit?.trim() || null;
-  const normalizedUnit = item.unit?.trim() || customerUnit;
-  const quantity = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : null;
-  const requiresReview =
-    Boolean(item.sourceRequiresReview) || Boolean(item.requiresReview) || quantity === null || !normalizedUnit;
-
-  return {
-    descriptionOriginal: description,
-    descriptionNormalized: description,
-    quantity,
-    unitOriginal: customerUnit,
-    unitNormalized: normalizedUnit,
-    requiresReview,
-  };
-};
-
-const replaceQuoteItems = async (quoteId: string, items: ManualQuoteItem[]): Promise<void> => {
-  const current = await getRawQuoteById(quoteId);
-  if (!current) {
-    throw new Error("No se encontró la cotización para sincronizar partidas.");
-  }
-
-  for (const currentItem of current.items) {
-    await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${currentItem.id}`, {
-      headers: requireAuthHeaders(),
-    });
-  }
-
-  for (const item of items) {
-    await coreHttpClient.post(`/api/quotes/${quoteId}/items`, mapDraftItemToPayload(item), {
-      headers: requireAuthHeaders(),
-    });
-  }
 };
 
 const ensureRemoteCustomerId = async (client: Client): Promise<string> => {
@@ -642,26 +584,14 @@ const getRawQuoteById = async (quoteId: string): Promise<ApiQuote | null> => {
 const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
   const current = await getRawQuoteById(quoteId);
   if (!current) return false;
-
-  if (current.status === "QUOTED" || current.status === "APPROVED" || current.status === "PENDING_APPROVAL") {
-    if (current.status !== "PENDING_APPROVAL") return true;
-
-    await coreHttpClient.patch(
-      `/api/quotes/${quoteId}/status`,
-      { status: "QUOTED", note: "Quote approved internally." },
-      { headers: requireAuthHeaders() }
-    );
-    return true;
-  }
-
-  if (!["DRAFT", "PENDING", "CHANGES_REQUESTED"].includes(current.status)) return false;
+  if (current.status === "QUOTED" || current.status === "APPROVED") return true;
+  if (current.status !== "PENDING_APPROVAL") return false;
 
   await coreHttpClient.patch(
     `/api/quotes/${quoteId}/status`,
-    { status: "PENDING_APPROVAL", note: "Quote submitted for internal approval." },
+    { status: "QUOTED", note: "Quote approved internally." },
     { headers: requireAuthHeaders() }
   );
-
   return true;
 };
 
@@ -699,123 +629,36 @@ export class QuotesService {
 
     const customerId = await ensureRemoteCustomerId(draft.client);
     const origin = options.origin ?? "MANUAL";
-    const draftItemsWithLocalProducts = draft.items;
+    const { data } = await coreHttpClient.put<{
+      id: string;
+      quoteNumber: string;
+      clientDraftId: string;
+      status: ApiQuote["status"];
+    }>(
+      `/api/quotes/drafts/${encodeURIComponent(draft.id)}`,
+      {
+        quoteId: draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null,
+        action: options.status === "COTIZADA" ? "SUBMIT_FOR_APPROVAL" : "SAVE_DRAFT",
+        customerId,
+        currency: draft.currency,
+        exchangeRate: draft.exchangeRate,
+        exchangeRateDate: draft.exchangeRateDate,
+        taxRate: draft.taxRate,
+        deliveryPlace: draft.deliveryPlace,
+        paymentTerms: draft.paymentTerms,
+        validityDays: draft.validityDays,
+        origin,
+        sourceChannel: draft.sourceChannel,
+        captureMethod: draft.captureMethod,
+        originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
+        providedByUserId: draft.providedBy?.id ?? null,
+        notes: null,
+        items: draft.items.map(mapDraftItemToPayload),
+      },
+      { headers: requireAuthHeaders() }
+    );
 
-    let quoteId = draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null;
-    const isExistingQuote = Boolean(quoteId);
-
-    if (quoteId) {
-      await coreHttpClient.patch(
-        `/api/quotes/${quoteId}`,
-        {
-          customerId,
-          currency: draft.currency,
-          exchangeRate: draft.exchangeRate,
-          exchangeRateDate: draft.exchangeRateDate,
-          taxRate: draft.taxRate,
-          deliveryPlace: draft.deliveryPlace,
-          paymentTerms: draft.paymentTerms,
-          validityDays: draft.validityDays,
-          sourceChannel: draft.sourceChannel,
-          captureMethod: draft.captureMethod,
-          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
-          providedByUserId: draft.providedBy?.id ?? null,
-          notes: null,
-        },
-        { headers: requireAuthHeaders() }
-      );
-
-      const current = await getRawQuoteById(quoteId);
-      if (!current) throw new Error("No se encontró la cotización para actualizar.");
-
-      const draftItemIds = new Set(draftItemsWithLocalProducts.map((item) => item.id));
-      for (const item of current.items) {
-        if (!draftItemIds.has(item.id)) {
-          await coreHttpClient.delete(`/api/quotes/${quoteId}/items/${item.id}`, {
-            headers: requireAuthHeaders(),
-          });
-        }
-      }
-
-      const currentItemsById = new Map(current.items.map((item) => [item.id, item]));
-      for (const item of draftItemsWithLocalProducts) {
-        const payload = mapDraftItemToPayload(item);
-        const currentItem = currentItemsById.get(item.id);
-        if (!currentItem) {
-          await coreHttpClient.post(`/api/quotes/${quoteId}/items`, payload, {
-            headers: requireAuthHeaders(),
-          });
-        } else if (hasItemChanges(currentItem, payload)) {
-          await coreHttpClient.patch(`/api/quotes/${quoteId}/items/${item.id}`, payload, {
-            headers: requireAuthHeaders(),
-          });
-        }
-      }
-    } else if (origin !== "MANUAL") {
-      const extractionItems = draft.items.map(mapDraftItemToExtractionPayload);
-
-      const { data } = await coreHttpClient.post<ApiQuote>(
-        "/api/quotes/from-extraction",
-        {
-          customerId,
-          currency: draft.currency,
-          exchangeRate: draft.exchangeRate,
-          exchangeRateDate: draft.exchangeRateDate,
-          taxRate: draft.taxRate,
-          deliveryPlace: draft.deliveryPlace,
-          paymentTerms: draft.paymentTerms,
-          validityDays: draft.validityDays,
-          origin,
-          sourceChannel: draft.sourceChannel,
-          captureMethod: draft.captureMethod,
-          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
-          providedByUserId: draft.providedBy?.id ?? null,
-          notes: null,
-          items: extractionItems,
-        },
-        { headers: requireAuthHeaders() }
-      );
-
-      quoteId = data.id;
-      await replaceQuoteItems(quoteId, draftItemsWithLocalProducts);
-    } else {
-      const { data } = await coreHttpClient.post<ApiQuote>(
-        "/api/quotes",
-        {
-          customerId,
-          currency: draft.currency,
-          exchangeRate: draft.exchangeRate,
-          exchangeRateDate: draft.exchangeRateDate,
-          taxRate: draft.taxRate,
-          deliveryPlace: draft.deliveryPlace,
-          paymentTerms: draft.paymentTerms,
-          validityDays: draft.validityDays,
-          origin,
-          sourceChannel: draft.sourceChannel,
-          captureMethod: draft.captureMethod,
-          originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
-          providedByUserId: draft.providedBy?.id ?? null,
-          notes: null,
-        },
-        { headers: requireAuthHeaders() }
-      );
-      quoteId = data.id;
-    }
-
-    if (!isExistingQuote && (origin === "MANUAL" || draft.savedQuoteId)) {
-      for (const item of draftItemsWithLocalProducts) {
-        await coreHttpClient.post(`/api/quotes/${quoteId}/items`, mapDraftItemToPayload(item), {
-          headers: requireAuthHeaders(),
-        });
-      }
-    }
-
-    if (options.status === "COTIZADA") {
-      const success = await advanceQuoteApproval(quoteId);
-      if (!success) throw new Error("No se pudo enviar la cotización a aprobación.");
-    }
-
-    return quoteId;
+    return data.id;
   }
 
   static async createRevision(
