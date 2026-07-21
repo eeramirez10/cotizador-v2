@@ -124,6 +124,36 @@ const formatLineAmount = (value: number) => {
   }).format(value)}`;
 };
 
+const getBranchAddressLines = (branch: SavedQuoteRecord["branch"]): string[] => {
+  const streetLine = [
+    branch.street,
+    branch.exteriorNumber && `#${branch.exteriorNumber}`,
+    branch.interiorNumber && `Int. ${branch.interiorNumber}`,
+  ].filter(Boolean).join(" ");
+  const locationLine = [
+    branch.neighborhood && `Col. ${branch.neighborhood}`,
+    branch.municipality,
+    branch.city,
+    branch.state,
+    branch.postalCode && `C.P. ${branch.postalCode}`,
+  ].filter(Boolean).join(", ");
+  const hasAddress = Boolean(streetLine || locationLine || branch.postalCode);
+  const locationWithCountry = hasAddress ? [locationLine, branch.country].filter(Boolean).join(", ") : "";
+
+  return [streetLine, locationWithCountry].filter(Boolean);
+};
+
+const formatPhoneNumber = (value: string | null | undefined): string => {
+  const raw = value?.trim() || "";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)} ${digits.slice(6)}`;
+  if (digits.length === 12 && digits.startsWith("52")) return `+52 (${digits.slice(2, 4)}) ${digits.slice(4, 8)} ${digits.slice(8)}`;
+  return raw;
+};
+
+const formatBranchPhones = (branch: SavedQuoteRecord["branch"]): string =>
+  [branch.phone, branch.secondaryPhone].filter(Boolean).map(formatPhoneNumber).join(" · ");
+
 const getDisplayCost = (
   cost: number,
   productCurrency: "MXN" | "USD",
@@ -283,6 +313,9 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
   { quote, customerDisplayName, contactName, deliverySummary, pdfStyle, className, style },
   ref
 ) {
+  const branchAddressLines = getBranchAddressLines(quote.branch);
+  const branchPhones = formatBranchPhones(quote.branch);
+
   if (pdfStyle === "CONTEMPORARY") {
     const brand = "#fcce01";
     const brandStrong = "#e9b900";
@@ -331,16 +364,15 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
         </header>
 
         <section className="mt-4 flex items-start justify-between gap-6">
-          <div className="flex items-start gap-3">
-            <img className="h-11 w-auto object-contain" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" loading="eager" />
-            <div>
-              <p className="text-[15px] font-bold" style={{ color: ink }}>TUVANSA</p>
-              <p className="mt-1 text-[9px] leading-4" style={{ color: muted }}>
-                Soluciones industriales<br />
-                Sucursal: {quote.branchName || "-"}<br />
-                www.tuvansa.com.mx
-              </p>
-            </div>
+          <div>
+            <p className="text-[15px] font-bold" style={{ color: ink }}>Tubería y Válvulas del Norte SA de CV</p>
+            <p className="mt-1 text-[9px] leading-4" style={{ color: muted }}>
+              Sucursal: {quote.branchName || "-"}<br />
+                {branchAddressLines.map((line) => <span key={line}>{line}<br /></span>)}
+              {quote.branch.email && <>Correo: {quote.branch.email}<br /></>}
+              {branchPhones && <>Teléfono: {branchPhones}<br /></>}
+              www.tuvansa.com.mx
+            </p>
           </div>
 
           <div className="w-[2.35in] border-l-[3px] px-3 py-2 text-[9px]" style={{ borderColor: brand, backgroundColor: brandSoft }}>
@@ -363,6 +395,8 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
             <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: ink }}>› Ejecutivo de ventas</p>
             <p className="mt-2 text-[11px] font-bold" style={{ color: ink }}>{quote.createdByName || "-"}</p>
             <p style={{ color: muted }}>Sucursal: {quote.branchName || "-"}</p>
+            <p style={{ color: muted }}>Correo: {quote.createdByEmail || "-"}</p>
+            <p style={{ color: muted }}>Teléfono: {formatPhoneNumber(quote.createdByPhone) || "-"}</p>
             <p style={{ color: muted }}>Condición de pago: {quote.paymentTerms || "CONTADO"}</p>
             <p style={{ color: muted }}>Lugar de entrega: {quote.deliveryPlace || "Por definir"}</p>
           </div>
@@ -432,7 +466,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
 
         <footer className="mt-6 border-t-2 px-1 pt-3 text-[8px]" style={{ borderColor: brand, color: muted }}>
           <div className="flex items-end justify-between gap-6">
-            <div><p className="font-bold" style={{ color: ink }}>TUVANSA</p><p>Soluciones industriales</p></div>
+            <div><p className="font-bold" style={{ color: ink }}>Tubería y Válvulas del Norte SA de CV</p><p>{quote.branchName || "Sucursal"}</p></div>
             <div className="text-center"><p>{quote.branchName || "Sucursal"}</p><p>{quote.paymentTerms || "CONTADO"}</p></div>
             <div className="text-right"><p>{quote.currency}</p><p>{quote.quoteNumber || quote.quoteId}</p></div>
           </div>
@@ -450,12 +484,14 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
     >
       <header className="border-b border-gray-200 pb-4">
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <img className="h-12" src="/img/logo-tuvansa.png" alt="Logo Tuvansa" loading="eager" />
-            <div>
-              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
-              <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
-            </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
+            <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
+            <p className="mt-1 text-[10px] font-semibold text-gray-700">Tubería y Válvulas del Norte SA de CV</p>
+            <p className="text-[9px] leading-3 text-gray-500">Sucursal: {quote.branchName || "-"}</p>
+              {branchAddressLines.map((line) => <p key={line} className="text-[9px] leading-3 text-gray-500">{line}</p>)}
+            {quote.branch.email && <p className="text-[9px] leading-3 text-gray-500">{quote.branch.email}{branchPhones ? ` · ${branchPhones}` : ""}</p>}
+            {!quote.branch.email && branchPhones && <p className="text-[9px] leading-3 text-gray-500">{branchPhones}</p>}
           </div>
 
           <div className="space-y-1 text-right text-xs">
@@ -488,6 +524,12 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           <p className="text-[11px] font-semibold uppercase text-gray-500">Datos comerciales</p>
           <p className="mt-1 text-xs text-gray-700">
             <span className="font-semibold">Vendedor:</span> {quote.createdByName || "-"}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Correo:</span> {quote.createdByEmail || "-"}
+          </p>
+          <p className="text-xs text-gray-700">
+            <span className="font-semibold">Teléfono:</span> {formatPhoneNumber(quote.createdByPhone) || "-"}
           </p>
           <p className="text-xs text-gray-700">
             <span className="font-semibold">Proporcionada por:</span> {quote.providedBy?.fullName || "Directa"}

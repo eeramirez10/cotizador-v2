@@ -13,14 +13,54 @@ import { useAuthStore } from "../../store/auth/auth.store";
 interface BranchFormState {
   code: string;
   name: string;
-  address: string;
+  street: string;
+  exteriorNumber: string;
+  interiorNumber: string;
+  neighborhood: string;
+  city: string;
+  municipality: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  email: string;
+  phone: string;
+  secondaryPhone: string;
 }
 
 const EMPTY_FORM: BranchFormState = {
   code: "",
   name: "",
-  address: "",
+  street: "",
+  exteriorNumber: "",
+  interiorNumber: "",
+  neighborhood: "",
+  city: "",
+  municipality: "",
+  state: "",
+  postalCode: "",
+  country: "México",
+  email: "",
+  phone: "",
+  secondaryPhone: "",
 };
+
+const formatBranchAddress = (branch: ManagedBranch): string => {
+  const streetLine = [branch.street, branch.exteriorNumber && `#${branch.exteriorNumber}`, branch.interiorNumber && `Int. ${branch.interiorNumber}`]
+    .filter(Boolean)
+    .join(" ");
+  const locationLine = [branch.neighborhood && `Col. ${branch.neighborhood}`, branch.municipality, branch.city, branch.state]
+    .filter(Boolean)
+    .join(", ");
+  const hasAddress = Boolean(streetLine || locationLine || branch.postalCode);
+  const postalLine = hasAddress
+    ? [branch.postalCode && `C.P. ${branch.postalCode}`, branch.country].filter(Boolean).join(", ")
+    : "";
+
+  return [streetLine, locationLine, postalLine].filter(Boolean).join(" · ");
+};
+
+const formatBranchContact = (branch: ManagedBranch): string =>
+  [branch.email, branch.phone, branch.secondaryPhone].filter(Boolean).join(" · ");
 
 export const BranchesPage = () => {
   const user = useAuthStore((state) => state.user);
@@ -45,7 +85,7 @@ export const BranchesPage = () => {
     if (!normalized) return branches;
 
     return branches.filter((branch) =>
-      [branch.code, branch.name, branch.address || ""].join(" ").toLowerCase().includes(normalized)
+      [branch.code, branch.name, formatBranchAddress(branch), formatBranchContact(branch)].join(" ").toLowerCase().includes(normalized)
     );
   }, [branches, search]);
 
@@ -67,7 +107,18 @@ export const BranchesPage = () => {
     setForm({
       code: branch.code,
       name: branch.name,
-      address: branch.address || "",
+      street: branch.street || "",
+      exteriorNumber: branch.exteriorNumber || "",
+      interiorNumber: branch.interiorNumber || "",
+      neighborhood: branch.neighborhood || "",
+      city: branch.city || "",
+      municipality: branch.municipality || "",
+      state: branch.state || "",
+      postalCode: branch.postalCode || "",
+      country: branch.country || "México",
+      email: branch.email || "",
+      phone: branch.phone || "",
+      secondaryPhone: branch.secondaryPhone || "",
     });
     setOpenModal(true);
   };
@@ -77,7 +128,16 @@ export const BranchesPage = () => {
     if (form.code.trim().length > 10) return "El código no debe exceder 10 caracteres.";
     if (!form.name.trim()) return "El nombre de sucursal es obligatorio.";
     if (form.name.trim().length > 120) return "El nombre no debe exceder 120 caracteres.";
-    if (form.address.trim().length > 255) return "La dirección no debe exceder 255 caracteres.";
+    if (form.street.trim().length > 120) return "La calle no debe exceder 120 caracteres.";
+    if (form.neighborhood.trim().length > 120) return "La colonia no debe exceder 120 caracteres.";
+    if (form.city.trim().length > 120 || form.state.trim().length > 120 || form.municipality.trim().length > 120) return "Ciudad, estado y municipio no deben exceder 120 caracteres.";
+    if (form.postalCode.trim() && !/^\d{5}$/.test(form.postalCode.trim())) return "El código postal debe contener 5 dígitos.";
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return "El correo principal no es válido.";
+    const phones = [form.phone, form.secondaryPhone].filter((phone) => phone.trim());
+    if (phones.some((phone) => {
+      const digits = phone.replace(/\D/g, "");
+      return digits.length < 7 || digits.length > 20;
+    })) return "Los teléfonos deben contener entre 7 y 20 dígitos.";
     return null;
   };
 
@@ -94,19 +154,11 @@ export const BranchesPage = () => {
       if (editingBranch) {
         await updateMutation.mutateAsync({
           branchId: editingBranch.id,
-          input: {
-            code: form.code,
-            name: form.name,
-            address: form.address || null,
-          },
+          input: form,
         });
         notifier.success("Sucursal actualizada.");
       } else {
-        await createMutation.mutateAsync({
-          code: form.code,
-          name: form.name,
-          address: form.address || null,
-        });
+        await createMutation.mutateAsync(form);
         notifier.success("Sucursal creada.");
       }
 
@@ -160,7 +212,7 @@ export const BranchesPage = () => {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Buscar por código, nombre o dirección..."
+            placeholder="Buscar por código, nombre, dirección o contacto..."
           />
         </div>
 
@@ -171,6 +223,7 @@ export const BranchesPage = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Nombre</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Dirección</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Contacto</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Estatus</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">Acciones</th>
               </tr>
@@ -179,7 +232,7 @@ export const BranchesPage = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {branchesQuery.isFetching && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-gray-500">
                     Cargando sucursales...
                   </td>
                 </tr>
@@ -187,7 +240,7 @@ export const BranchesPage = () => {
 
               {!branchesQuery.isFetching && filteredBranches.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-3 py-10 text-center text-sm text-gray-500">
                     No se encontraron sucursales.
                   </td>
                 </tr>
@@ -197,7 +250,8 @@ export const BranchesPage = () => {
                 <tr key={branch.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2 text-xs font-semibold text-gray-700">{branch.code}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{branch.name}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700">{branch.address || "-"}</td>
+                  <td className="max-w-xs px-3 py-2 text-xs text-gray-700">{formatBranchAddress(branch) || "-"}</td>
+                  <td className="max-w-xs px-3 py-2 text-xs text-gray-700">{formatBranchContact(branch) || "-"}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">
                     <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
                       Activa
@@ -243,13 +297,13 @@ export const BranchesPage = () => {
             aria-label="Cerrar modal de sucursal"
           />
 
-          <div className="relative w-full max-w-xl rounded-md border border-gray-200 bg-white shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-md border border-gray-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">
                   {editingBranch ? "Editar sucursal" : "Nueva sucursal"}
                 </h2>
-                <p className="text-xs text-gray-500">Define código único, nombre y dirección opcional.</p>
+                <p className="text-xs text-gray-500">Configura la dirección y medios de contacto que aparecerán en las cotizaciones.</p>
               </div>
 
               <button
@@ -263,27 +317,43 @@ export const BranchesPage = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-3 px-4 py-3">
-              <Input
-                label="Código"
-                value={form.code}
-                onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))}
-                placeholder="Ej. 07"
-              />
+            <form onSubmit={handleSubmit} className="space-y-5 px-4 py-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input label="Código" required value={form.code} onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))} placeholder="Ej. 07" />
+                <Input label="Nombre" required value={form.name} onChange={(value) => setForm((prev) => ({ ...prev, name: value }))} placeholder="Ej. Puebla" />
+              </div>
 
-              <Input
-                label="Nombre"
-                value={form.name}
-                onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
-                placeholder="Ej. Puebla"
-              />
+              <section className="space-y-3 border-t border-gray-100 pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">Dirección</h3>
+                  <p className="text-xs text-gray-500">Se mostrará formada en el encabezado y pie de la cotización.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-6">
+                  <div className="sm:col-span-3"><Input label="Calle" value={form.street} onChange={(value) => setForm((prev) => ({ ...prev, street: value }))} placeholder="Ej. Av. Reforma" /></div>
+                  <div className="sm:col-span-2"><Input label="Número exterior" value={form.exteriorNumber} onChange={(value) => setForm((prev) => ({ ...prev, exteriorNumber: value }))} placeholder="Ej. 123" /></div>
+                  <div><Input label="Interior" value={form.interiorNumber} onChange={(value) => setForm((prev) => ({ ...prev, interiorNumber: value }))} placeholder="Ej. 4" /></div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input label="Colonia" value={form.neighborhood} onChange={(value) => setForm((prev) => ({ ...prev, neighborhood: value }))} placeholder="Ej. Centro" />
+                  <Input label="Municipio / Alcaldía" value={form.municipality} onChange={(value) => setForm((prev) => ({ ...prev, municipality: value }))} placeholder="Ej. Monterrey" />
+                  <Input label="Ciudad" value={form.city} onChange={(value) => setForm((prev) => ({ ...prev, city: value }))} placeholder="Ej. Monterrey" />
+                  <Input label="Estado" value={form.state} onChange={(value) => setForm((prev) => ({ ...prev, state: value }))} placeholder="Ej. Nuevo León" />
+                  <Input label="Código postal" value={form.postalCode} onChange={(value) => setForm((prev) => ({ ...prev, postalCode: value.replace(/\D/g, "").slice(0, 5) }))} placeholder="Ej. 64000" />
+                  <Input label="País" value={form.country} onChange={(value) => setForm((prev) => ({ ...prev, country: value }))} placeholder="México" />
+                </div>
+              </section>
 
-              <Input
-                label="Dirección (opcional)"
-                value={form.address}
-                onChange={(value) => setForm((prev) => ({ ...prev, address: value }))}
-                placeholder="Ej. Av. Reforma 123"
-              />
+              <section className="space-y-3 border-t border-gray-100 pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">Contacto de sucursal</h3>
+                  <p className="text-xs text-gray-500">Se utilizará en la propuesta comercial enviada al cliente.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Input label="Correo principal" type="email" value={form.email} onChange={(value) => setForm((prev) => ({ ...prev, email: value }))} placeholder="ventas@tuvansa.com.mx" />
+                  <Input label="Teléfono principal" type="tel" value={form.phone} onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))} placeholder="Ej. 8181234567" />
+                  <Input label="Teléfono secundario" type="tel" value={form.secondaryPhone} onChange={(value) => setForm((prev) => ({ ...prev, secondaryPhone: value }))} placeholder="Opcional" />
+                </div>
+              </section>
 
               <div className="flex justify-end gap-2 border-t border-gray-200 pt-3">
                 <button
@@ -317,12 +387,17 @@ interface InputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  type?: "text" | "email" | "tel";
+  required?: boolean;
 }
 
-const Input = ({ label, value, onChange, placeholder }: InputProps) => (
+const Input = ({ label, value, onChange, placeholder, type = "text", required = false }: InputProps) => (
   <div>
-    <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">{label}</label>
+    <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">
+      {label}{required && <span className="ml-1 text-rose-500">*</span>}
+    </label>
     <input
+      type={type}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}

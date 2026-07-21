@@ -54,6 +54,24 @@ export type QuoteRevisionReason =
   | "COMMERCIAL_TERMS"
   | "OTHER";
 
+export interface QuoteBranchDetails {
+  id: string;
+  code: string;
+  name: string;
+  street: string | null;
+  exteriorNumber: string | null;
+  interiorNumber: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  municipality: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+  email: string | null;
+  phone: string | null;
+  secondaryPhone: string | null;
+}
+
 export interface SavedQuoteRecord {
   quoteId: string;
   quoteNumber?: string;
@@ -70,8 +88,11 @@ export interface SavedQuoteRecord {
   updatedAt: string;
   createdByUserId: string | null;
   createdByName: string;
+  createdByEmail: string;
+  createdByPhone: string | null;
   branchId: string | null;
   branchName: string;
+  branch: QuoteBranchDetails;
   currency: "MXN" | "USD";
   exchangeRate: number;
   taxRate: number;
@@ -224,7 +245,20 @@ interface ApiQuote {
   createdByUserId: string;
   branch: {
     id: string;
+    code: string;
     name: string;
+    street: string | null;
+    exteriorNumber: string | null;
+    interiorNumber: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    municipality: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+    email: string | null;
+    phone: string | null;
+    secondaryPhone: string | null;
   };
   customer: {
     id: string;
@@ -237,6 +271,8 @@ interface ApiQuote {
   createdByUser: {
     firstName: string;
     lastName: string;
+    email: string;
+    phone: string | null;
   };
   events: Array<{
     status: string;
@@ -363,8 +399,11 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     updatedAt: apiQuote.updatedAt,
     createdByUserId: apiQuote.createdByUserId,
     createdByName: `${apiQuote.createdByUser.firstName} ${apiQuote.createdByUser.lastName}`.trim(),
+    createdByEmail: apiQuote.createdByUser.email || "",
+    createdByPhone: apiQuote.createdByUser.phone || null,
     branchId: apiQuote.branch.id,
     branchName: apiQuote.branch.name,
+    branch: apiQuote.branch,
     currency: apiQuote.currency,
     exchangeRate: apiQuote.exchangeRate,
     taxRate: apiQuote.taxRate,
