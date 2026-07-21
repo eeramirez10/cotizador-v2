@@ -59,6 +59,7 @@ const REVISION_REASON_OPTIONS: Array<{ value: QuoteRevisionReason; label: string
   { value: "CUSTOMER_REQUEST", label: "Solicitud del cliente" },
   { value: "ADD_REMOVE_ITEMS", label: "Agregar o eliminar partidas" },
   { value: "PRICE_OR_QUANTITY_CHANGE", label: "Cambiar precio o cantidad" },
+  { value: "EXCHANGE_RATE_CHANGE", label: "Actualizar o corregir tipo de cambio" },
   { value: "INFORMATION_CORRECTION", label: "Corregir información" },
   { value: "COMMERCIAL_TERMS", label: "Cambiar condiciones comerciales" },
   { value: "OTHER", label: "Otro" },
@@ -1424,7 +1425,7 @@ export const QuoteDetailPage = () => {
               className={`inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 ${disabledActionClass}`}
             >
               <ThumbsUp className="h-4 w-4" />
-              Marcar aprobada
+              Marcar aprobada por cliente
             </button>
           )}
 
