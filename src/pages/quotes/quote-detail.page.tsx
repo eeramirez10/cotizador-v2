@@ -43,6 +43,7 @@ import {
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
+import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -174,18 +175,14 @@ const getDisplayCost = (
   quoteCurrency: "MXN" | "USD",
   exchangeRate: number
 ): number => {
-  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-  if (productCurrency === "USD") return cost / safeRate;
-  if (quoteCurrency === "USD") return cost / safeRate;
-  return cost;
+  return getErpCostDisplayAmount(cost, productCurrency, quoteCurrency, exchangeRate);
 };
 
 const getDisplayCostCurrency = (
   productCurrency: "MXN" | "USD",
   quoteCurrency: "MXN" | "USD"
 ): "MXN" | "USD" => {
-  if (productCurrency === "USD" || quoteCurrency === "USD") return "USD";
-  return "MXN";
+  return getErpCostDisplayCurrency(productCurrency, quoteCurrency);
 };
 
 const formatDate = (value: string) => {

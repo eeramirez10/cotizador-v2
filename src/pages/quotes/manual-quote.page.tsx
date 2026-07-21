@@ -13,6 +13,7 @@ import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalog
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { QuoteSourceChannel } from "../../store/quote/manual-quote.store";
+import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
@@ -40,18 +41,14 @@ const getDisplayCost = (
   quoteCurrency: "MXN" | "USD",
   exchangeRate: number
 ): number => {
-  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-  if (productCurrency === "USD") return cost / safeRate;
-  if (quoteCurrency === "USD") return cost / safeRate;
-  return cost;
+  return getErpCostDisplayAmount(cost, productCurrency, quoteCurrency, exchangeRate);
 };
 
 const getDisplayCostCurrency = (
   productCurrency: "MXN" | "USD",
   quoteCurrency: "MXN" | "USD"
 ): "MXN" | "USD" => {
-  if (productCurrency === "USD" || quoteCurrency === "USD") return "USD";
-  return "MXN";
+  return getErpCostDisplayCurrency(productCurrency, quoteCurrency);
 };
 
 const getSellerPriceCostBase = (
@@ -60,14 +57,7 @@ const getSellerPriceCostBase = (
   quoteCurrency: "MXN" | "USD",
   exchangeRate: number
 ): number => {
-  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-
-  if (productCurrency === "USD") {
-    const normalizedUsdCost = cost / safeRate;
-    return quoteCurrency === "USD" ? normalizedUsdCost : normalizedUsdCost * safeRate;
-  }
-
-  return quoteCurrency === "USD" ? cost / safeRate : cost;
+  return convertQuoteAmount(cost, productCurrency, quoteCurrency, exchangeRate);
 };
 
 const getMarginVisual = (marginPct: number) => {
@@ -114,6 +104,7 @@ export const ManualQuotePage = () => {
   const [showCancelEditConfirmation, setShowCancelEditConfirmation] = useState(false);
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
   const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
+  const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -379,6 +370,7 @@ export const ManualQuotePage = () => {
     enforcePriceFloor?: boolean;
     requireSourceChannel?: boolean;
     requireCompletedItems?: boolean;
+    requireCommercialConditions?: boolean;
   }) => {
     if (!draft.client) {
       notifier.warning("Selecciona un cliente antes de guardar la cotización.");
@@ -392,6 +384,11 @@ export const ManualQuotePage = () => {
 
     if (options?.requireSourceChannel && draft.sourceChannel === "UNSPECIFIED") {
       notifier.warning("Selecciona el origen de la cotización antes de generarla.");
+      return false;
+    }
+
+    if (options?.requireCommercialConditions && !draft.commercialConditions.trim()) {
+      notifier.warning("Selecciona las condiciones comerciales antes de generar la cotización.");
       return false;
     }
 
@@ -465,7 +462,12 @@ export const ManualQuotePage = () => {
   };
 
   const handleGenerateQuote = async () => {
-    if (!validateBeforeSave({ enforcePriceFloor: true, requireSourceChannel: true, requireCompletedItems: true })) return;
+    if (!validateBeforeSave({
+      enforcePriceFloor: true,
+      requireSourceChannel: true,
+      requireCompletedItems: true,
+      requireCommercialConditions: true,
+    })) return;
 
     try {
       setSavingAction("quote");
@@ -757,8 +759,21 @@ export const ManualQuotePage = () => {
         </div>
 
         <div className="lg:col-span-2">
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="commercialConditions">Condiciones comerciales</label>
-          <select id="commercialConditions" value={draft.commercialConditions} onChange={(event) => setCommercialConditions(event.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="commercialConditions">
+              Condiciones comerciales *
+            </label>
+            {draft.commercialConditions.trim() && (
+              <button
+                type="button"
+                onClick={() => setShowCommercialConditionsModal(true)}
+                className="text-xs font-semibold text-blue-600 underline-offset-2 hover:text-blue-700 hover:underline"
+              >
+                Ver condiciones generales
+              </button>
+            )}
+          </div>
+          <select id="commercialConditions" value={draft.commercialConditions} onChange={(event) => setCommercialConditions(event.target.value)} required className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
             <option value="">Selecciona condiciones...</option>
             {commercialConditionsOptions.map((option) => <option key={option.id} value={option.value || ""}>{option.label}</option>)}
           </select>
@@ -1156,6 +1171,44 @@ export const ManualQuotePage = () => {
                   Guardar comentario
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCommercialConditionsModal && draft.commercialConditions.trim() && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="commercial-conditions-title">
+          <div className="absolute inset-0 bg-slate-950/45" onClick={() => setShowCommercialConditionsModal(false)} />
+          <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Cotización</p>
+                <h3 id="commercial-conditions-title" className="mt-0.5 text-base font-semibold text-gray-800">
+                  Condiciones generales
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCommercialConditionsModal(false)}
+                className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Cerrar condiciones generales"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4">
+              <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                {draft.commercialConditions}
+              </p>
+            </div>
+            <div className="flex justify-end border-t border-gray-200 bg-gray-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setShowCommercialConditionsModal(false)}
+                className="rounded-md bg-gray-800 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-700"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

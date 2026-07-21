@@ -94,7 +94,8 @@ export const QuoteCatalogsPage = () => {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {query.isLoading && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Cargando catálogos...</td></tr>}
-            {!query.isLoading && rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500">No hay opciones registradas.</td></tr>}
+            {query.isError && <tr><td colSpan={6} className="px-4 py-10 text-center text-rose-600"><p>No se pudieron cargar las opciones del catálogo.</p><button type="button" onClick={() => void query.refetch()} className="mt-2 text-xs font-semibold underline underline-offset-2">Volver a intentar</button></td></tr>}
+            {!query.isLoading && !query.isError && rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500">No hay opciones registradas.</td></tr>}
             {rows.map((option) => (
               <tr key={option.id}>
                 <td className="px-4 py-3"><p className="font-semibold text-gray-800">{option.label}</p><p className="text-xs text-gray-400">{option.code}</p></td>

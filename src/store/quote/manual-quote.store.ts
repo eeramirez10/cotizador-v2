@@ -8,6 +8,7 @@ import type {
   ExtractedQuotedExcelItem,
 } from "../../modules/quote-extraction/types/quote-extraction-job.types";
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
+import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
@@ -228,10 +229,7 @@ const getCostInQuoteCurrency = (
   currency: QuoteCurrency,
   exchangeRate: number
 ): number => {
-  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-  if (item.costCurrency === "USD") return item.costUsd / safeRate;
-  if (currency === "USD") return item.costUsd / safeRate;
-  return item.costUsd;
+  return convertQuoteAmount(item.costUsd, item.costCurrency, currency, exchangeRate);
 };
 
 const getSellerPriceCostBase = (
@@ -239,13 +237,6 @@ const getSellerPriceCostBase = (
   currency: QuoteCurrency,
   exchangeRate: number
 ): number => {
-  const safeRate = exchangeRate > 0 ? exchangeRate : 1;
-
-  if (item.costCurrency === "USD") {
-    const usdCost = item.costUsd / safeRate;
-    return currency === "USD" ? usdCost : usdCost * safeRate;
-  }
-
   return getCostInQuoteCurrency(item, currency, exchangeRate);
 };
 
@@ -411,13 +402,22 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     })),
 
   setCurrency: (currency) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        currency,
-        items: recalcItems(state.draft.items, currency, state.draft.exchangeRate),
-      },
-    })),
+    set((state) => {
+      if (currency === state.draft.currency) return state;
+      const convertedItems = state.draft.items.map((item) => ({
+        ...item,
+        manualUnitPrice: Number.isFinite(item.manualUnitPrice)
+          ? round(convertQuoteAmount(item.manualUnitPrice ?? 0, state.draft.currency, currency, state.draft.exchangeRate))
+          : undefined,
+      }));
+      return {
+        draft: {
+          ...state.draft,
+          currency,
+          items: recalcItems(convertedItems, currency, state.draft.exchangeRate),
+        },
+      };
+    }),
 
   setExchangeRate: (exchangeRate) =>
     set((state) => ({
