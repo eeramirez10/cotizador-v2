@@ -85,6 +85,18 @@ export interface UpdateLocalProductInput {
   isActive?: boolean;
 }
 
+export interface SimilarLocalProductCandidate {
+  matchType: "EXACT" | "SEMANTIC";
+  similarity: number;
+  similarityPercent: number;
+  product: LocalProduct;
+}
+
+export interface SimilarLocalProductsResult {
+  semanticAvailable: boolean;
+  items: SimilarLocalProductCandidate[];
+}
+
 interface LocalProductsBatchApiResponse {
   createdCount: number;
   matchedCount: number;
@@ -114,6 +126,52 @@ const requireAuthHeaders = (): Record<string, string> => {
 };
 
 export class LocalProductsService {
+  private static readonly similarCacheTtlMs = 30_000;
+  private static readonly similarCache = new Map<
+    string,
+    { expiresAt: number; result: SimilarLocalProductsResult }
+  >();
+  private static readonly similarRequests = new Map<string, Promise<SimilarLocalProductsResult>>();
+
+  static async searchSimilar(input: {
+    description: string;
+    unit: string;
+    topK?: number;
+  }): Promise<SimilarLocalProductsResult> {
+    const description = input.description.trim().toUpperCase();
+    const unit = input.unit.trim().toUpperCase();
+    const topK = input.topK ?? 8;
+    const cacheKey = JSON.stringify([description, unit, topK]);
+    const cached = this.similarCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.result;
+
+    const pending = this.similarRequests.get(cacheKey);
+    if (pending) return pending;
+
+    const request = coreHttpClient.post<SimilarLocalProductsResult>(
+      "/api/local-products/similar",
+      { description, unit, topK },
+      { headers: requireAuthHeaders() },
+    ).then(({ data }) => {
+      const result = {
+        semanticAvailable: data.semanticAvailable !== false,
+        items: Array.isArray(data.items) ? data.items : [],
+      };
+      if (result.semanticAvailable) {
+        this.similarCache.set(cacheKey, {
+          expiresAt: Date.now() + this.similarCacheTtlMs,
+          result,
+        });
+      }
+      return result;
+    }).finally(() => {
+      this.similarRequests.delete(cacheKey);
+    });
+
+    this.similarRequests.set(cacheKey, request);
+    return request;
+  }
+
   static async list(params?: ListLocalProductsParams): Promise<PaginatedLocalProducts> {
     const status = params?.status || "ALL";
     const includeInactive = status === "ALL" ? true : undefined;
@@ -169,6 +227,7 @@ export class LocalProductsService {
       }
     );
 
+    this.similarCache.clear();
     return Array.isArray(data.items) ? data.items : [];
   }
 
@@ -181,6 +240,7 @@ export class LocalProductsService {
       }
     );
 
+    this.similarCache.clear();
     return data;
   }
 
@@ -188,5 +248,6 @@ export class LocalProductsService {
     await coreHttpClient.delete(`/api/local-products/${encodeURIComponent(productId)}`, {
       headers: requireAuthHeaders(),
     });
+    this.similarCache.clear();
   }
 }
