@@ -8,6 +8,7 @@ import { SelectClientModal } from "../../shared/components/modals/select-client.
 import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
+import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -16,6 +17,12 @@ import type { QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 
 type OriginFilter = "ALL" | "UNLINKED";
+
+const LOCAL_PRODUCT_UNITS = new Set(["PZA", "M", "FT", "KG", "TR", "SE", "MPZ", "LB", "CM", "MM", "IN", "GAL", "L"]);
+const getLocalProductUnit = (value: string): string => {
+  const normalized = value.trim().toUpperCase();
+  return LOCAL_PRODUCT_UNITS.has(normalized) ? normalized : "PZA";
+};
 
 const SOURCE_CHANNEL_OPTIONS: Array<{ value: QuoteSourceChannel; label: string }> = [
   { value: "UNSPECIFIED", label: "Seleccionar origen" },
@@ -344,6 +351,7 @@ export const ManualQuotePage = () => {
               currentItem.customerDescription.trim() ||
               currentItem.erpDescription.trim() ||
               `PRODUCTO TEMPORAL ${currentItem.id}`,
+            unit: getLocalProductUnit(currentItem.customerUnit),
           },
         ]
       );
@@ -763,7 +771,7 @@ export const ManualQuotePage = () => {
             <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="commercialConditions">
               Condiciones comerciales *
             </label>
-            {draft.commercialConditions.trim() && (
+            {(draft.commercialConditions || "").trim() && (
               <button
                 type="button"
                 onClick={() => setShowCommercialConditionsModal(true)}
@@ -1176,7 +1184,7 @@ export const ManualQuotePage = () => {
         </div>
       )}
 
-      {showCommercialConditionsModal && draft.commercialConditions.trim() && (
+      {showCommercialConditionsModal && (draft.commercialConditions || "").trim() && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="commercial-conditions-title">
           <div className="absolute inset-0 bg-slate-950/45" onClick={() => setShowCommercialConditionsModal(false)} />
           <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
@@ -1281,43 +1289,26 @@ export const ManualQuotePage = () => {
         }}
       />
       {localProductConfirmationItem && (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-semibold text-gray-800">Guardar producto local</h3>
-            <p className="mt-2 text-sm text-gray-600">
-              ¿Estás seguro de que deseas guardar este producto en productos locales?
-            </p>
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <p className="font-semibold">Descripción que se guardará</p>
-              <p className="mt-1">{(
-                localProductConfirmationItem.customerDescription.trim() ||
-                localProductConfirmationItem.erpDescription.trim() ||
-                `PRODUCTO TEMPORAL ${localProductConfirmationItem.id}`
-              ).toUpperCase()}</p>
-            </div>
-            <p className="mt-3 text-xs text-gray-500">
-              El producto quedará como LOCAL_TEMP para que Compras pueda completarlo o activarlo posteriormente.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setLocalProductConfirmationItemId(null)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  const itemId = localProductConfirmationItem.id;
-                  setLocalProductConfirmationItemId(null);
-                  void handleCreateLocalProduct(itemId);
-                }}
-                className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
-              >
-                Confirmar y guardar
-              </button>
-            </div>
-          </div>
-        </div>
+        <LocalProductDedupModal
+          open
+          description={(
+            localProductConfirmationItem.customerDescription.trim() ||
+            localProductConfirmationItem.erpDescription.trim() ||
+            `PRODUCTO TEMPORAL ${localProductConfirmationItem.id}`
+          ).toUpperCase()}
+          unit={getLocalProductUnit(localProductConfirmationItem.customerUnit)}
+          onClose={() => setLocalProductConfirmationItemId(null)}
+          onReuse={(candidate) => {
+            assignLocalProductToItem(localProductConfirmationItem.id, candidate.product);
+            setLocalProductConfirmationItemId(null);
+            notifier.success("Producto local existente vinculado a la partida.");
+          }}
+          onCreateNew={() => {
+            const itemId = localProductConfirmationItem.id;
+            setLocalProductConfirmationItemId(null);
+            void handleCreateLocalProduct(itemId);
+          }}
+        />
       )}
       {showCancelEditConfirmation && draft.savedQuoteId && (
         <div className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">
