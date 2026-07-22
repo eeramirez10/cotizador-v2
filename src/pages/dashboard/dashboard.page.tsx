@@ -9,6 +9,7 @@ import {
   FileText,
   FileUp,
   MessageSquareText,
+  ShoppingCart,
   Users,
 } from "lucide-react";
 import { NavLink } from "react-router";
@@ -16,7 +17,7 @@ import type { AnalyticsDashboard, AnalyticsParams } from "../../modules/analytic
 import { useBranchAnalytics, useUserAnalytics } from "../../queries/analytics/use-analytics";
 import { useAuthStore } from "../../store/auth/auth.store";
 
-type DashboardRole = "admin" | "manager" | "seller";
+type DashboardRole = "admin" | "manager" | "seller" | "purchasing";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Borrador",
@@ -119,17 +120,18 @@ export const DashboardPage = () => {
   const user = useAuthStore((state) => state.user);
   const role = ((user?.role || "seller").trim().toLowerCase() as DashboardRole);
   const isSeller = role === "seller";
+  const isPurchasing = role === "purchasing";
   const period = getPeriod();
   const baseParams = { ...period, branchId: user?.branchId, userId: user?.id };
 
-  const branchMxn = useBranchAnalytics({ ...baseParams, currency: "MXN" }, !isSeller);
-  const branchUsd = useBranchAnalytics({ ...baseParams, currency: "USD" }, !isSeller);
+  const branchMxn = useBranchAnalytics({ ...baseParams, currency: "MXN" }, !isSeller && !isPurchasing);
+  const branchUsd = useBranchAnalytics({ ...baseParams, currency: "USD" }, !isSeller && !isPurchasing);
   const userMxn = useUserAnalytics({ ...baseParams, currency: "MXN" }, isSeller);
   const userUsd = useUserAnalytics({ ...baseParams, currency: "USD" }, isSeller);
-  const activeQueries = isSeller ? [userMxn, userUsd] : [branchMxn, branchUsd];
+  const activeQueries = isPurchasing ? [] : isSeller ? [userMxn, userUsd] : [branchMxn, branchUsd];
   const dashboards = activeQueries.map((query) => query.data);
   const isLoading = activeQueries.some((query) => query.isLoading);
-  const hasError = activeQueries.every((query) => query.isError);
+  const hasError = activeQueries.length > 0 && activeQueries.every((query) => query.isError);
 
   const created = dashboards.reduce((total, dashboard) => total + (dashboard?.kpis.created || 0), 0);
   const quoted = dashboards.reduce((total, dashboard) => total + (dashboard?.kpis.quoted || 0), 0);
@@ -147,6 +149,27 @@ export const DashboardPage = () => {
 
   const fullName = `${user?.name || ""} ${user?.lastname || ""}`.trim() || user?.username || "Usuario";
   const scopeName = isSeller ? "tu actividad" : `la sucursal ${user?.branch?.name || "asignada"}`;
+
+  if (isPurchasing) {
+    return (
+      <div className="space-y-6">
+        <section className="overflow-hidden rounded-2xl border border-amber-300 bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950 p-6 text-white shadow-sm sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">Centro de Compras</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Hola, {fullName}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            Revisa productos locales, registra propuestas y libera costos para el equipo comercial.
+          </p>
+        </section>
+        <section>
+          <h2 className="text-base font-semibold text-gray-900">Acciones rápidas</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <QuickAction to="/procurement" title="Productos pendientes" description="Cotiza y selecciona costos de proveedor" icon={<ShoppingCart className="h-5 w-5" />} primary />
+            <QuickAction to="/user" title="Mi perfil" description="Consulta tus datos de acceso" icon={<Users className="h-5 w-5" />} />
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const sellerActions = [
     { to: "/cotizador", title: "Nueva cotización", description: "Captura una cotización manual", icon: <FilePlus2 className="h-5 w-5" />, primary: true },
