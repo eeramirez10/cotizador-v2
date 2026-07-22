@@ -46,12 +46,14 @@ const ROLE_LABEL: Record<UserRole, string> = {
   ADMIN: "Administrador",
   MANAGER: "Manager",
   SELLER: "Vendedor",
+  PURCHASING: "Compras",
 };
 
 const ROLE_BADGE_CLASS: Record<UserRole, string> = {
   ADMIN: "bg-indigo-100 text-indigo-700",
   MANAGER: "bg-sky-100 text-sky-700",
   SELLER: "bg-emerald-100 text-emerald-700",
+  PURCHASING: "bg-amber-100 text-amber-800",
 };
 
 const normalizeBranchCode = (value?: string): string => {
@@ -308,7 +310,9 @@ export const UsersPage = () => {
     }
   };
 
-  const roleOptions: UserRole[] = isAdmin ? ["SELLER", "MANAGER", "ADMIN"] : ["SELLER", "MANAGER"];
+  const roleOptions: UserRole[] = isAdmin
+    ? ["SELLER", "MANAGER", "PURCHASING", "ADMIN"]
+    : ["SELLER", "MANAGER"];
 
   return (
     <div className="space-y-5">

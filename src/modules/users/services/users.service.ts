@@ -2,7 +2,7 @@ import axios from "axios";
 import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 
-export type UserRole = "ADMIN" | "MANAGER" | "SELLER";
+export type UserRole = "ADMIN" | "MANAGER" | "SELLER" | "PURCHASING";
 
 export interface ManagedUser {
   id: string;
@@ -78,6 +78,7 @@ const normalizeRole = (role: string): UserRole => {
 
   if (normalized === "ADMIN") return "ADMIN";
   if (normalized === "MANAGER") return "MANAGER";
+  if (normalized === "PURCHASING") return "PURCHASING";
   return "SELLER";
 };
 
