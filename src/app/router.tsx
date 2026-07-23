@@ -47,13 +47,11 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "quotes",
-        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Cotizaciones" },
         Component: QuotesPage,
       },
       {
         path: "analytics",
-        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Indicadores" },
         lazy: async () => {
           const { AnalyticsPage } = await import("../pages/analytics/analytics.page");
@@ -81,7 +79,6 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "quotes/:quoteId",
-        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Detalle de Cotización" },
         Component: QuoteDetailPage,
       },
@@ -98,24 +95,13 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "clients",
-        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Clientes" },
         Component: ClientsPage,
       },
       {
         path: "products",
-        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Productos" },
         Component: ProductsPage,
-      },
-      {
-        path: "procurement",
-        loader: requireRolesLoader(["admin", "manager", "purchasing"]),
-        handle: { title: "Compras" },
-        lazy: async () => {
-          const { ProductProcurementPage } = await import("../pages/products/product-procurement.page");
-          return { Component: ProductProcurementPage };
-        },
       },
       {
         path: "branches",

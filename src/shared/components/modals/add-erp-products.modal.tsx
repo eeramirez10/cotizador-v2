@@ -24,6 +24,7 @@ interface AddErpProductsModalProps {
   customerDescription?: string;
   customerUnit?: string;
   aiSearchOnEnter?: boolean;
+  initialMode?: SearchMode;
 }
 
 type SearchMode = "erp" | "ai";
@@ -45,6 +46,7 @@ export const AddErpProductsModal = ({
   customerDescription = "",
   customerUnit = "",
   aiSearchOnEnter = false,
+  initialMode,
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
   const [submittedAiTerm, setSubmittedAiTerm] = useState("");
@@ -75,7 +77,9 @@ export const AddErpProductsModal = ({
 
     if (didInitializeOpenState) return;
 
-    if (hasCustomerContext) {
+    if (initialMode === "erp") {
+      setMode("erp");
+    } else if (hasCustomerContext) {
       setMode("ai");
       if (normalizedCustomerDescription) {
         setTerm(normalizedCustomerDescription);
@@ -85,7 +89,7 @@ export const AddErpProductsModal = ({
     }
 
     setDidInitializeOpenState(true);
-  }, [didInitializeOpenState, hasCustomerContext, normalizedCustomerDescription, open]);
+  }, [didInitializeOpenState, hasCustomerContext, initialMode, normalizedCustomerDescription, open]);
 
   const branchId = resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
   const enabledErpSearch = open && mode === "erp" && !!branchId && debouncedTerm.trim().length > 0;

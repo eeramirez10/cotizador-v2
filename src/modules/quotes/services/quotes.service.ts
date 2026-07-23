@@ -8,6 +8,7 @@ import type {
   ManualQuoteItem,
   QuoteSourceChannel,
 } from "../../../store/quote/manual-quote.store";
+import type { ErpProduct } from "../../products/types/erp-product.types";
 
 export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA" | "REEMPLAZADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
@@ -122,6 +123,9 @@ export interface SavedQuoteRecord {
     costUsd: number;
     costCurrency?: "MXN" | "USD";
     marginPct: number;
+    sourceCurrency?: "MXN" | "USD" | null;
+    sourceUnitPrice?: number | null;
+    sourceSubtotal?: number | null;
     unitPrice: number;
     subtotal: number;
     sourceRequiresReview?: boolean;
@@ -147,6 +151,9 @@ interface ApiQuoteItem {
   cost: number;
   costCurrency: "MXN" | "USD";
   marginPct: number;
+  sourceCurrency: "MXN" | "USD" | null;
+  sourceUnitPrice: number | null;
+  sourceSubtotal: number | null;
   unitPrice: number;
   subtotal: number;
   sourceRequiresReview: boolean;
@@ -442,6 +449,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       costUsd: item.cost,
       costCurrency: item.costCurrency,
       marginPct: item.marginPct,
+      sourceCurrency: item.sourceCurrency,
+      sourceUnitPrice: item.sourceUnitPrice,
+      sourceSubtotal: item.sourceSubtotal,
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       sourceRequiresReview: item.sourceRequiresReview,
@@ -531,6 +541,9 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     cost: safeCost,
     costCurrency: item.costCurrency || "USD",
     marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,
+    sourceCurrency: item.sourceCurrency || null,
+    sourceUnitPrice: Number.isFinite(item.sourceUnitPrice) ? item.sourceUnitPrice : null,
+    sourceSubtotal: Number.isFinite(item.sourceSubtotal) ? item.sourceSubtotal : null,
     unitPrice: Number.isFinite(item.unitPrice) ? item.unitPrice : undefined,
     sourceRequiresReview: Boolean(item.sourceRequiresReview),
     requiresReview: Boolean(item.requiresReview),
@@ -603,6 +616,29 @@ const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
 };
 
 export class QuotesService {
+  static async linkImportedExcelItemToErp(
+    quoteId: string,
+    itemId: string,
+    product: ErpProduct,
+  ): Promise<SavedQuoteRecord> {
+    const { data } = await coreHttpClient.patch<ApiQuote>(
+      `/api/quotes/${encodeURIComponent(quoteId)}/items/${encodeURIComponent(itemId)}/match-erp`,
+      {
+        productId: null,
+        externalProductCode: product.code,
+        ean: product.ean || null,
+        erpDescription: product.description,
+        unit: product.unit,
+        stock: product.stock,
+        cost: product.costUsd,
+        costCurrency: product.costCurrency,
+        deliveryTime: null,
+      },
+      { headers: requireAuthHeaders() },
+    );
+    return mapApiQuoteToSavedRecord(data);
+  }
+
   static async list(params: { page?: number; pageSize?: number; status?: ApiQuote["status"]; archived?: boolean }): Promise<PageResult<Quote>> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;

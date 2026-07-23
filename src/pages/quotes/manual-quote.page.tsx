@@ -9,6 +9,7 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
+import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/excel-imported-quote-items.table";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -145,6 +146,8 @@ export const ManualQuotePage = () => {
   const setItemQty = useManualQuoteStore((state) => state.setItemQty);
   const setItemMargin = useManualQuoteStore((state) => state.setItemMargin);
   const setItemUnitPrice = useManualQuoteStore((state) => state.setItemUnitPrice);
+  const setExcelItemSourceCurrency = useManualQuoteStore((state) => state.setExcelItemSourceCurrency);
+  const setExcelItemsSourceCurrency = useManualQuoteStore((state) => state.setExcelItemsSourceCurrency);
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
   const setItemComment = useManualQuoteStore((state) => state.setItemComment);
   const setClient = useManualQuoteStore((state) => state.setClient);
@@ -184,6 +187,9 @@ export const ManualQuotePage = () => {
             customerUnit: item.customerUnit || "",
             itemComment: item.itemComment || "",
             costCurrency: item.costCurrency || "USD",
+            sourceCurrency: item.sourceCurrency ?? undefined,
+            sourceUnitPrice: item.sourceUnitPrice ?? undefined,
+            sourceSubtotal: item.sourceSubtotal ?? undefined,
             sourceRequiresReview: Boolean(item.sourceRequiresReview),
           })),
         });
@@ -828,6 +834,21 @@ export const ManualQuotePage = () => {
         </div>
       )}
 
+      {draft.captureMethod === "EXCEL_IMPORT" ? (
+        <ExcelImportedQuoteItemsTable
+          items={draft.items}
+          quoteCurrency={quoteCurrency}
+          exchangeRate={draft.exchangeRate}
+          onQtyChange={setItemQty}
+          onSourcePriceChange={setItemUnitPrice}
+          onSourceCurrencyChange={setExcelItemSourceCurrency}
+          onAllSourceCurrencyChange={setExcelItemsSourceCurrency}
+          onDeliveryTimeChange={setItemDeliveryTime}
+          onComment={openCommentModal}
+          onRemove={removeItem}
+        />
+      ) : (
+        <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2">
         <div className="flex items-center gap-2 text-xs">
           <button
@@ -881,7 +902,7 @@ export const ManualQuotePage = () => {
                 <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM cliente</th>
               )}
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">
-                {draft.captureMethod === "EXCEL_IMPORT" ? "Descripción" : "Descripción ERP"}
+                Descripción ERP
               </th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
@@ -1117,6 +1138,8 @@ export const ManualQuotePage = () => {
           </tbody>
         </table>
       </div>
+        </>
+      )}
 
       <div className="mt-4 flex justify-end">
         <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-4">

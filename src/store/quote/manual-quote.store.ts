@@ -46,6 +46,9 @@ export interface ManualQuoteItem {
   costCurrency: ErpProductCurrency;
   marginPct: number;
   manualUnitPrice?: number;
+  sourceCurrency?: QuoteCurrency;
+  sourceUnitPrice?: number;
+  sourceSubtotal?: number;
   unitPrice: number;
   subtotal: number;
   sourceRequiresReview: boolean;
@@ -168,6 +171,8 @@ interface ManualQuoteState {
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
+  setExcelItemSourceCurrency: (itemId: string, currency: QuoteCurrency) => void;
+  setExcelItemsSourceCurrency: (currency: QuoteCurrency) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
   setItemComment: (itemId: string, itemComment: string) => void;
   setClient: (client: Client | null) => void;
@@ -253,13 +258,21 @@ const computeItem = (
 ): ManualQuoteItem => {
   const sellerPriceCostBase = getSellerPriceCostBase(item, currency, exchangeRate);
   const normalizedMarginPct = roundMargin(item.marginPct);
+  const hasExcelSourcePrice = item.importedFromExcel
+    && Number.isFinite(item.sourceUnitPrice)
+    && (item.sourceUnitPrice ?? 0) >= 0;
   const hasManualPrice = Number.isFinite(item.manualUnitPrice) && (item.manualUnitPrice ?? 0) >= 0;
-  const unitPrice = hasManualPrice
+  const unitPrice = hasExcelSourcePrice
+    ? round(convertQuoteAmount(item.sourceUnitPrice ?? 0, item.sourceCurrency || currency, currency, exchangeRate))
+    : hasManualPrice
     ? round(Math.max(0, item.manualUnitPrice ?? 0))
     : sellerPriceCostBase > 0
       ? round(sellerPriceCostBase * (1 + normalizedMarginPct / 100))
       : round(0);
   const marginPct = hasManualPrice ? calculateMarginPct(unitPrice, sellerPriceCostBase) : normalizedMarginPct;
+  const sourceSubtotal = hasExcelSourcePrice
+    ? round((item.sourceUnitPrice ?? 0) * item.qty)
+    : item.sourceSubtotal;
   const subtotal = round(unitPrice * item.qty);
   const hasCurrentProduct = Boolean(item.localProductId?.trim() || item.erpCode.trim() || item.ean.trim());
   const hasCurrentDescription = Boolean(item.erpDescription.trim());
@@ -272,6 +285,7 @@ const computeItem = (
     marginPct,
     unitPrice,
     subtotal,
+    sourceSubtotal,
     requiresReview,
   };
 };
@@ -296,6 +310,9 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
         manualUnitPrice: item.manualUnitPrice,
+        sourceCurrency: item.sourceCurrency,
+        sourceUnitPrice: item.sourceUnitPrice,
+        sourceSubtotal: item.sourceSubtotal,
         sourceRequiresReview: item.sourceRequiresReview,
         importedFromExcel: item.importedFromExcel,
       },
@@ -359,7 +376,10 @@ const createItemsFromQuotedExcel = (
         costUsd: 0,
         costCurrency: currency,
         marginPct: 0,
-        manualUnitPrice: item.precio_vendedor ?? undefined,
+        manualUnitPrice: undefined,
+        sourceCurrency: "MXN",
+        sourceUnitPrice: item.precio_vendedor ?? undefined,
+        sourceSubtotal: item.subtotal ?? undefined,
         sourceRequiresReview: item.requiere_revision,
         importedFromExcel: true,
       },
@@ -653,6 +673,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 
       const nextItems = state.draft.items.map((item) => {
         if (item.id !== itemId) return item;
+        if (item.importedFromExcel) {
+          return {
+            ...item,
+            sourceUnitPrice: safeUnitPrice,
+            sourceSubtotal: round(safeUnitPrice * item.qty),
+            manualUnitPrice: undefined,
+          };
+        }
         if (Math.abs(safeUnitPrice - item.unitPrice) < 0.000001) {
           return item;
         }
@@ -673,6 +701,32 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         },
       };
     }),
+
+  setExcelItemSourceCurrency: (itemId, currency) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        items: recalcItems(
+          state.draft.items.map((item) => item.id === itemId ? { ...item, sourceCurrency: currency } : item),
+          state.draft.currency,
+          state.draft.exchangeRate
+        ),
+      },
+    })),
+
+  setExcelItemsSourceCurrency: (currency) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        items: recalcItems(
+          state.draft.items.map((item) =>
+            item.importedFromExcel ? { ...item, sourceCurrency: currency } : item
+          ),
+          state.draft.currency,
+          state.draft.exchangeRate
+        ),
+      },
+    })),
 
   setItemDeliveryTime: (itemId, deliveryTime) =>
     set((state) => ({
@@ -718,7 +772,10 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
-        manualUnitPrice: item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
+        sourceCurrency: item.sourceCurrency || (item.importedFromExcel ? quote.currency : undefined),
+        sourceUnitPrice: item.sourceUnitPrice ?? (item.importedFromExcel ? item.unitPrice : undefined),
+        sourceSubtotal: item.sourceSubtotal ?? (item.importedFromExcel ? item.subtotal : undefined),
+        manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
       }));
 
       const loadedItems = recalcItems(normalizedItems, quote.currency, quote.exchangeRate);
@@ -777,7 +834,10 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,
-      manualUnitPrice: item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
+      sourceCurrency: item.sourceCurrency || (item.importedFromExcel ? stored.currency : undefined),
+      sourceUnitPrice: item.sourceUnitPrice ?? (item.importedFromExcel ? item.unitPrice : undefined),
+      sourceSubtotal: item.sourceSubtotal ?? (item.importedFromExcel ? item.subtotal : undefined),
+      manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
     }));
 
     const loadedItems = recalcItems(normalizedItems, stored.currency, stored.exchangeRate);
