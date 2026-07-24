@@ -93,11 +93,15 @@ const getMarginVisual = (marginPct: number) => {
   };
 };
 
+const isErpWithoutEnoughStock = (item: ManualQuoteItem): boolean => {
+  const hasErpCode = Boolean(item.erpCode.trim());
+  return hasErpCode && Math.max(0, item.stock) < item.qty;
+};
+
 const requiresProcurementPrequote = (item: ManualQuoteItem): boolean => {
   const hasErpCode = Boolean(item.erpCode.trim());
   const isLocalProduct = !hasErpCode && Boolean(item.localProductId?.trim());
-  const isErpWithoutEnoughStock = hasErpCode && Math.max(0, item.stock) < item.qty;
-  return isLocalProduct || isErpWithoutEnoughStock;
+  return isLocalProduct || isErpWithoutEnoughStock(item);
 };
 
 const hasCompleteProcurementPrequote = (item: ManualQuoteItem): boolean => {
@@ -487,6 +491,8 @@ export const ManualQuotePage = () => {
 
     if (options?.enforcePriceFloor) {
       const belowCostItems = draft.items.filter((item) => {
+        if (isErpWithoutEnoughStock(item)) return false;
+
         const baseCost = Number(
           getSellerPriceCostBase(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate).toFixed(2)
         );
