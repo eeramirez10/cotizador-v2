@@ -22,6 +22,7 @@ import { NavLink } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   type Currency,
+  type ErpSupplier,
   type PurchaseRequisition,
   type RequisitionItem,
   type RequisitionStatus,
@@ -31,6 +32,7 @@ import {
 } from "../../modules/procurement/services/purchase-requisitions.service";
 import {
   usePurchaseRequisition,
+  useErpSupplierSearch,
   usePurchaseRequisitionMutations,
   usePurchaseRequisitions,
   useSuppliers,
@@ -119,9 +121,10 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
 });
 
 const EMPTY_SUPPLIER: SaveSupplierInput = {
-  erpCode: "",
   name: "",
   scope: "NATIONAL",
+  taxId: "",
+  state: "",
   country: "MÉXICO",
   contactName: "",
   email: "",
@@ -143,11 +146,18 @@ export const PurchaseRequisitionsPage = () => {
   const [offerItem, setOfferItem] = useState<RequisitionItem | null>(null);
   const [currentOfferForm, setCurrentOfferForm] = useState<OfferForm | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
+  const [supplierMode, setSupplierMode] = useState<"ERP" | "LOCAL">("ERP");
+  const [erpSupplierTerm, setErpSupplierTerm] = useState("");
   const [supplierForm, setSupplierForm] = useState<SaveSupplierInput>(EMPTY_SUPPLIER);
   const debouncedSearch = useDebouncedValue(search, 350);
+  const debouncedErpSupplierTerm = useDebouncedValue(erpSupplierTerm, 400);
   const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status });
   const detail = usePurchaseRequisition(selectedId);
   const suppliers = useSuppliers(Boolean(offerItem));
+  const erpSupplierSearch = useErpSupplierSearch(
+    debouncedErpSupplierTerm,
+    supplierOpen && supplierMode === "ERP",
+  );
   const brandCatalog = useQuoteCatalogs("PURCHASE_BRAND");
   const restrictionCatalog = useQuoteCatalogs("ORIGIN_RESTRICTION");
   const deliveryStateCatalog = useQuoteCatalogs("DELIVERY_STATE");
@@ -279,14 +289,35 @@ export const PurchaseRequisitionsPage = () => {
       notifier.warning("El nombre del proveedor es obligatorio.");
       return;
     }
-    const saved = await run(
-      "Guardando proveedor...",
-      () => mutations.createSupplier.mutateAsync(supplierForm),
-      "Proveedor guardado.",
-    );
-    if (saved) {
+    const toast = notifier.loading("Guardando proveedor local...");
+    try {
+      const supplier = await mutations.createSupplier.mutateAsync(supplierForm);
+      setCurrentOfferForm((state) => state ? { ...state, supplierId: supplier.id } : state);
+      if (toast !== undefined) notifier.update(toast, "success", "Proveedor local creado y seleccionado.");
+      else notifier.success("Proveedor local creado y seleccionado.");
       setSupplierOpen(false);
       setSupplierForm(EMPTY_SUPPLIER);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el proveedor.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    }
+  };
+
+  const syncErpSupplier = async (supplier: ErpSupplier) => {
+    if (mutations.syncErpSupplier.isPending) return;
+    const toast = notifier.loading(`Vinculando ${supplier.code}...`);
+    try {
+      const synced = await mutations.syncErpSupplier.mutateAsync(supplier.code);
+      setCurrentOfferForm((state) => state ? { ...state, supplierId: synced.id } : state);
+      if (toast !== undefined) notifier.update(toast, "success", "Proveedor ERP vinculado y seleccionado.");
+      else notifier.success("Proveedor ERP vinculado y seleccionado.");
+      setSupplierOpen(false);
+      setErpSupplierTerm("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo vincular el proveedor ERP.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
     }
   };
 
@@ -424,7 +455,7 @@ export const PurchaseRequisitionsPage = () => {
           setForm={setCurrentOfferForm}
           suppliers={suppliers.data || []}
           busy={mutations.isPending}
-          onNewSupplier={() => setSupplierOpen(true)}
+          onNewSupplier={() => { setSupplierMode("ERP"); setErpSupplierTerm(""); setSupplierOpen(true); }}
           onClose={() => { setOfferItem(null); setCurrentOfferForm(null); }}
           onSubmit={saveOffer}
         />
@@ -433,7 +464,15 @@ export const PurchaseRequisitionsPage = () => {
         <SupplierModal
           form={supplierForm}
           setForm={setSupplierForm}
-          busy={mutations.createSupplier.isPending}
+          mode={supplierMode}
+          setMode={setSupplierMode}
+          erpTerm={erpSupplierTerm}
+          setErpTerm={setErpSupplierTerm}
+          erpSuppliers={erpSupplierSearch.data || []}
+          erpLoading={erpSupplierSearch.isLoading || erpSupplierSearch.isFetching}
+          erpError={erpSupplierSearch.error instanceof Error ? erpSupplierSearch.error.message : null}
+          busy={mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending}
+          onSelectErp={(supplier) => { void syncErpSupplier(supplier); }}
           onClose={() => setSupplierOpen(false)}
           onSubmit={saveSupplier}
         />
@@ -710,27 +749,93 @@ const OfferModal = ({ item, form, setForm, suppliers, busy, onNewSupplier, onClo
   </Modal>
 );
 
-const SupplierModal = ({ form, setForm, busy, onClose, onSubmit }: {
+const SupplierModal = ({
+  form,
+  setForm,
+  mode,
+  setMode,
+  erpTerm,
+  setErpTerm,
+  erpSuppliers,
+  erpLoading,
+  erpError,
+  busy,
+  onSelectErp,
+  onClose,
+  onSubmit,
+}: {
   form: SaveSupplierInput;
   setForm: React.Dispatch<React.SetStateAction<SaveSupplierInput>>;
+  mode: "ERP" | "LOCAL";
+  setMode: (mode: "ERP" | "LOCAL") => void;
+  erpTerm: string;
+  setErpTerm: (term: string) => void;
+  erpSuppliers: ErpSupplier[];
+  erpLoading: boolean;
+  erpError: string | null;
   busy: boolean;
+  onSelectErp: (supplier: ErpSupplier) => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
 }) => (
   <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4">
-    <form onSubmit={onSubmit} className="w-full max-w-xl rounded-xl bg-white p-5 shadow-2xl">
-      <div className="flex items-start justify-between"><div><h2 className="text-lg font-bold">Nuevo proveedor</h2><p className="mt-1 text-xs text-slate-500">Si ya existe en ERP captura su código.</p></div><button type="button" onClick={onClose}><X className="h-5 w-5" /></button></div>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <Field label="Código ERP" value={form.erpCode || ""} onChange={(erpCode) => setForm((state) => ({ ...state, erpCode }))} />
-        <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
-        <Select label="Tipo *" value={form.scope} onChange={(scope) => setForm((state) => ({ ...state, scope: scope as SaveSupplierInput["scope"] }))} options={[["NATIONAL", "Nacional"], ["INTERNATIONAL", "Internacional"]]} />
-        <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
-        <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
-        <Field label="Correo" type="email" value={form.email || ""} onChange={(email) => setForm((state) => ({ ...state, email }))} />
-        <Field label="Teléfono" value={form.phone || ""} onChange={(phone) => setForm((state) => ({ ...state, phone }))} />
+    <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
+      <div className="flex items-start justify-between">
+        <div><h2 className="text-lg font-bold">Seleccionar proveedor</h2><p className="mt-1 text-xs text-slate-500">Busca el proveedor oficial en ERP o registra uno local.</p></div>
+        <button type="button" disabled={busy} onClick={onClose}><X className="h-5 w-5" /></button>
       </div>
-      <ModalActions busy={busy} onClose={onClose} label="Guardar proveedor" />
-    </form>
+
+      <div className="mt-5 inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1">
+        {(["ERP", "LOCAL"] as const).map((value) => (
+          <button key={value} type="button" disabled={busy} onClick={() => setMode(value)} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === value ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>
+            {value === "ERP" ? "Buscar en ERP" : "Crear local"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "ERP" ? (
+        <div className="mt-5">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={erpTerm} onChange={(event) => setErpTerm(event.target.value)} disabled={busy} placeholder="Código, razón social, RFC o contacto..." className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-500" />
+          </div>
+          <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-lg border border-slate-200">
+            {erpLoading && <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Consultando Proscai...</div>}
+            {!erpLoading && erpError && <p className="p-6 text-center text-sm text-rose-600">{erpError}</p>}
+            {!erpLoading && !erpError && !erpTerm.trim() && <p className="p-8 text-center text-sm text-slate-500">Escribe para buscar proveedores del ERP.</p>}
+            {!erpLoading && !erpError && erpTerm.trim() && erpSuppliers.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No se encontraron proveedores.</p>}
+            {!erpLoading && erpSuppliers.map((supplier) => {
+              const contact = supplier.contacts[0];
+              return (
+                <div key={supplier.code} className="flex flex-col gap-3 border-b border-slate-100 p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{supplier.code}</span><p className="text-sm font-bold text-slate-900">{supplier.name}</p></div>
+                    <p className="mt-1 text-xs text-slate-500">RFC: {supplier.taxId || "-"} · {supplier.state || "Sin estado"} · {supplier.currency}</p>
+                    {contact && <p className="mt-1 text-xs text-slate-500">{contact.name || "Sin contacto"}{contact.position ? ` · ${contact.position}` : ""} · {contact.email || contact.mobile || contact.phone || "Sin datos"}</p>}
+                    {supplier.contacts.length > 1 && <p className="mt-1 text-[10px] font-semibold text-blue-700">{supplier.contacts.length} contactos registrados</p>}
+                  </div>
+                  <button type="button" disabled={busy} onClick={() => onSelectErp(supplier)} className="shrink-0 rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">Vincular y seleccionar</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit}>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
+            <Field label="RFC" value={form.taxId || ""} onChange={(taxId) => setForm((state) => ({ ...state, taxId }))} />
+            <Select label="Tipo *" value={form.scope} onChange={(scope) => setForm((state) => ({ ...state, scope: scope as SaveSupplierInput["scope"] }))} options={[["NATIONAL", "Nacional"], ["INTERNATIONAL", "Internacional"]]} />
+            <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
+            <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
+            <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
+            <Field label="Correo" type="email" value={form.email || ""} onChange={(email) => setForm((state) => ({ ...state, email }))} />
+            <Field label="Teléfono" value={form.phone || ""} onChange={(phone) => setForm((state) => ({ ...state, phone }))} />
+          </div>
+          <ModalActions busy={busy} onClose={onClose} label="Crear y seleccionar" />
+        </form>
+      )}
+    </div>
   </div>
 );
 

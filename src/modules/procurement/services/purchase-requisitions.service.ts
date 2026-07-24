@@ -32,11 +32,40 @@ export interface Supplier {
   name: string;
   source: "ERP" | "LOCAL";
   scope: "NATIONAL" | "INTERNATIONAL";
+  taxId: string | null;
+  state: string | null;
+  creditTerms: string | null;
+  currency: Currency | null;
   country: string | null;
   contactName: string | null;
+  contactPosition: string | null;
   email: string | null;
   phone: string | null;
+  phoneExtension: string | null;
+  mobile: string | null;
+  notes: string | null;
+  erpSyncedAt: string | null;
   isActive: boolean;
+}
+
+export interface ErpSupplierContact {
+  name: string;
+  position: string;
+  phone: string;
+  extension: string;
+  email: string;
+  mobile: string;
+  notes: string;
+}
+
+export interface ErpSupplier {
+  code: string;
+  name: string;
+  taxId: string;
+  state: string;
+  creditTerms: string;
+  currency: Currency;
+  contacts: ErpSupplierContact[];
 }
 
 export interface SupplierOffer {
@@ -144,9 +173,10 @@ export interface UpdateRequisitionItemInput {
 }
 
 export interface SaveSupplierInput {
-  erpCode?: string | null;
   name: string;
   scope: "NATIONAL" | "INTERNATIONAL";
+  taxId?: string | null;
+  state?: string | null;
   country?: string | null;
   contactName?: string | null;
   email?: string | null;
@@ -296,6 +326,28 @@ export class PurchaseRequisitionsService {
     return request(
       () => coreHttpClient.post<Supplier>("/api/purchase-requisitions/suppliers", input, { headers: headers() }),
       "No se pudo crear el proveedor.",
+    );
+  }
+
+  static searchErpSuppliers(term: string, signal?: AbortSignal) {
+    return request(
+      () => coreHttpClient.get<ErpSupplier[]>("/api/purchase-requisitions/suppliers/erp/search", {
+        headers: headers(),
+        params: { q: term.trim() },
+        signal,
+      }),
+      "No se pudieron consultar los proveedores ERP.",
+    );
+  }
+
+  static syncErpSupplier(erpCode: string) {
+    return request(
+      () => coreHttpClient.post<Supplier>(
+        "/api/purchase-requisitions/suppliers/erp/sync",
+        { erpCode },
+        { headers: headers() },
+      ),
+      "No se pudo vincular el proveedor ERP.",
     );
   }
 }

@@ -47,6 +47,14 @@ export const useSuppliers = (enabled = true) => useQuery({
   staleTime: 30_000,
 });
 
+export const useErpSupplierSearch = (term: string, enabled = true) => useQuery({
+  queryKey: ["purchase-requisitions", "erp-suppliers", term],
+  queryFn: ({ signal }) => PurchaseRequisitionsService.searchErpSuppliers(term, signal),
+  enabled: enabled && term.trim().length > 0,
+  staleTime: 30_000,
+  refetchOnWindowFocus: false,
+});
+
 export const usePurchaseRequisitionMutations = () => {
   const client = useQueryClient();
   const refresh = async () => client.invalidateQueries({ queryKey: purchaseRequisitionKeys.all });
@@ -86,6 +94,12 @@ export const usePurchaseRequisitionMutations = () => {
       await client.invalidateQueries({ queryKey: purchaseRequisitionKeys.suppliers });
     },
   });
+  const syncErpSupplier = useMutation({
+    mutationFn: PurchaseRequisitionsService.syncErpSupplier,
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: purchaseRequisitionKeys.suppliers });
+    },
+  });
 
   return {
     updateItem,
@@ -96,7 +110,8 @@ export const usePurchaseRequisitionMutations = () => {
     selectOffer,
     approveCostVariance,
     createSupplier,
+    syncErpSupplier,
     isPending: updateItem.isPending || linkItemToErp.isPending || submit.isPending || assign.isPending || createOffer.isPending
-      || selectOffer.isPending || approveCostVariance.isPending || createSupplier.isPending,
+      || selectOffer.isPending || approveCostVariance.isPending || createSupplier.isPending || syncErpSupplier.isPending,
   };
 };
