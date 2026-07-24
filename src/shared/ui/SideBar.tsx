@@ -11,9 +11,10 @@ export const SideBar = () => {
   const role = (user?.role || "").trim().toLowerCase();
   const canGenerateQuotes = role === "seller";
   const canAccessUsers = role === "admin" || role === "manager";
+  const canAccessCatalogs = canAccessUsers || role === "purchasing";
   const canAccessBranches = role === "admin";
   const canApproveQuotes = role === "admin" || role === "manager";
-  const canAccessProcurement = role === "admin" || role === "manager" || role === "purchasing";
+  const canAccessProcurement = role === "admin" || role === "manager" || role === "seller" || role === "purchasing";
   const canAccessCommercial = role !== "purchasing";
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
@@ -30,10 +31,10 @@ export const SideBar = () => {
     ...(canAccessCommercial ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
     ...(canAccessCommercial ? [{ name: "Clientes", to: "/clients", icon: <ContactRound /> }] : []),
     ...(canAccessCommercial ? [{ name: "Productos", to: "/products", icon: <Package /> }] : []),
-    ...(canAccessProcurement ? [{ name: "Compras", to: "/procurement", icon: <ShoppingCart /> }] : []),
+    ...(canAccessProcurement ? [{ name: "Requisiciones", to: "/procurement", icon: <ShoppingCart /> }] : []),
     ...(canAccessBranches ? [{ name: "Sucursales", to: "/branches", icon: <Building2 /> }] : []),
     ...(canAccessUsers ? [{ name: "Usuarios", to: "/users", icon: <Users /> }] : []),
-    ...(canAccessUsers ? [{ name: "Catálogos", to: "/quote-catalogs", icon: <Settings2 /> }] : []),
+    ...(canAccessCatalogs ? [{ name: "Catálogos", to: "/quote-catalogs", icon: <Settings2 /> }] : []),
     { name: "Perfil", to: "/user", icon: <UserRound /> },
   ];
 

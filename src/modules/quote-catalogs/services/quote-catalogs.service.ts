@@ -3,7 +3,7 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 import { aiHttpClient } from "../../ai/services/http/ai-http.client";
 
-export type QuoteCatalogType = "VALIDITY_DAYS" | "PAYMENT_TERMS" | "COMMERCIAL_CONDITIONS" | "DELIVERY_TIME" | "REVISION_REASON" | "REJECTION_REASON" | "CANCELLATION_REASON" | "APPROVAL_RETURN_REASON";
+export type QuoteCatalogType = "VALIDITY_DAYS" | "PAYMENT_TERMS" | "COMMERCIAL_CONDITIONS" | "DELIVERY_TIME" | "REVISION_REASON" | "REJECTION_REASON" | "CANCELLATION_REASON" | "APPROVAL_RETURN_REASON" | "PURCHASE_BRAND" | "ORIGIN_RESTRICTION" | "DELIVERY_STATE";
 export interface QuoteCatalogOption { id: string; type: QuoteCatalogType; code: string; label: string; value: string | null; numericValue: number | null; requiresComment: boolean; sortOrder: number; isActive: boolean; branchId: string | null; scope: "GLOBAL" | "BRANCH"; }
 export interface UpsertQuoteCatalogOptionInput { type: QuoteCatalogType; code?: string; label: string; value?: string | null; numericValue?: number | null; requiresComment?: boolean; sortOrder?: number; branchId?: string | null; isActive?: boolean; }
 export interface SuggestQuoteCatalogCodeInput { type: QuoteCatalogType; label: string; existingCodes: string[]; }

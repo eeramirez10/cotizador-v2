@@ -15,6 +15,8 @@ import { UsersPage } from "../pages/users/users.page";
 import { BranchesPage } from "../pages/branches/branches.page";
 import { QuoteApprovalsPage } from "../pages/quotes/quote-approvals.page";
 import { QuoteCatalogsPage } from "../pages/quote-catalogs/quote-catalogs.page";
+import { PurchaseRequisitionsPage } from "../pages/procurement/purchase-requisitions.page";
+import { ProductProcurementPage } from "../pages/products/product-procurement.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -117,9 +119,21 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "quote-catalogs",
-        loader: requireRolesLoader(["admin", "manager"]),
+        loader: requireRolesLoader(["admin", "manager", "purchasing"]),
         handle: { title: "Catálogos de cotización" },
         Component: QuoteCatalogsPage,
+      },
+      {
+        path: "procurement",
+        loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
+        handle: { title: "Requisiciones de compra" },
+        Component: PurchaseRequisitionsPage,
+      },
+      {
+        path: "procurement/products",
+        loader: requireRolesLoader(["admin", "manager", "purchasing"]),
+        handle: { title: "Productos locales en Compras" },
+        Component: ProductProcurementPage,
       },
     ],
   },

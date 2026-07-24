@@ -1,4 +1,4 @@
-import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, Trash2, X } from "lucide-react";
+import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, ShoppingCart, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -9,12 +9,13 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
+import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
 import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/excel-imported-quote-items.table";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
-import type { QuoteSourceChannel } from "../../store/quote/manual-quote.store";
+import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 
 type OriginFilter = "ALL" | "UNLINKED";
@@ -92,6 +93,23 @@ const getMarginVisual = (marginPct: number) => {
   };
 };
 
+const requiresProcurementPrequote = (item: ManualQuoteItem): boolean => {
+  const hasErpCode = Boolean(item.erpCode.trim());
+  const isLocalProduct = !hasErpCode && Boolean(item.localProductId?.trim());
+  const isErpWithoutEnoughStock = hasErpCode && Math.max(0, item.stock) < item.qty;
+  return isLocalProduct || isErpWithoutEnoughStock;
+};
+
+const hasCompleteProcurementPrequote = (item: ManualQuoteItem): boolean => {
+  return Boolean(
+    item.sellerSupplierName.trim()
+    && item.sellerQuotedUnitCost !== null
+    && item.sellerQuotedUnitCost > 0
+    && item.sellerDeliveryState.trim()
+    && item.sellerSupplierDeliveryTime.trim()
+  );
+};
+
 export const ManualQuotePage = () => {
   const [openModal, setOpenModal] = useState(false);
   const [openClientModal, setOpenClientModal] = useState(false);
@@ -113,6 +131,7 @@ export const ManualQuotePage = () => {
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
   const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
   const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
+  const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -150,6 +169,7 @@ export const ManualQuotePage = () => {
   const setExcelItemsSourceCurrency = useManualQuoteStore((state) => state.setExcelItemsSourceCurrency);
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
   const setItemComment = useManualQuoteStore((state) => state.setItemComment);
+  const setItemProcurementPrequote = useManualQuoteStore((state) => state.setItemProcurementPrequote);
   const setClient = useManualQuoteStore((state) => state.setClient);
   const hydrateDraftFromQuote = useManualQuoteStore((state) => state.hydrateDraftFromQuote);
   const clearDraft = useManualQuoteStore((state) => state.clearDraft);
@@ -186,6 +206,18 @@ export const ManualQuotePage = () => {
             customerDescription: item.customerDescription || "",
             customerUnit: item.customerUnit || "",
             itemComment: item.itemComment || "",
+            sellerSupplierId: item.sellerSupplierId || null,
+            sellerSupplierName: item.sellerSupplierName || "",
+            sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost ?? null : null,
+            sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+            sellerQuotedBrand: item.sellerQuotedBrand || "",
+            sellerOriginRestrictions: item.sellerOriginRestrictions || [],
+            sellerDeliveryState: item.sellerDeliveryState || "",
+            sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
+            purchaseStandard: item.purchaseStandard || "",
+            purchaseDiameter: item.purchaseDiameter || "",
+            purchaseThickness: item.purchaseThickness || "",
+            purchaseBore: item.purchaseBore || "",
             costCurrency: item.costCurrency || "USD",
             sourceCurrency: item.sourceCurrency ?? undefined,
             sourceUnitPrice: item.sourceUnitPrice ?? undefined,
@@ -254,6 +286,10 @@ export const ManualQuotePage = () => {
     if (!localProductConfirmationItemId) return null;
     return draft.items.find((item) => item.id === localProductConfirmationItemId) ?? null;
   }, [draft.items, localProductConfirmationItemId]);
+  const procurementItem = useMemo(() => {
+    if (!procurementItemId) return null;
+    return draft.items.find((item) => item.id === procurementItemId) ?? null;
+  }, [draft.items, procurementItemId]);
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
@@ -434,6 +470,18 @@ export const ManualQuotePage = () => {
           `No puedes generar la cotización. Hay ${missingPriceItems.length} partida(s) sin precio vendedor.`
         );
         return false;
+      }
+
+      if (draft.captureMethod !== "EXCEL_IMPORT") {
+        const missingProcurementData = draft.items.filter(
+          (item) => requiresProcurementPrequote(item) && !hasCompleteProcurementPrequote(item)
+        );
+        if (missingProcurementData.length > 0) {
+          notifier.error(
+            `No puedes generar la cotización. Completa los datos de compra en ${missingProcurementData.length} partida(s) local(es) o sin stock.`
+          );
+          return false;
+        }
       }
     }
 
@@ -1083,6 +1131,19 @@ export const ManualQuotePage = () => {
                   </td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-2">
+                      {requiresProcurementPrequote(item) && (
+                        <button
+                          type="button"
+                          onClick={() => setProcurementItemId(item.id)}
+                          className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
+                          title="Capturar proveedor, costo y datos para la requisición"
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            <ShoppingCart className="h-3.5 w-3.5" />
+                            {hasCompleteProcurementPrequote(item) ? "Datos compra" : "Completar compra"}
+                          </span>
+                        </button>
+                      )}
                       <button
                         onClick={() => openCommentModal(item.id)}
                         className="rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
@@ -1205,6 +1266,29 @@ export const ManualQuotePage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {procurementItem && (
+        <SellerProcurementPrequoteModal
+          key={procurementItem.id}
+          item={procurementItem}
+          onClose={() => setProcurementItemId(null)}
+          onSave={(data) => {
+            if (!procurementItemId) return;
+            setItemProcurementPrequote(procurementItemId, data);
+            if (data.sellerQuotedUnitCost !== null) {
+              const sellerPrice = convertQuoteAmount(
+                data.sellerQuotedUnitCost,
+                data.sellerQuotedCurrency,
+                draft.currency,
+                draft.exchangeRate
+              );
+              setItemUnitPrice(procurementItemId, sellerPrice);
+            }
+            setProcurementItemId(null);
+            notifier.success("Datos de compra guardados y precio vendedor actualizado.");
+          }}
+        />
       )}
 
       {showCommercialConditionsModal && (draft.commercialConditions || "").trim() && (

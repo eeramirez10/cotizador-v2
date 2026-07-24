@@ -1,10 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { ErpProductsService } from "../../modules/products/services/erp-products.service";
 
-export const useErpProductSearch = (term: string, branchId: string, enabled = true) => {
+export const useErpProductSearch = (
+  term: string,
+  branchId: string,
+  enabled = true,
+  scope: "all" | "branch" = "all",
+) => {
   return useQuery({
-    queryKey: ["erp-products", "search-all-branches", branchId, term],
-    queryFn: ({ signal }) => ErpProductsService.searchByTermInAllBranches(term, branchId, signal),
+    queryKey: ["erp-products", scope, branchId, term],
+    queryFn: ({ signal }) => scope === "branch"
+      ? ErpProductsService.searchByTerm(term, branchId, signal)
+      : ErpProductsService.searchByTermInAllBranches(term, branchId, signal),
     enabled,
     staleTime: 20_000,
     refetchOnWindowFocus: false,

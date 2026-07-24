@@ -163,7 +163,7 @@ export const DashboardPage = () => {
         <section>
           <h2 className="text-base font-semibold text-gray-900">Acciones rápidas</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <QuickAction to="/procurement" title="Productos pendientes" description="Cotiza y selecciona costos de proveedor" icon={<ShoppingCart className="h-5 w-5" />} primary />
+            <QuickAction to="/procurement" title="Requisiciones pendientes" description="Cotiza partidas y selecciona costos de proveedor" icon={<ShoppingCart className="h-5 w-5" />} primary />
             <QuickAction to="/user" title="Mi perfil" description="Consulta tus datos de acceso" icon={<Users className="h-5 w-5" />} />
           </div>
         </section>

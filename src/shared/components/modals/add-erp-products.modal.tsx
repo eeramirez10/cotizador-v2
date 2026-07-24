@@ -25,6 +25,9 @@ interface AddErpProductsModalProps {
   customerUnit?: string;
   aiSearchOnEnter?: boolean;
   initialMode?: SearchMode;
+  fixedErpBranchCode?: string;
+  erpOnly?: boolean;
+  selectionDisabled?: boolean;
 }
 
 type SearchMode = "erp" | "ai";
@@ -47,6 +50,9 @@ export const AddErpProductsModal = ({
   customerUnit = "",
   aiSearchOnEnter = false,
   initialMode,
+  fixedErpBranchCode,
+  erpOnly = false,
+  selectionDisabled = false,
 }: AddErpProductsModalProps) => {
   const [term, setTerm] = useState("");
   const [submittedAiTerm, setSubmittedAiTerm] = useState("");
@@ -77,7 +83,7 @@ export const AddErpProductsModal = ({
 
     if (didInitializeOpenState) return;
 
-    if (initialMode === "erp") {
+    if (erpOnly || initialMode === "erp") {
       setMode("erp");
     } else if (hasCustomerContext) {
       setMode("ai");
@@ -89,20 +95,26 @@ export const AddErpProductsModal = ({
     }
 
     setDidInitializeOpenState(true);
-  }, [didInitializeOpenState, hasCustomerContext, initialMode, normalizedCustomerDescription, open]);
+  }, [didInitializeOpenState, erpOnly, hasCustomerContext, initialMode, normalizedCustomerDescription, open]);
 
-  const branchId = resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
+  const branchId = fixedErpBranchCode || resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
   const enabledErpSearch = open && mode === "erp" && !!branchId && debouncedTerm.trim().length > 0;
   const aiCooldownRemainingMs = Math.max(0, aiNextAllowedAtMs - nowMs);
   const aiSearchTerm = aiSearchOnEnter ? submittedAiTerm : debouncedTerm;
   const enabledAiSearch =
     open &&
+    !erpOnly &&
     mode === "ai" &&
     !!branchId &&
     aiSearchTerm.trim().length > 0 &&
     aiCooldownRemainingMs === 0;
 
-  const erpSearch = useErpProductSearch(debouncedTerm, branchId, enabledErpSearch);
+  const erpSearch = useErpProductSearch(
+    debouncedTerm,
+    branchId,
+    enabledErpSearch,
+    fixedErpBranchCode ? "branch" : "all",
+  );
   const aiSearch = useAiSimilarProductSearch(aiSearchTerm, branchId, aiEngine, enabledAiSearch);
 
   useEffect(() => {
@@ -158,11 +170,13 @@ export const AddErpProductsModal = ({
 
   const modeSubtitle = useMemo(() => {
     if (mode === "erp") {
-      return "Búsqueda directa por EAN, código o descripción del ERP (todas las sucursales).";
+      return fixedErpBranchCode
+        ? `Búsqueda directa por EAN, código o descripción en ${getBranchNameByCode(fixedErpBranchCode)}.`
+        : "Búsqueda directa por EAN, código o descripción del ERP (todas las sucursales).";
     }
 
     return "Búsqueda semántica con IA usando descripción del cliente y similitud.";
-  }, [mode]);
+  }, [fixedErpBranchCode, mode]);
 
   const handleAiEngineChange = (engine: AiSimilarProductsEngine): void => {
     if (engine === aiEngine) return;
@@ -257,7 +271,7 @@ export const AddErpProductsModal = ({
           )}
 
           <div className="mb-3 flex items-center gap-2">
-            <button
+            {!erpOnly && <button
               type="button"
               onClick={() => {
                 setMode("erp");
@@ -271,7 +285,7 @@ export const AddErpProductsModal = ({
               }`}
             >
               ERP
-            </button>
+            </button>}
             <button
               type="button"
               onClick={() => {
@@ -308,7 +322,7 @@ export const AddErpProductsModal = ({
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
-              Sucursal usuario: {branchId ? currentBranchName : "No definida"}
+              {fixedErpBranchCode ? "Sucursal de consulta" : "Sucursal usuario"}: {branchId ? currentBranchName : "No definida"}
             </p>
             {mode === "ai" && (
               <div className="flex items-center gap-2">
@@ -460,9 +474,9 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-right">
                           <button
                             onClick={() => onSelect(product)}
-                            disabled={!isSelectableInUserBranch}
+                            disabled={!isSelectableInUserBranch || selectionDisabled}
                             className={`rounded-md px-3 py-1 text-xs font-semibold ${
-                              isSelectableInUserBranch
+                              isSelectableInUserBranch && !selectionDisabled
                                 ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
                                 : "cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-500"
                             }`}
@@ -472,7 +486,7 @@ export const AddErpProductsModal = ({
                                 : `No puedes agregar productos de ${productBranchName}`
                             }
                           >
-                            {isSelectableInUserBranch ? actionLabel : "Otra sucursal"}
+                            {selectionDisabled ? "Vinculando..." : isSelectableInUserBranch ? actionLabel : "Otra sucursal"}
                           </button>
                         </td>
                       </tr>

@@ -44,6 +44,7 @@ import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
+import { useQuotePurchaseRequisition } from "../../queries/procurement/use-purchase-requisitions";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -658,6 +659,10 @@ export const QuoteDetailPage = () => {
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
+  const {
+    data: purchaseRequisition,
+    refetch: refetchPurchaseRequisition,
+  } = useQuotePurchaseRequisition(quoteId, quote?.status === "APROBADA" || quote?.orderStatus === "GENERADO");
   const updateStatus = useUpdateQuoteStatus();
   const createRevision = useCreateQuoteRevision();
   const archiveQuote = useArchiveQuote();
@@ -799,6 +804,7 @@ export const QuoteDetailPage = () => {
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
   const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
+  const purchaseReady = !purchaseRequisition || ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status);
   const canGenerateOrder = !isArchived && quote.status === "APROBADA" && quote.orderStatus !== "GENERADO" && !hasRevisionInProgress;
   const canDownloadOrder =
     quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
@@ -1011,6 +1017,7 @@ export const QuoteDetailPage = () => {
       errorMessage: "No se pudo marcar la cotización como APROBADA.",
       onSuccess: async () => {
         await refetch();
+        await refetchPurchaseRequisition();
       },
     });
   };
@@ -1375,7 +1382,8 @@ export const QuoteDetailPage = () => {
           {canGenerateOrder && (
             <button
               onClick={handleGenerateOrder}
-              disabled={isActionLocked}
+              disabled={isActionLocked || !purchaseReady}
+              title={!purchaseReady ? "Compras debe completar la requisición antes de generar el pedido." : undefined}
               className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <ShoppingCart className="h-4 w-4" />
@@ -1476,6 +1484,27 @@ export const QuoteDetailPage = () => {
             className="rounded-md bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800"
           >
             Ver revisión
+          </NavLink>
+        </div>
+      )}
+
+      {purchaseRequisition && (
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 ${purchaseReady ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+          <div>
+            <p className={`text-sm font-semibold ${purchaseReady ? "text-emerald-950" : "text-amber-950"}`}>
+              Requisición {purchaseRequisition.requisitionNumber}
+            </p>
+            <p className={`text-xs ${purchaseReady ? "text-emerald-800" : "text-amber-800"}`}>
+              {purchaseReady
+                ? "Compras terminó las partidas requeridas. El pedido ERP está habilitado."
+                : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
+            </p>
+          </div>
+          <NavLink
+            to="/procurement"
+            className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${purchaseReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}
+          >
+            Ver requisición
           </NavLink>
         </div>
       )}

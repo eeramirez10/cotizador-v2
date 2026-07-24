@@ -14,16 +14,24 @@ const TYPES: Array<{ value: QuoteCatalogType; label: string; needsValue?: boolea
   { value: "REJECTION_REASON", label: "Motivos de rechazo", reason: true },
   { value: "CANCELLATION_REASON", label: "Motivos de cancelación", reason: true },
   { value: "APPROVAL_RETURN_REASON", label: "Motivos de devolución", reason: true },
+  { value: "PURCHASE_BRAND", label: "Marcas de compra", needsValue: true },
+  { value: "ORIGIN_RESTRICTION", label: "Restricciones de origen", needsValue: true },
+  { value: "DELIVERY_STATE", label: "Estados de entrega", needsValue: true },
 ];
+const PROCUREMENT_TYPES = new Set<QuoteCatalogType>(["PURCHASE_BRAND", "ORIGIN_RESTRICTION", "DELIVERY_STATE"]);
 const emptyForm = (type: QuoteCatalogType, sortOrder = 0) => ({ type, code: "", label: "", value: "", numericValue: "", requiresComment: false, sortOrder: String(sortOrder), isActive: true });
 
 export const QuoteCatalogsPage = () => {
   const user = useAuthStore((state) => state.user);
   const isAdmin = (user?.role || "").toLowerCase() === "admin";
-  const [type, setType] = useState<QuoteCatalogType>("VALIDITY_DAYS");
+  const isPurchasing = (user?.role || "").toLowerCase() === "purchasing";
+  const isManager = (user?.role || "").toLowerCase() === "manager";
+  const visibleTypes = TYPES.filter((item) => isPurchasing ? PROCUREMENT_TYPES.has(item.value) : isManager ? !PROCUREMENT_TYPES.has(item.value) : true);
+  const initialType: QuoteCatalogType = isPurchasing ? "PURCHASE_BRAND" : "VALIDITY_DAYS";
+  const [type, setType] = useState<QuoteCatalogType>(initialType);
   const [editing, setEditing] = useState<QuoteCatalogOption | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm("VALIDITY_DAYS"));
+  const [form, setForm] = useState(emptyForm(initialType));
   const query = useManagedQuoteCatalogs();
   const availableQuery = useQuoteCatalogs(type);
   const create = useCreateQuoteCatalogOption();
@@ -33,7 +41,7 @@ export const QuoteCatalogsPage = () => {
   const selected = TYPES.find((item) => item.value === type)!;
   const rows = useMemo(() => (query.data || []).filter((option) => option.type === type), [query.data, type]);
   const pending = create.isPending || update.isPending || suggestCode.isPending;
-  const canManage = (option: QuoteCatalogOption) => isAdmin || option.branchId === user?.branchId;
+  const canManage = (option: QuoteCatalogOption) => isAdmin || (isPurchasing && PROCUREMENT_TYPES.has(option.type)) || option.branchId === user?.branchId;
   const openCreate = () => {
     const existingOrders = [
       ...rows.map((option) => option.sortOrder),
@@ -71,8 +79,8 @@ export const QuoteCatalogsPage = () => {
     <section className="p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Catálogos de cotización</h1>
-          <p className="mt-1 text-sm text-gray-500">Administra las opciones disponibles para tu sucursal. Los cambios no alteran cotizaciones históricas.</p>
+          <h1 className="text-xl font-bold text-gray-900">{isPurchasing ? "Catálogos de compras" : "Catálogos de cotización"}</h1>
+          <p className="mt-1 text-sm text-gray-500">Administra las opciones disponibles. Los cambios no alteran registros históricos.</p>
         </div>
         <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
           <Plus className="h-4 w-4" />Agregar opción
@@ -80,7 +88,7 @@ export const QuoteCatalogsPage = () => {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {TYPES.map((item) => (
+        {visibleTypes.map((item) => (
           <button key={item.value} onClick={() => { setType(item.value); close(); }} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${type === item.value ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"}`}>
             {item.label}
           </button>
