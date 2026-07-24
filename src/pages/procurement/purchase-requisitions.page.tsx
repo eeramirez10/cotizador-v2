@@ -454,6 +454,9 @@ export const PurchaseRequisitionsPage = () => {
           form={currentOfferForm}
           setForm={setCurrentOfferForm}
           suppliers={suppliers.data || []}
+          brands={brandCatalog.data || []}
+          origins={(restrictionCatalog.data || []).filter((option) => option.code !== "NO_RESTRICTION")}
+          deliveryTimes={deliveryTimeCatalog.data || []}
           busy={mutations.isPending}
           onNewSupplier={() => { setSupplierMode("ERP"); setErpSupplierTerm(""); setSupplierOpen(true); }}
           onClose={() => { setOfferItem(null); setCurrentOfferForm(null); }}
@@ -713,11 +716,14 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
   );
 };
 
-const OfferModal = ({ item, form, setForm, suppliers, busy, onNewSupplier, onClose, onSubmit }: {
+const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, onNewSupplier, onClose, onSubmit }: {
   item: RequisitionItem;
   form: OfferForm;
   setForm: React.Dispatch<React.SetStateAction<OfferForm | null>>;
   suppliers: Supplier[];
+  brands: QuoteCatalogOption[];
+  origins: QuoteCatalogOption[];
+  deliveryTimes: QuoteCatalogOption[];
   busy: boolean;
   onNewSupplier: () => void;
   onClose: () => void;
@@ -737,9 +743,9 @@ const OfferModal = ({ item, form, setForm, suppliers, busy, onNewSupplier, onClo
         <Field label="Costo unitario *" type="number" value={form.unitCost} onChange={(unitCost) => setForm((state) => state && ({ ...state, unitCost }))} />
         <Select label="Moneda *" value={form.currency} onChange={(currency) => setForm((state) => state && ({ ...state, currency: currency as Currency }))} options={[["MXN", "MXN"], ["USD", "USD"]]} />
         {form.currency === "USD" && <Field label="Tipo de cambio *" type="number" value={form.exchangeRate} onChange={(exchangeRate) => setForm((state) => state && ({ ...state, exchangeRate }))} />}
-        <Field label="Marca" value={form.brand} onChange={(brand) => setForm((state) => state && ({ ...state, brand }))} />
-        <Field label="Procedencia" value={form.origin} onChange={(origin) => setForm((state) => state && ({ ...state, origin }))} placeholder="Ej. NACIONAL" />
-        <Field label="Tiempo de entrega" value={form.deliveryTime} onChange={(deliveryTime) => setForm((state) => state && ({ ...state, deliveryTime }))} />
+        <Select label="Marca" value={form.brand} onChange={(brand) => setForm((state) => state && ({ ...state, brand }))} options={[["", "Seleccionar"], ...brands.map((option) => [catalogValue(option), option.label] as [string, string])]} />
+        <Select label="Procedencia" value={form.origin} onChange={(origin) => setForm((state) => state && ({ ...state, origin }))} options={[["", "Seleccionar"], ...origins.map((option) => [catalogValue(option), option.label] as [string, string])]} />
+        <Select label="Tiempo de entrega" value={form.deliveryTime} onChange={(deliveryTime) => setForm((state) => state && ({ ...state, deliveryTime }))} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [catalogValue(option), option.label] as [string, string])]} />
         <Field label="Vigencia" type="date" value={form.validUntil} onChange={(validUntil) => setForm((state) => state && ({ ...state, validUntil }))} />
         <Field label="Referencia del proveedor" value={form.externalReference} onChange={(externalReference) => setForm((state) => state && ({ ...state, externalReference }))} />
         <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Notas<textarea value={form.notes} onChange={(event) => setForm((state) => state && ({ ...state, notes: event.target.value }))} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" /></label>
