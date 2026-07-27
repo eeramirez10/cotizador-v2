@@ -44,6 +44,7 @@ import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalog
 import type { QuoteCatalogOption } from "../../modules/quote-catalogs/services/quote-catalogs.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import type { ErpProduct } from "../../modules/products/types/erp-product.types";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 
 const PAGE_SIZE = 15;
 
@@ -135,6 +136,7 @@ const catalogValue = (option: QuoteCatalogOption): string => option.value || opt
 
 export const PurchaseRequisitionsPage = () => {
   const user = useAuthStore((state) => state.user);
+  const capabilities = useSystemCapabilities();
   const role = (user?.role || "").toUpperCase();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RequisitionStatus | "ALL">("ALL");
@@ -164,7 +166,8 @@ export const PurchaseRequisitionsPage = () => {
   const deliveryTimeCatalog = useQuoteCatalogs("DELIVERY_TIME");
   const mutations = usePurchaseRequisitionMutations();
   const canBuy = role === "ADMIN" || role === "PURCHASING";
-  const canApproveCost = role === "ADMIN" || role === "MANAGER";
+  const requisitionInternalApprovalEnabled = capabilities.data?.requisitionInternalApprovalEnabled ?? true;
+  const canApproveCost = requisitionInternalApprovalEnabled && (role === "ADMIN" || role === "MANAGER");
   const buyers = useQuery({
     queryKey: ["purchase-requisitions", "buyers"],
     queryFn: () => UsersService.listActiveQuoteProviders({ page: 1, pageSize: 100 }),

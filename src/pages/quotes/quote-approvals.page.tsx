@@ -1,6 +1,6 @@
 import { CheckCircle2, Eye, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
-import { NavLink } from "react-router";
+import { Navigate, NavLink } from "react-router";
 import {
   QuotesService,
   type QuoteApprovalReturnReason,
@@ -8,6 +8,7 @@ import {
 import { useQuotes } from "../../queries/quotes/quotes-queries";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { notifier } from "../../shared/notifications/notifier";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 
 const RETURN_REASONS: Array<{ value: QuoteApprovalReturnReason; label: string }> = [
   { value: "MARGIN_TOO_LOW", label: "Margen insuficiente" },
@@ -21,6 +22,7 @@ const RETURN_REASONS: Array<{ value: QuoteApprovalReturnReason; label: string }>
 ];
 
 export const QuoteApprovalsPage = () => {
+  const capabilities = useSystemCapabilities();
   const { data, isFetching, refetch } = useQuotes({ page: 1, pageSize: 100, status: "PENDING_APPROVAL" });
   const [actionQuoteId, setActionQuoteId] = useState<string | null>(null);
   const [returnQuoteId, setReturnQuoteId] = useState<string | null>(null);
@@ -82,6 +84,10 @@ export const QuoteApprovalsPage = () => {
   };
 
   const quotes = data?.items ?? [];
+
+  if (capabilities.isSuccess && !capabilities.data.quoteInternalApprovalEnabled) {
+    return <Navigate to="/quotes" replace />;
+  }
 
   return (
     <section>

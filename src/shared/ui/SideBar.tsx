@@ -2,18 +2,21 @@ import { ArrowLeft, BarChart3, Building2, ContactRound, DollarSign, FileUp, Luci
 import { Form, NavLink } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 
 export const SideBar = () => {
   const open = useUiStore((state) => state.open);
   const setClose = useUiStore((state) => state.setClose);
 
   const user = useAuthStore((state) => state.user);
+  const capabilities = useSystemCapabilities();
   const role = (user?.role || "").trim().toLowerCase();
   const canGenerateQuotes = role === "seller";
   const canAccessUsers = role === "admin" || role === "manager";
   const canAccessCatalogs = canAccessUsers || role === "purchasing";
   const canAccessBranches = role === "admin";
-  const canApproveQuotes = role === "admin" || role === "manager";
+  const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
+  const canApproveQuotes = quoteInternalApprovalEnabled && (role === "admin" || role === "manager");
   const canAccessProcurement = role === "admin" || role === "manager" || role === "seller" || role === "purchasing";
   const canAccessCommercial = role !== "purchasing";
 

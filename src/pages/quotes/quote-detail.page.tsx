@@ -45,6 +45,7 @@ import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalog
 import { useAuthStore } from "../../store/auth/auth.store";
 import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 import { useQuotePurchaseRequisition } from "../../queries/procurement/use-purchase-requisitions";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -626,6 +627,8 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
 
 export const QuoteDetailPage = () => {
   const currentUser = useAuthStore((state) => state.user);
+  const capabilities = useSystemCapabilities();
+  const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -787,7 +790,7 @@ export const QuoteDetailPage = () => {
   );
   const isArchived = Boolean(quote.archivedAt);
   const canSubmitApproval = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
-  const canApproveInternally = !isArchived && ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
+  const canApproveInternally = quoteInternalApprovalEnabled && !isArchived && ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
   const canEditQuote = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
   const hasRevisionInProgress = Boolean(
     quote.nextRevision && ["DRAFT", "PENDING", "PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(quote.nextRevision.status)
@@ -986,11 +989,17 @@ export const QuoteDetailPage = () => {
 
   const handleSubmitApproval = async () => {
     await runActionWithToast({
-      loadingMessage: "Enviando cotización a aprobación...",
+      loadingMessage: quoteInternalApprovalEnabled
+        ? "Enviando cotización a aprobación..."
+        : "Generando cotización...",
       action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "PENDIENTE_APROBACION" }),
       isSuccess: (result) => Boolean(result),
-      successMessage: "Cotización enviada a aprobación.",
-      errorMessage: "No se pudo enviar a aprobación.",
+      successMessage: quoteInternalApprovalEnabled
+        ? "Cotización enviada a aprobación."
+        : "Cotización generada correctamente.",
+      errorMessage: quoteInternalApprovalEnabled
+        ? "No se pudo enviar a aprobación."
+        : "No se pudo generar la cotización.",
       onSuccess: async () => {
         await refetch();
       },
@@ -1409,7 +1418,7 @@ export const QuoteDetailPage = () => {
               className={`inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
             >
               <CheckCircle2 className="h-4 w-4" />
-              Enviar a aprobación
+              {quoteInternalApprovalEnabled ? "Enviar a aprobación" : "Generar cotización"}
             </button>
           )}
 

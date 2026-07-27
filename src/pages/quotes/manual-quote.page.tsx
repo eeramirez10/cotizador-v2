@@ -14,6 +14,7 @@ import { SellerProcurementPrequoteModal } from "../../shared/components/modals/s
 import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/excel-imported-quote-items.table";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manual-quote.store";
@@ -146,6 +147,8 @@ export const ManualQuotePage = () => {
   const fromExtractionSource = sourceParam === "file" || sourceParam === "text";
 
   const user = useAuthStore((state) => state.user);
+  const capabilities = useSystemCapabilities();
+  const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
 
   useEffect(() => {
     if (openExtractionParam !== "file" && openExtractionParam !== "text") return;
@@ -549,7 +552,11 @@ export const ManualQuotePage = () => {
       setSaving(true);
       const quoteId = await QuotesService.createFromDraft(draft, { status: "COTIZADA", origin: quoteOrigin });
       clearDraft();
-      notifier.success(`Cotización ${quoteId} enviada a aprobación.`);
+      notifier.success(
+        quoteInternalApprovalEnabled
+          ? `Cotización ${quoteId} enviada a aprobación.`
+          : `Cotización ${quoteId} generada correctamente.`
+      );
       navigate("/quotes");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo generar la cotización.";
