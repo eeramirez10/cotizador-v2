@@ -2,23 +2,11 @@ import { Loader2, PackageSearch, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuoteCatalogs } from "../../../queries/quote-catalogs/use-quote-catalogs";
 import { useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
-import type { ManualQuoteItem, QuoteCurrency } from "../../../store/quote/manual-quote.store";
-
-type ProcurementPrequoteData = Pick<
+import type {
   ManualQuoteItem,
-  | "sellerSupplierId"
-  | "sellerSupplierName"
-  | "sellerQuotedUnitCost"
-  | "sellerQuotedCurrency"
-  | "sellerQuotedBrand"
-  | "sellerOriginRestrictions"
-  | "sellerDeliveryState"
-  | "sellerSupplierDeliveryTime"
-  | "purchaseStandard"
-  | "purchaseDiameter"
-  | "purchaseThickness"
-  | "purchaseBore"
->;
+  ProcurementPrequoteData,
+  QuoteCurrency,
+} from "../../../store/quote/manual-quote.store";
 
 interface SellerProcurementPrequoteModalProps {
   item: ManualQuoteItem;

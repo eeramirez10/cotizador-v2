@@ -68,6 +68,27 @@ export interface ManualQuoteItem {
   requiresReview: boolean;
 }
 
+export type ProcurementPrequoteData = Pick<
+  ManualQuoteItem,
+  | "sellerSupplierId"
+  | "sellerSupplierName"
+  | "sellerQuotedUnitCost"
+  | "sellerQuotedCurrency"
+  | "sellerQuotedBrand"
+  | "sellerOriginRestrictions"
+  | "sellerDeliveryState"
+  | "sellerSupplierDeliveryTime"
+  | "purchaseStandard"
+  | "purchaseDiameter"
+  | "purchaseThickness"
+  | "purchaseBore"
+>;
+
+export interface ProcurementPrequoteUpdate {
+  itemId: string;
+  data: ProcurementPrequoteData;
+}
+
 export interface ManualQuoteDraft {
   id: string;
   savedQuoteId: string | null;
@@ -187,24 +208,8 @@ interface ManualQuoteState {
   setExcelItemsSourceCurrency: (currency: QuoteCurrency) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
   setItemComment: (itemId: string, itemComment: string) => void;
-  setItemProcurementPrequote: (
-    itemId: string,
-    data: Pick<
-      ManualQuoteItem,
-      | "sellerSupplierId"
-      | "sellerSupplierName"
-      | "sellerQuotedUnitCost"
-      | "sellerQuotedCurrency"
-      | "sellerQuotedBrand"
-      | "sellerOriginRestrictions"
-      | "sellerDeliveryState"
-      | "sellerSupplierDeliveryTime"
-      | "purchaseStandard"
-      | "purchaseDiameter"
-      | "purchaseThickness"
-      | "purchaseBore"
-    >
-  ) => void;
+  setItemProcurementPrequote: (itemId: string, data: ProcurementPrequoteData) => void;
+  setItemsProcurementPrequote: (updates: ProcurementPrequoteUpdate[]) => void;
   setClient: (client: Client | null) => void;
   hydrateDraftFromQuote: (quote: HydrateQuoteInput) => void;
   loadQuoteForEdit: (quoteId: string) => boolean;
@@ -222,21 +227,7 @@ const nowDateOnly = () => new Date().toISOString().slice(0, 10);
 const round = (value: number) => Number(value.toFixed(2));
 const roundMargin = (value: number) => Number(value.toFixed(1));
 
-const emptyProcurementPrequote = (): Pick<
-  ManualQuoteItem,
-  | "sellerSupplierId"
-  | "sellerSupplierName"
-  | "sellerQuotedUnitCost"
-  | "sellerQuotedCurrency"
-  | "sellerQuotedBrand"
-  | "sellerOriginRestrictions"
-  | "sellerDeliveryState"
-  | "sellerSupplierDeliveryTime"
-  | "purchaseStandard"
-  | "purchaseDiameter"
-  | "purchaseThickness"
-  | "purchaseBore"
-> => ({
+const emptyProcurementPrequote = (): ProcurementPrequoteData => ({
   sellerSupplierId: null,
   sellerSupplierName: "",
   sellerQuotedUnitCost: null,
@@ -834,6 +825,46 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         items: state.draft.items.map((item) => (item.id === itemId ? { ...item, ...data } : item)),
       },
     })),
+
+  setItemsProcurementPrequote: (updates) =>
+    set((state) => {
+      const updatesByItemId = new Map(updates.map((update) => [update.itemId, update.data]));
+      const items = state.draft.items.map((item) => {
+        const data = updatesByItemId.get(item.id);
+        if (!data) return item;
+
+        const quotedCost = data.sellerQuotedUnitCost;
+        if (quotedCost === null || !Number.isFinite(quotedCost)) {
+          return { ...item, ...data };
+        }
+
+        const unitPrice = round(convertQuoteAmount(
+          quotedCost,
+          data.sellerQuotedCurrency,
+          state.draft.currency,
+          state.draft.exchangeRate
+        ));
+        const sellerPriceCostBase = getSellerPriceCostBase(
+          item,
+          state.draft.currency,
+          state.draft.exchangeRate
+        );
+
+        return {
+          ...item,
+          ...data,
+          manualUnitPrice: unitPrice,
+          marginPct: calculateMarginPct(unitPrice, sellerPriceCostBase),
+        };
+      });
+
+      return {
+        draft: {
+          ...state.draft,
+          items: recalcItems(items, state.draft.currency, state.draft.exchangeRate),
+        },
+      };
+    }),
 
   setClient: (client) =>
     set((state) => ({

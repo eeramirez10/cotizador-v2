@@ -9,6 +9,7 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
+import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
 import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/excel-imported-quote-items.table";
 import { notifier } from "../../shared/notifications/notifier";
@@ -136,6 +137,7 @@ export const ManualQuotePage = () => {
   const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
   const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
   const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
+  const [showBulkProcurement, setShowBulkProcurement] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -174,6 +176,7 @@ export const ManualQuotePage = () => {
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
   const setItemComment = useManualQuoteStore((state) => state.setItemComment);
   const setItemProcurementPrequote = useManualQuoteStore((state) => state.setItemProcurementPrequote);
+  const setItemsProcurementPrequote = useManualQuoteStore((state) => state.setItemsProcurementPrequote);
   const setClient = useManualQuoteStore((state) => state.setClient);
   const hydrateDraftFromQuote = useManualQuoteStore((state) => state.hydrateDraftFromQuote);
   const clearDraft = useManualQuoteStore((state) => state.clearDraft);
@@ -294,6 +297,10 @@ export const ManualQuotePage = () => {
     if (!procurementItemId) return null;
     return draft.items.find((item) => item.id === procurementItemId) ?? null;
   }, [draft.items, procurementItemId]);
+  const procurementItems = useMemo(
+    () => draft.items.filter(requiresProcurementPrequote),
+    [draft.items]
+  );
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
@@ -923,9 +930,19 @@ export const ManualQuotePage = () => {
           >
             Sin vincular ({totalUnlinked})
           </button>
-        </div>
-        <div className="flex items-center gap-2">
-          {showCustomerExtractionColumns && (
+	        </div>
+	        <div className="flex items-center gap-2">
+	          {procurementItems.length > 0 && (
+	            <button
+	              type="button"
+	              onClick={() => setShowBulkProcurement(true)}
+	              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+	            >
+	              <ShoppingCart className="h-3.5 w-3.5" />
+	              Completar compra en lote ({procurementItems.length})
+	            </button>
+	          )}
+	          {showCustomerExtractionColumns && (
             <button
               type="button"
               onClick={() => setShowCustomerOrderColumns((prev) => !prev)}
@@ -1293,6 +1310,18 @@ export const ManualQuotePage = () => {
             }
             setProcurementItemId(null);
             notifier.success("Datos de compra guardados y precio vendedor actualizado.");
+          }}
+        />
+      )}
+
+      {showBulkProcurement && procurementItems.length > 0 && (
+        <SellerProcurementBulkPrequoteModal
+          items={procurementItems}
+          onClose={() => setShowBulkProcurement(false)}
+          onSave={(updates) => {
+            setItemsProcurementPrequote(updates);
+            setShowBulkProcurement(false);
+            notifier.success(`Datos de compra aplicados a ${updates.length} partida(s).`);
           }}
         />
       )}
