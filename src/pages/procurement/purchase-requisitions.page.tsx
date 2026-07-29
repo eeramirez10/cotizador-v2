@@ -9,6 +9,7 @@ import {
   Loader2,
   Link2,
   PackageCheck,
+  Paperclip,
   Pencil,
   Plus,
   Search,
@@ -45,6 +46,9 @@ import type { QuoteCatalogOption } from "../../modules/quote-catalogs/services/q
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import type { ErpProduct } from "../../modules/products/types/erp-product.types";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
+import { useRequisitionAttachments } from "../../queries/attachments/use-attachments";
+import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
+import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 
 const PAGE_SIZE = 15;
 
@@ -147,6 +151,9 @@ export const PurchaseRequisitionsPage = () => {
   const [linkingItem, setLinkingItem] = useState<RequisitionItem | null>(null);
   const [offerItem, setOfferItem] = useState<RequisitionItem | null>(null);
   const [currentOfferForm, setCurrentOfferForm] = useState<OfferForm | null>(null);
+  const [offerAttachmentFile, setOfferAttachmentFile] = useState<File | null>(null);
+  const [showOfferAttachmentModal, setShowOfferAttachmentModal] = useState(false);
+  const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [supplierMode, setSupplierMode] = useState<"ERP" | "LOCAL">("ERP");
   const [erpSupplierTerm, setErpSupplierTerm] = useState("");
@@ -155,6 +162,7 @@ export const PurchaseRequisitionsPage = () => {
   const debouncedErpSupplierTerm = useDebouncedValue(erpSupplierTerm, 400);
   const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status });
   const detail = usePurchaseRequisition(selectedId);
+  const requisitionAttachments = useRequisitionAttachments(selectedId);
   const suppliers = useSuppliers(Boolean(offerItem));
   const erpSupplierSearch = useErpSupplierSearch(
     debouncedErpSupplierTerm,
@@ -175,6 +183,19 @@ export const PurchaseRequisitionsPage = () => {
     staleTime: 30_000,
   });
   const requisition = detail.data || null;
+
+  const attachmentItemLabels = useMemo(() => Object.fromEntries(
+    (requisition?.items || []).flatMap((item) => item.quoteClientItemId
+      ? [[item.quoteClientItemId, `#${item.position} ${item.erpCode || "LOCAL"}`]]
+      : []),
+  ), [requisition]);
+
+  const attachmentOfferLabels = useMemo(() => Object.fromEntries(
+    (requisition?.items || []).flatMap((item) => item.offers.map((offer) => [
+      offer.id,
+      `#${item.position} ${offer.supplier.name}`,
+    ])),
+  ), [requisition]);
 
   const selectedCosts = useMemo(
     () => requisition?.items.reduce((sum, item) => {
@@ -275,14 +296,90 @@ export const PurchaseRequisitionsPage = () => {
       notifier.warning("Completa proveedor, cantidad y costo.");
       return;
     }
-    const saved = await run(
-      "Registrando propuesta...",
-      () => mutations.createOffer.mutateAsync({ id: requisition.id, itemId: offerItem.id, input }),
-      "Propuesta registrada.",
-    );
-    if (saved) {
+    const previousOfferIds = new Set(offerItem.offers.map((offer) => offer.id));
+    const targetItemId = offerItem.id;
+    const toast = notifier.loading(offerAttachmentFile ? "Registrando propuesta y archivo..." : "Registrando propuesta...");
+    try {
+      const savedRequisition = await mutations.createOffer.mutateAsync({ id: requisition.id, itemId: targetItemId, input });
+      const createdOffer = savedRequisition.items
+        .find((item) => item.id === targetItemId)
+        ?.offers.find((offer) => !previousOfferIds.has(offer.id));
+
+      if (offerAttachmentFile) {
+        if (!createdOffer) {
+          const message = "Propuesta registrada, pero no se pudo identificar para adjuntar el archivo.";
+          if (toast !== undefined) notifier.update(toast, "warning", message);
+          else notifier.warning(message);
+          setOfferItem(null);
+          setCurrentOfferForm(null);
+          setOfferAttachmentFile(null);
+          return;
+        }
+        try {
+          await AttachmentsService.uploadPurchaseOffer(requisition.id, [createdOffer.id], offerAttachmentFile);
+          await requisitionAttachments.refetch();
+        } catch (attachmentError) {
+          const message = attachmentError instanceof Error ? attachmentError.message : "No se pudo guardar el archivo.";
+          if (toast !== undefined) notifier.update(toast, "warning", `Propuesta registrada, pero el archivo falló: ${message}`);
+          else notifier.warning(`Propuesta registrada, pero el archivo falló: ${message}`);
+          setOfferItem(null);
+          setCurrentOfferForm(null);
+          setOfferAttachmentFile(null);
+          return;
+        }
+      }
+
+      if (toast !== undefined) notifier.update(toast, "success", "Propuesta registrada.");
+      else notifier.success("Propuesta registrada.");
       setOfferItem(null);
       setCurrentOfferForm(null);
+      setOfferAttachmentFile(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo registrar la propuesta.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    }
+  };
+
+  const downloadAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.download(file);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
+
+  const deleteAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.delete(file.id);
+      await requisitionAttachments.refetch();
+      notifier.success("Archivo eliminado.");
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo eliminar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
+
+  const attachPurchaseOfferFile = async (file: File, offerIds: string[]) => {
+    if (!requisition) return false;
+    const toast = notifier.loading("Guardando archivo de propuestas...");
+    try {
+      await AttachmentsService.uploadPurchaseOffer(requisition.id, offerIds, file);
+      await requisitionAttachments.refetch();
+      if (toast !== undefined) notifier.update(toast, "success", "Archivo ligado a las propuestas seleccionadas.");
+      else notifier.success("Archivo ligado a las propuestas seleccionadas.");
+      setShowOfferAttachmentModal(false);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar el archivo.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+      return false;
     }
   };
 
@@ -403,8 +500,17 @@ export const PurchaseRequisitionsPage = () => {
             <RequisitionDetail
               requisition={requisition}
               role={role}
+              currentUserId={user?.id || ""}
               selectedCosts={selectedCosts}
               busy={mutations.isPending}
+              attachments={requisitionAttachments.data || []}
+              attachmentsLoading={requisitionAttachments.isLoading}
+              attachmentItemLabels={attachmentItemLabels}
+              attachmentOfferLabels={attachmentOfferLabels}
+              busyAttachmentId={busyAttachmentId}
+              onDownloadAttachment={(file) => { void downloadAttachment(file); }}
+              onDeleteAttachment={(file) => { void deleteAttachment(file); }}
+              onAttachOffers={() => setShowOfferAttachmentModal(true)}
               onBack={() => setSelectedId(null)}
               onEdit={openItem}
               onLinkErp={setLinkingItem}
@@ -461,9 +567,19 @@ export const PurchaseRequisitionsPage = () => {
           origins={(restrictionCatalog.data || []).filter((option) => option.code !== "NO_RESTRICTION")}
           deliveryTimes={deliveryTimeCatalog.data || []}
           busy={mutations.isPending}
+          attachmentFile={offerAttachmentFile}
+          onAttachmentFile={setOfferAttachmentFile}
           onNewSupplier={() => { setSupplierMode("ERP"); setErpSupplierTerm(""); setSupplierOpen(true); }}
-          onClose={() => { setOfferItem(null); setCurrentOfferForm(null); }}
+          onClose={() => { setOfferItem(null); setCurrentOfferForm(null); setOfferAttachmentFile(null); }}
           onSubmit={saveOffer}
+        />
+      )}
+      {showOfferAttachmentModal && requisition && (
+        <PurchaseOfferAttachmentModal
+          requisition={requisition}
+          busy={Boolean(busyAttachmentId)}
+          onClose={() => setShowOfferAttachmentModal(false)}
+          onSubmit={attachPurchaseOfferFile}
         />
       )}
       {supplierOpen && (
@@ -504,8 +620,17 @@ export const PurchaseRequisitionsPage = () => {
 const RequisitionDetail = ({
   requisition,
   role,
+  currentUserId,
   selectedCosts,
   busy,
+  attachments,
+  attachmentsLoading,
+  attachmentItemLabels,
+  attachmentOfferLabels,
+  busyAttachmentId,
+  onDownloadAttachment,
+  onDeleteAttachment,
+  onAttachOffers,
   onBack,
   onEdit,
   onLinkErp,
@@ -520,8 +645,17 @@ const RequisitionDetail = ({
 }: {
   requisition: PurchaseRequisition;
   role: string;
+  currentUserId: string;
   selectedCosts: number;
   busy: boolean;
+  attachments: FileAttachment[];
+  attachmentsLoading: boolean;
+  attachmentItemLabels: Record<string, string>;
+  attachmentOfferLabels: Record<string, string>;
+  busyAttachmentId: string | null;
+  onDownloadAttachment: (file: FileAttachment) => void;
+  onDeleteAttachment: (file: FileAttachment) => void;
+  onAttachOffers: () => void;
   onBack: () => void;
   onEdit: (item: RequisitionItem) => void;
   onLinkErp: (item: RequisitionItem) => void;
@@ -535,6 +669,20 @@ const RequisitionDetail = ({
   onAssign: (buyerUserId: string) => Promise<boolean>;
 }) => {
   const sellerDraft = role === "SELLER" && requisition.status === "DRAFT";
+  const hasOffers = requisition.items.some((item) => item.offers.length > 0);
+  const [attachmentView, setAttachmentView] = useState<{
+    type: "ALL" | "SELLER_ITEM";
+    clientItemId?: string;
+    position?: number;
+  } | null>(null);
+  const visibleAttachments = attachmentView?.type === "SELLER_ITEM"
+    ? attachments.filter((file) => file.category === "SELLER_SUPPLIER_QUOTE"
+      && Boolean(attachmentView.clientItemId)
+      && file.clientItemIds.includes(attachmentView.clientItemId!))
+    : attachments;
+  const attachmentModalTitle = attachmentView?.type === "SELLER_ITEM"
+    ? `Archivos cotizados por el vendedor · Partida ${attachmentView.position}`
+    : `Expediente de ${requisition.requisitionNumber}`;
   return (
     <div className="flex h-full min-h-[650px] flex-col">
       <header className="border-b border-slate-200 px-5 py-4">
@@ -552,6 +700,9 @@ const RequisitionDetail = ({
             <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
               Ver {requisition.quoteNumber}<ExternalLink className="h-3.5 w-3.5" />
             </NavLink>
+            <button type="button" onClick={() => setAttachmentView({ type: "ALL" })} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              <Paperclip className="h-3.5 w-3.5" />Expediente ({attachments.length})
+            </button>
             {canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status) && buyers.length > 0 && (
               <select
                 value={requisition.assignedBuyerUserId || ""}
@@ -562,6 +713,11 @@ const RequisitionDetail = ({
                 <option value="">Asignar comprador...</option>
                 {buyers.map((buyer) => <option key={buyer.id} value={buyer.id}>{buyer.fullName}</option>)}
               </select>
+            )}
+            {canBuy && hasOffers && (
+              <button type="button" onClick={onAttachOffers} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 disabled:opacity-50">
+                <Paperclip className="h-3.5 w-3.5" />Adjuntar a propuestas
+              </button>
             )}
           </div>
         </div>
@@ -576,6 +732,9 @@ const RequisitionDetail = ({
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
         {requisition.items.map((item) => {
           const selected = item.offers.find((offer) => offer.isSelected);
+          const sellerAttachmentCount = item.quoteClientItemId
+            ? attachments.filter((file) => file.category === "SELLER_SUPPLIER_QUOTE" && file.clientItemIds.includes(item.quoteClientItemId!)).length
+            : 0;
           return (
             <article key={item.id} className="overflow-hidden rounded-xl border border-slate-200">
               <div className="flex flex-col gap-3 bg-slate-50 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -591,6 +750,11 @@ const RequisitionDetail = ({
                   {item.erpEan && <p className="mt-1 text-xs font-medium text-slate-500">EAN: {item.erpEan}</p>}
                 </div>
                 <div className="flex shrink-0 gap-2">
+                  {canBuy && sellerAttachmentCount > 0 && item.quoteClientItemId && (
+                    <button type="button" onClick={() => setAttachmentView({ type: "SELLER_ITEM", clientItemId: item.quoteClientItemId!, position: item.position })} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+                      <Paperclip className="h-3.5 w-3.5" />Archivos vendedor ({sellerAttachmentCount})
+                    </button>
+                  )}
                   {(sellerDraft || canBuy) && (
                     <button type="button" disabled={busy} onClick={() => onEdit(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
                       <Pencil className="h-3.5 w-3.5" />Completar
@@ -667,6 +831,24 @@ const RequisitionDetail = ({
           </button>
         )}
       </footer>
+
+      {attachmentView && (
+        <AttachmentsModal
+          title={attachmentModalTitle}
+          files={visibleAttachments}
+          loading={attachmentsLoading}
+          itemLabels={attachmentItemLabels}
+          offerLabels={attachmentOfferLabels}
+          canDelete={(file) => role === "ADMIN" || (
+            file.uploadedByUserId === currentUserId
+            && !["COMPLETED", "CANCELLED"].includes(requisition.status)
+          )}
+          busyFileId={busyAttachmentId}
+          onClose={() => setAttachmentView(null)}
+          onDownload={onDownloadAttachment}
+          onDelete={onDeleteAttachment}
+        />
+      )}
     </div>
   );
 };
@@ -719,7 +901,7 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
   );
 };
 
-const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, onNewSupplier, onClose, onSubmit }: {
+const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, attachmentFile, onAttachmentFile, onNewSupplier, onClose, onSubmit }: {
   item: RequisitionItem;
   form: OfferForm;
   setForm: React.Dispatch<React.SetStateAction<OfferForm | null>>;
@@ -728,6 +910,8 @@ const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryT
   origins: QuoteCatalogOption[];
   deliveryTimes: QuoteCatalogOption[];
   busy: boolean;
+  attachmentFile: File | null;
+  onAttachmentFile: (file: File | null) => void;
   onNewSupplier: () => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -752,11 +936,71 @@ const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryT
         <Field label="Vigencia" type="date" value={form.validUntil} onChange={(validUntil) => setForm((state) => state && ({ ...state, validUntil }))} />
         <Field label="Referencia del proveedor" value={form.externalReference} onChange={(externalReference) => setForm((state) => state && ({ ...state, externalReference }))} />
         <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Notas<textarea value={form.notes} onChange={(event) => setForm((state) => state && ({ ...state, notes: event.target.value }))} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" /></label>
+        <label className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3 text-xs font-semibold text-slate-600 sm:col-span-2">
+          <span className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-amber-700" />Archivo de la propuesta (opcional)</span>
+          <input type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" disabled={busy} onChange={(event) => onAttachmentFile(event.currentTarget.files?.[0] || null)} className="mt-2 w-full text-xs font-normal file:mr-3 file:rounded-md file:border-0 file:bg-amber-400 file:px-3 file:py-2 file:font-semibold file:text-slate-950" />
+          {attachmentFile && <span className="mt-2 block font-normal text-slate-500">{attachmentFile.name}</span>}
+        </label>
       </div>
       <ModalActions busy={busy} onClose={onClose} label="Registrar propuesta" />
     </form>
   </Modal>
 );
+
+const PurchaseOfferAttachmentModal = ({ requisition, busy, onClose, onSubmit }: {
+  requisition: PurchaseRequisition;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (file: File, offerIds: string[]) => Promise<boolean>;
+}) => {
+  const offers = requisition.items.flatMap((item) => item.offers.map((offer) => ({ item, offer })));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(offers.map(({ offer }) => offer.id)));
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const toggle = (offerId: string) => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (next.has(offerId)) next.delete(offerId);
+    else next.add(offerId);
+    return next;
+  });
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!file) return setError("Selecciona el archivo de la propuesta.");
+    if (selectedIds.size === 0) return setError("Selecciona al menos una propuesta.");
+    setSaving(true);
+    setError("");
+    const saved = await onSubmit(file, [...selectedIds]);
+    if (!saved) setSaving(false);
+  };
+
+  return (
+    <Modal title="Adjuntar archivo a propuestas" subtitle="Un mismo archivo se guardará una vez y quedará ligado a todas las propuestas seleccionadas." onClose={onClose}>
+      <form onSubmit={submit}>
+        <label className="block rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-4 text-xs font-semibold text-slate-700">
+          <span className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-amber-700" />Archivo *</span>
+          <input type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" disabled={saving || busy} onChange={(event) => setFile(event.currentTarget.files?.[0] || null)} className="mt-3 w-full text-xs font-normal file:mr-3 file:rounded-md file:border-0 file:bg-amber-400 file:px-3 file:py-2 file:font-semibold file:text-slate-950" />
+        </label>
+
+        <div className="mt-4 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+          {offers.map(({ item, offer }) => (
+            <label key={offer.id} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-slate-50">
+              <input type="checkbox" checked={selectedIds.has(offer.id)} disabled={saving || busy} onChange={() => toggle(offer.id)} className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400" />
+              <span className="min-w-0">
+                <span className="block text-xs font-bold text-slate-900">Partida {item.position} · {offer.supplier.name}</span>
+                <span className="block truncate text-[11px] text-slate-500">{item.description} · {money(offer.unitCost, offer.currency)}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>}
+        <ModalActions busy={saving || busy} onClose={onClose} label={`Adjuntar a ${selectedIds.size} propuesta(s)`} />
+      </form>
+    </Modal>
+  );
+};
 
 const SupplierModal = ({
   form,

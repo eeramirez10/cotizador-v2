@@ -7,6 +7,7 @@ import {
   FileText,
   Mail,
   MessageCircle,
+  Paperclip,
   Palette,
   Pencil,
   Printer,
@@ -46,6 +47,9 @@ import { useAuthStore } from "../../store/auth/auth.store";
 import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 import { useQuotePurchaseRequisition } from "../../queries/procurement/use-purchase-requisitions";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
+import { useQuoteAttachments } from "../../queries/attachments/use-attachments";
+import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
+import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -641,6 +645,7 @@ export const QuoteDetailPage = () => {
   const [showCancellationModal, setShowCancellationModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<QuoteRejectionReason | "">("");
   const [rejectionComment, setRejectionComment] = useState("");
@@ -659,9 +664,11 @@ export const QuoteDetailPage = () => {
   const [recipientsError, setRecipientsError] = useState("");
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
+  const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
+  const quoteAttachments = useQuoteAttachments(quoteId);
   const {
     data: purchaseRequisition,
     refetch: refetchPurchaseRequisition,
@@ -685,6 +692,30 @@ export const QuoteDetailPage = () => {
   const revisionRequiresComment = revisionOptions.find((option) => option.value === revisionReason)?.requiresComment || false;
   const rejectionRequiresComment = rejectionOptions.find((option) => option.value === rejectionReason)?.requiresComment || false;
   const cancellationRequiresComment = cancellationOptions.find((option) => option.value === cancellationReason)?.requiresComment || false;
+
+  const downloadAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.download(file);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
+
+  const deleteAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.delete(file.id);
+      await quoteAttachments.refetch();
+      notifier.success("Archivo eliminado.");
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo eliminar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
 
   const isActionLocked =
     actionInProgress ||
@@ -787,6 +818,9 @@ export const QuoteDetailPage = () => {
   const customerDisplayName = company || contactName || "Cliente sin nombre";
   const deliverySummary = Array.from(
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))
+  );
+  const attachmentItemLabels = Object.fromEntries(
+    quote.items.map((item, index) => [item.id, `#${index + 1} ${item.erpCode || "LOCAL"}`]),
   );
   const isArchived = Boolean(quote.archivedAt);
   const canSubmitApproval = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
@@ -1366,6 +1400,15 @@ export const QuoteDetailPage = () => {
             Vista PDF
           </button>
 
+          <button
+            onClick={() => setShowAttachmentsModal(true)}
+            disabled={isActionLocked}
+            className={`inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 ${disabledActionClass}`}
+          >
+            <Paperclip className="h-4 w-4" />
+            Archivos adjuntos ({quoteAttachments.data?.length || 0})
+          </button>
+
           {canDownloadQuotePdf && (
             <button
               onClick={handleDownloadQuotePdf}
@@ -1800,6 +1843,23 @@ export const QuoteDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {showAttachmentsModal && (
+        <AttachmentsModal
+          title={`Archivos de ${quote.quoteNumber}`}
+          files={quoteAttachments.data || []}
+          loading={quoteAttachments.isLoading}
+          itemLabels={attachmentItemLabels}
+          canDelete={(file) => currentRole === "admin" || (
+            file.uploadedByUserId === currentUser?.id
+            && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status)
+          )}
+          busyFileId={busyAttachmentId}
+          onClose={() => setShowAttachmentsModal(false)}
+          onDownload={(file) => { void downloadAttachment(file); }}
+          onDelete={(file) => { void deleteAttachment(file); }}
+        />
+      )}
 
       {showArchiveModal && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true">

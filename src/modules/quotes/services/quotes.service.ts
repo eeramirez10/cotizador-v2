@@ -149,6 +149,7 @@ export interface SavedQuoteRecord {
 
 interface ApiQuoteItem {
   id: string;
+  clientItemId: string | null;
   productId: string | null;
   externalProductCode: string | null;
   ean: string | null;
@@ -458,7 +459,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       phone: apiQuote.customer.phone || "",
     },
     items: apiQuote.items.map((item) => ({
-      id: item.id,
+      id: item.clientItemId || item.id,
       localProductId: item.productId || item.product?.id || null,
       erpCode: item.externalProductCode || item.product?.code || "",
       ean: item.ean || item.product?.ean || "",
@@ -563,6 +564,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
   const erpDescriptionForPayload = hasLinkedProduct ? normalizedErpDescription : null;
 
   return {
+    clientItemId: item.id,
     productId: localProductId,
     externalProductCode: erpCode,
     ean: item.ean?.trim() ? item.ean.trim() : null,
