@@ -3,6 +3,7 @@ import { useState } from "react";
 import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/services/quote-extraction-jobs.service";
 import type { ExtractedQuotedExcelItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
 import { useManualQuoteStore } from "../../../store/quote/manual-quote.store";
+import { AttachmentsService } from "../../../modules/attachments/services/attachments.service";
 
 interface QuotedExcelImportModalProps {
   open: boolean;
@@ -18,6 +19,7 @@ const updateNumber = (rawValue: string): number | null => {
 
 export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExcelImportModalProps) => {
   const currentItemsCount = useManualQuoteStore((state) => state.draft.items.length);
+  const clientDraftId = useManualQuoteStore((state) => state.draft.id);
   const setItems = useManualQuoteStore((state) => state.setItemsFromQuotedExcel);
   const addItems = useManualQuoteStore((state) => state.addItemsFromQuotedExcel);
   const [file, setFile] = useState<File | null>(null);
@@ -26,16 +28,19 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attachmentId, setAttachmentId] = useState<string | null>(null);
 
   if (!open) return null;
 
-  const close = () => {
+  const close = (keepAttachment = false) => {
     if (processing) return;
+    if (!keepAttachment && attachmentId) void AttachmentsService.delete(attachmentId).catch(() => undefined);
     setFile(null);
     setExtractedItems(null);
     setProgress(0);
     setStatus("");
     setError(null);
+    setAttachmentId(null);
     onClose();
   };
 
@@ -48,11 +53,15 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
   const processFile = async () => {
     if (!file || processing) return;
 
+    let uploadedAttachmentId: string | null = null;
     try {
       setProcessing(true);
       setError(null);
       setProgress(5);
       setStatus("Subiendo cotización Excel...");
+      const attachment = await AttachmentsService.uploadQuoteSource(clientDraftId, file);
+      uploadedAttachmentId = attachment.id;
+      setAttachmentId(attachment.id);
       const job = await QuoteExtractionJobsService.createQuotedExcelJob(file);
       setProgress(10);
       setStatus("Extrayendo partidas y precios...");
@@ -75,6 +84,10 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
       setProgress(100);
       setStatus(`Se encontraron ${extracted.length} partidas. Revisa los datos antes de agregarlas.`);
     } catch (caught) {
+      if (uploadedAttachmentId) {
+        await AttachmentsService.delete(uploadedAttachmentId).catch(() => undefined);
+        setAttachmentId(null);
+      }
       setError(caught instanceof Error ? caught.message : "No se pudo procesar la cotización Excel.");
       setStatus("Error durante el procesamiento.");
     } finally {
@@ -87,7 +100,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
     if (mode === "append") addItems(items);
     else setItems(items);
     onCompleted(items.length);
-    close();
+    close(true);
   };
 
   return (
@@ -101,7 +114,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
             </div>
             <p className="mt-1 text-sm text-gray-500">Se extraerán únicamente descripción, unidad, cantidad, precio y tiempo de entrega.</p>
           </div>
-          <button onClick={close} disabled={processing} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50" aria-label="Cerrar">
+          <button onClick={() => close()} disabled={processing} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50" aria-label="Cerrar">
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -178,7 +191,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         </div>
 
         <footer className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-4">
-          <button onClick={close} disabled={processing} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
+          <button onClick={() => close()} disabled={processing} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
           {!items ? (
             <button onClick={() => void processFile()} disabled={!file || processing} className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
               {processing && <Loader2 className="h-4 w-4 animate-spin" />}

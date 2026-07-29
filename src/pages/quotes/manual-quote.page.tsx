@@ -1,4 +1,4 @@
-import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Plus, ShoppingCart, Trash2, X } from "lucide-react";
+import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Paperclip, Plus, ShoppingCart, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -15,10 +15,13 @@ import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/exc
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
+import { useDraftAttachments } from "../../queries/attachments/use-attachments";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
+import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
+import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
@@ -139,6 +142,8 @@ export const ManualQuotePage = () => {
   const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
   const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
   const [showBulkProcurement, setShowBulkProcurement] = useState(false);
+  const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
+  const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -157,6 +162,7 @@ export const ManualQuotePage = () => {
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
+  const draftAttachments = useDraftAttachments(draft.id);
   const initializeDraft = useManualQuoteStore((state) => state.initializeDraft);
   const setCurrency = useManualQuoteStore((state) => state.setCurrency);
   const setExchangeRate = useManualQuoteStore((state) => state.setExchangeRate);
@@ -192,6 +198,34 @@ export const ManualQuotePage = () => {
   const deliveryCatalog = useQuoteCatalogs("DELIVERY_TIME");
   const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
   const isProviderAttributionLocked = ["PENDIENTE_APROBACION", "COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA", "REEMPLAZADA"].includes(draft.status);
+  const attachmentItemLabels = useMemo(
+    () => Object.fromEntries(draft.items.map((item, index) => [item.id, `#${index + 1} ${item.erpCode || "LOCAL"}`])),
+    [draft.items],
+  );
+
+  const downloadAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.download(file);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
+
+  const deleteAttachment = async (file: FileAttachment) => {
+    setBusyAttachmentId(file.id);
+    try {
+      await AttachmentsService.delete(file.id);
+      await draftAttachments.refetch();
+      notifier.success("Archivo eliminado.");
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo eliminar el archivo.");
+    } finally {
+      setBusyAttachmentId(null);
+    }
+  };
 
   useEffect(() => {
     if (quoteIdFromQuery) {
@@ -614,6 +648,15 @@ export const ManualQuotePage = () => {
           >
             <MessageSquareText className="h-4 w-4" />
             Pegar texto
+          </button>
+
+          <button
+            onClick={() => setShowAttachmentsModal(true)}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Paperclip className="h-4 w-4" />
+            Archivos adjuntos ({draftAttachments.data?.length || 0})
           </button>
 
           <button
@@ -1253,6 +1296,20 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
+      {showAttachmentsModal && (
+        <AttachmentsModal
+          title="Archivos de la cotización en edición"
+          files={draftAttachments.data || []}
+          loading={draftAttachments.isLoading}
+          itemLabels={attachmentItemLabels}
+          canDelete
+          busyFileId={busyAttachmentId}
+          onClose={() => setShowAttachmentsModal(false)}
+          onDownload={(file) => { void downloadAttachment(file); }}
+          onDelete={(file) => { void deleteAttachment(file); }}
+        />
+      )}
+
       {commentItemId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={closeCommentModal} />
@@ -1302,6 +1359,7 @@ export const ManualQuotePage = () => {
         <SellerProcurementPrequoteModal
           key={procurementItem.id}
           item={procurementItem}
+          clientDraftId={draft.id}
           onClose={() => setProcurementItemId(null)}
           onSave={(data) => {
             if (!procurementItemId) return;
@@ -1316,6 +1374,7 @@ export const ManualQuotePage = () => {
               setItemUnitPrice(procurementItemId, sellerPrice);
             }
             setProcurementItemId(null);
+            void draftAttachments.refetch();
             notifier.success("Datos de compra guardados y precio vendedor actualizado.");
           }}
         />
@@ -1324,10 +1383,12 @@ export const ManualQuotePage = () => {
       {showBulkProcurement && procurementItems.length > 0 && (
         <SellerProcurementBulkPrequoteModal
           items={procurementItems}
+          clientDraftId={draft.id}
           onClose={() => setShowBulkProcurement(false)}
           onSave={(updates) => {
             setItemsProcurementPrequote(updates);
             setShowBulkProcurement(false);
+            void draftAttachments.refetch();
             notifier.success(`Datos de compra aplicados a ${updates.length} partida(s).`);
           }}
         />
@@ -1412,6 +1473,7 @@ export const ManualQuotePage = () => {
           onClose={() => setExtractionModal(null)}
           onCompleted={(source) => {
             setExtractionModal(null);
+            void draftAttachments.refetch();
             navigate(`/cotizador?source=${source}`, { replace: true });
           }}
         />
@@ -1421,6 +1483,7 @@ export const ManualQuotePage = () => {
         onClose={() => setOpenQuotedExcelImport(false)}
         onCompleted={(itemsCount) => {
           setOpenQuotedExcelImport(false);
+          void draftAttachments.refetch();
           notifier.success(`${itemsCount} partida(s) importada(s) desde Excel.`);
         }}
       />

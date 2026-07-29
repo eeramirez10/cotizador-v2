@@ -95,6 +95,7 @@ export interface SupplierOffer {
 export interface RequisitionItem {
   id: string;
   quoteItemId: string;
+  quoteClientItemId: string | null;
   position: number;
   productId: string | null;
   source: "ERP_NO_STOCK" | "LOCAL_NEW";

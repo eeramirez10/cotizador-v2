@@ -3,6 +3,7 @@ import { useState } from "react";
 import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/services/quote-extraction-jobs.service";
 import { useManualQuoteStore } from "../../../store/quote/manual-quote.store";
 import type { ExtractedQuoteItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
+import { AttachmentsService } from "../../../modules/attachments/services/attachments.service";
 
 type QuoteExtractionMode = "file" | "text";
 
@@ -15,6 +16,7 @@ interface QuoteExtractionModalProps {
 
 export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: QuoteExtractionModalProps) => {
   const draftItemsCount = useManualQuoteStore((state) => state.draft.items.length);
+  const clientDraftId = useManualQuoteStore((state) => state.draft.id);
   const setItemsFromExtraction = useManualQuoteStore((state) => state.setItemsFromExtraction);
   const addItemsFromExtraction = useManualQuoteStore((state) => state.addItemsFromExtraction);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -24,6 +26,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<ExtractedQuoteItem[] | null>(null);
+  const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
   const isFile = mode === "file";
 
   if (!open) return null;
@@ -34,10 +37,14 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
     setStatusText("");
   };
 
-  const handleClose = () => {
+  const handleClose = (keepAttachment = false) => {
     if (processing) return;
+    if (!keepAttachment && pendingAttachmentId) {
+      void AttachmentsService.delete(pendingAttachmentId).catch(() => undefined);
+    }
     resetFeedback();
     setPendingItems(null);
+    setPendingAttachmentId(null);
     onClose();
   };
 
@@ -51,6 +58,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
     }
 
     setPendingItems(null);
+    setPendingAttachmentId(null);
     setSelectedFile(null);
     setInputText("");
     onCompleted(mode);
@@ -60,12 +68,17 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
     const cleanText = inputText.trim();
     if (processing || (isFile ? !selectedFile : !cleanText)) return;
 
+    let uploadedAttachmentId: string | null = null;
     try {
       setProcessing(true);
       setErrorMessage(null);
       setProgress(5);
       setStatusText(isFile ? "Subiendo archivo..." : "Enviando texto...");
 
+      if (isFile) {
+        const attachment = await AttachmentsService.uploadQuoteSource(clientDraftId, selectedFile as File);
+        uploadedAttachmentId = attachment.id;
+      }
       const job = isFile
         ? await QuoteExtractionJobsService.createJob(selectedFile as File)
         : await QuoteExtractionJobsService.createTextJob({ text: cleanText });
@@ -85,6 +98,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
       const extractedItems = result.result?.items ?? [];
       setProgress(100);
       if (draftItemsCount > 0) {
+        setPendingAttachmentId(uploadedAttachmentId);
         setStatusText(`Se extrajeron ${extractedItems.length} partidas. Elige cómo incorporarlas.`);
         setPendingItems(extractedItems);
         return;
@@ -96,6 +110,9 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
       setInputText("");
       onCompleted(mode);
     } catch (error) {
+      if (uploadedAttachmentId) {
+        await AttachmentsService.delete(uploadedAttachmentId).catch(() => undefined);
+      }
       setErrorMessage(error instanceof Error ? error.message : `No se pudo procesar ${isFile ? "el archivo" : "el texto"}.`);
       setStatusText("Error durante el procesamiento.");
     } finally {
@@ -115,7 +132,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
                 : "Pega el correo o mensaje de WhatsApp para que la IA identifique las partidas."}
             </p>
           </div>
-          <button onClick={handleClose} disabled={processing} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed" aria-label="Cerrar">
+          <button onClick={() => handleClose()} disabled={processing} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed" aria-label="Cerrar">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -190,7 +207,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
         )}
 
         {!pendingItems && <div className="mt-5 flex justify-end gap-2">
-          <button onClick={handleClose} disabled={processing} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+          <button onClick={() => handleClose()} disabled={processing} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
             Cancelar
           </button>
           <button
