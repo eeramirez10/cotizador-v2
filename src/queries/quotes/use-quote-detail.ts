@@ -82,6 +82,18 @@ export const useRestoreQuote = () => {
   });
 };
 
+export const useRegisterErpQuote = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, erpQuoteNumber }: { quoteId: string; erpQuoteNumber: string }) =>
+      QuotesService.registerErpQuote(quoteId, erpQuoteNumber),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
 export const useDeleteQuotePermanently = () => {
   const queryClient = useQueryClient();
   return useMutation({

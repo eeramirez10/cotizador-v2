@@ -1,6 +1,7 @@
 import {
   Archive,
   ArchiveRestore,
+  BadgeCheck,
   CheckCircle2,
   CircleSlash,
   Download,
@@ -39,6 +40,7 @@ import {
   useDeleteQuotePermanently,
   useQuoteDetail,
   useRegisterQuoteDeliveryAttempt,
+  useRegisterErpQuote,
   useUpdateQuoteStatus,
 } from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
@@ -647,6 +649,8 @@ export const QuoteDetailPage = () => {
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showErpRegistrationModal, setShowErpRegistrationModal] = useState(false);
+  const [erpQuoteNumberDraft, setErpQuoteNumberDraft] = useState("");
   const [rejectionReason, setRejectionReason] = useState<QuoteRejectionReason | "">("");
   const [rejectionComment, setRejectionComment] = useState("");
   const [cancellationReason, setCancellationReason] = useState<QuoteCancellationReason | "">("");
@@ -672,7 +676,11 @@ export const QuoteDetailPage = () => {
   const {
     data: purchaseRequisition,
     refetch: refetchPurchaseRequisition,
-  } = useQuotePurchaseRequisition(quoteId, quote?.status === "APROBADA" || quote?.orderStatus === "GENERADO");
+  } = useQuotePurchaseRequisition(
+    quoteId,
+    quote?.captureMethod !== "EXCEL_IMPORT"
+      && (quote?.status === "APROBADA" || quote?.orderStatus === "GENERADO")
+  );
   const updateStatus = useUpdateQuoteStatus();
   const createRevision = useCreateQuoteRevision();
   const archiveQuote = useArchiveQuote();
@@ -681,6 +689,7 @@ export const QuoteDetailPage = () => {
   const generateOrder = useGenerateQuoteOrder();
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
+  const registerErpQuote = useRegisterErpQuote();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
   const rejectionCatalog = useQuoteCatalogs("REJECTION_REASON");
   const cancellationCatalog = useQuoteCatalogs("CANCELLATION_REASON");
@@ -726,7 +735,8 @@ export const QuoteDetailPage = () => {
     deleteQuote.isPending ||
     generateOrder.isPending ||
     downloadOrderFile.isPending ||
-    registerDeliveryAttempt.isPending;
+    registerDeliveryAttempt.isPending ||
+    registerErpQuote.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
   const availableWhatsAppRecipients = useMemo(
     () => sendRecipientOptions.filter((option) => option.whatsapp.trim()),
@@ -842,9 +852,20 @@ export const QuoteDetailPage = () => {
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
   const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
   const purchaseReady = !purchaseRequisition || ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status);
-  const canGenerateOrder = !isArchived && quote.status === "APROBADA" && quote.orderStatus !== "GENERADO" && !hasRevisionInProgress;
+  const canGenerateOrder =
+    quote.captureMethod !== "EXCEL_IMPORT"
+    && !isArchived
+    && quote.status === "APROBADA"
+    && quote.orderStatus !== "GENERADO"
+    && !hasRevisionInProgress;
   const canDownloadOrder =
-    quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal;
+    quote.captureMethod !== "EXCEL_IMPORT"
+    && (quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal);
+  const canRegisterErpQuote =
+    quote.captureMethod === "EXCEL_IMPORT"
+    && !isArchived
+    && quote.status === "APROBADA"
+    && !hasRevisionInProgress;
   const canPermanentlyDelete =
     currentRole === "admin" &&
     ["BORRADOR", "CANCELADA"].includes(quote.status) &&
@@ -1060,7 +1081,38 @@ export const QuoteDetailPage = () => {
       errorMessage: "No se pudo marcar la cotización como APROBADA.",
       onSuccess: async () => {
         await refetch();
-        await refetchPurchaseRequisition();
+        if (quote.captureMethod !== "EXCEL_IMPORT") {
+          await refetchPurchaseRequisition();
+        }
+      },
+    });
+  };
+
+  const openErpRegistrationModal = () => {
+    setErpQuoteNumberDraft(quote.erpQuoteNumber || "");
+    setShowErpRegistrationModal(true);
+  };
+
+  const handleRegisterErpQuote = async () => {
+    const erpQuoteNumber = erpQuoteNumberDraft.trim();
+    if (!erpQuoteNumber) {
+      notifier.warning("Escribe el número de cotización del ERP.");
+      return;
+    }
+
+    await runActionWithToast({
+      loadingMessage: quote.erpQuoteNumber
+        ? "Actualizando folio de cotización ERP..."
+        : "Registrando cotización en ERP...",
+      action: () => registerErpQuote.mutateAsync({ quoteId: quote.quoteId, erpQuoteNumber }),
+      successMessage: quote.erpQuoteNumber
+        ? "Folio de cotización ERP actualizado."
+        : "Cotización registrada en ERP.",
+      errorMessage: "No se pudo registrar la cotización en ERP.",
+      onSuccess: async () => {
+        setShowErpRegistrationModal(false);
+        setErpQuoteNumberDraft("");
+        await refetch();
       },
     });
   };
@@ -1336,6 +1388,11 @@ export const QuoteDetailPage = () => {
               IMPORTADA EXCEL
             </span>
           )}
+          {quote.erpQuoteNumber && (
+            <span className="flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+              ERP {quote.erpQuoteNumber}
+            </span>
+          )}
 
           <button
             onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
@@ -1484,6 +1541,17 @@ export const QuoteDetailPage = () => {
             >
               <ThumbsUp className="h-4 w-4" />
               Marcar aprobada por cliente
+            </button>
+          )}
+
+          {canRegisterErpQuote && (
+            <button
+              onClick={openErpRegistrationModal}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 ${disabledActionClass}`}
+            >
+              <BadgeCheck className="h-4 w-4" />
+              {quote.erpQuoteNumber ? "Corregir folio ERP" : "Registrar en ERP"}
             </button>
           )}
 
@@ -1643,6 +1711,25 @@ export const QuoteDetailPage = () => {
             <p className="mt-1 text-xs text-gray-500">Fecha original: {formatDate(quote.originalQuoteDate)}</p>
           )}
         </div>
+
+        {quote.captureMethod === "EXCEL_IMPORT" && (
+          <div className={`rounded-md border p-3 ${quote.erpQuoteNumber ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+            <p className={`text-xs font-semibold uppercase ${quote.erpQuoteNumber ? "text-emerald-700" : "text-amber-700"}`}>
+              Cotización ERP
+            </p>
+            <p className={`mt-1 text-sm font-semibold ${quote.erpQuoteNumber ? "text-emerald-950" : "text-amber-950"}`}>
+              {quote.erpQuoteNumber || "Pendiente de registrar"}
+            </p>
+            {quote.erpQuoteRegisteredAt && (
+              <p className="mt-1 text-[11px] text-emerald-700">
+                Registrada {new Date(quote.erpQuoteRegisteredAt).toLocaleString("es-MX")}
+                {quote.erpQuoteRegisteredByUser
+                  ? ` por ${quote.erpQuoteRegisteredByUser.firstName} ${quote.erpQuoteRegisteredByUser.lastName}`
+                  : ""}
+              </p>
+            )}
+          </div>
+        )}
 
         {quote.rejectionReason && (
           <div className="rounded-md border border-orange-200 bg-orange-50 p-3 md:col-span-2">
@@ -1859,6 +1946,80 @@ export const QuoteDetailPage = () => {
           onDownload={(file) => { void downloadAttachment(file); }}
           onDelete={(file) => { void deleteAttachment(file); }}
         />
+      )}
+
+      {showErpRegistrationModal && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            onClick={() => !isActionLocked && setShowErpRegistrationModal(false)}
+            disabled={isActionLocked}
+            className="absolute inset-0 bg-slate-950/50"
+            aria-label="Cerrar registro ERP"
+          />
+          <div className="relative w-full max-w-md rounded-md border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {quote.erpQuoteNumber ? "Corregir folio ERP" : "Registrar en ERP"}
+                </h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Captura el número asignado cuando esta cotización fue generada manualmente en el ERP.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowErpRegistrationModal(false)}
+                disabled={isActionLocked}
+                className={`rounded-md p-1 text-slate-500 hover:bg-slate-100 ${disabledActionClass}`}
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-semibold uppercase text-slate-600">
+              Número de cotización ERP *
+            </label>
+            <input
+              value={erpQuoteNumberDraft}
+              onChange={(event) => setErpQuoteNumberDraft(event.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && erpQuoteNumberDraft.trim() && !isActionLocked) {
+                  event.preventDefault();
+                  void handleRegisterErpQuote();
+                }
+              }}
+              maxLength={80}
+              disabled={isActionLocked}
+              autoFocus
+              placeholder="Ej. COT-ERP-12345"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold uppercase outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+            />
+            <p className="mt-2 text-[11px] text-slate-500">
+              El folio debe ser único y quedará ligado al usuario que haga el registro.
+            </p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowErpRegistrationModal(false)}
+                disabled={isActionLocked}
+                className={`rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 ${disabledActionClass}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRegisterErpQuote()}
+                disabled={isActionLocked || !erpQuoteNumberDraft.trim()}
+                className={`rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 ${disabledActionClass}`}
+              >
+                {isActionLocked ? "Guardando..." : "Guardar folio ERP"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showArchiveModal && (

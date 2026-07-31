@@ -66,6 +66,9 @@ const QuoteRow: FC<QuoteRowProps> = ({
               <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">Actual</span>
             ) : null}
           </div>
+          {quote.erpQuoteNumber && (
+            <p className="mt-1 text-[11px] font-semibold text-teal-700">ERP: {quote.erpQuoteNumber}</p>
+          )}
           {!isPreviousVersion && versionCount > 0 && (
             <p className="mt-1 text-[11px] font-normal text-slate-500">
               {versionCount} {versionCount === 1 ? "versión anterior" : "versiones anteriores"}

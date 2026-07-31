@@ -48,6 +48,9 @@ export interface SavedQuoteRecord {
   orderStatus: SavedOrderStatus;
   orderGeneratedAt: string | null;
   orderReference: string | null;
+  erpQuoteNumber: string | null;
+  erpQuoteRegisteredAt: string | null;
+  erpQuoteRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
   erpProfile?: "GENERIC_TXT";
   erpExportState?: "PENDIENTE" | "EXPORTADO";
   createdAt: string;
@@ -203,6 +206,9 @@ interface ApiQuote {
   orderStatus: "NOT_GENERATED" | "GENERATED";
   orderGeneratedAt: string | null;
   orderReference: string | null;
+  erpQuoteNumber: string | null;
+  erpQuoteRegisteredAt: string | null;
+  erpQuoteRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
   sourceChannel: QuoteSourceChannel;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
   originalQuoteDate: string | null;
@@ -392,6 +398,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     orderStatus: mapApiOrderStatusToSaved(apiQuote.orderStatus),
     orderGeneratedAt: apiQuote.orderGeneratedAt,
     orderReference: apiQuote.orderReference,
+    erpQuoteNumber: apiQuote.erpQuoteNumber,
+    erpQuoteRegisteredAt: apiQuote.erpQuoteRegisteredAt,
+    erpQuoteRegisteredByUser: apiQuote.erpQuoteRegisteredByUser,
     erpProfile: "GENERIC_TXT",
     erpExportState: apiQuote.orderStatus === "GENERATED" ? "EXPORTADO" : "PENDIENTE",
     createdAt: apiQuote.createdAt,
@@ -504,6 +513,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
 const toQuote = (stored: SavedQuoteRecord): Quote => ({
   id: stored.quoteId,
   quoteNumber: stored.quoteNumber ?? stored.quoteId,
+  erpQuoteNumber: stored.erpQuoteNumber,
   status: stored.status,
   createdByName: stored.createdByName,
   providedByName: stored.providedBy?.fullName ?? null,
@@ -689,12 +699,12 @@ export class QuotesService {
     return mapApiQuoteToSavedRecord(data);
   }
 
-  static async list(params: { page?: number; pageSize?: number; status?: ApiQuote["status"]; archived?: boolean }): Promise<PageResult<Quote>> {
+  static async list(params: { page?: number; pageSize?: number; search?: string; status?: ApiQuote["status"]; archived?: boolean }): Promise<PageResult<Quote>> {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;
 
     const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuote>>("/api/quotes", {
-      params: { page, pageSize, status: params.status, archived: params.archived || undefined },
+      params: { page, pageSize, search: params.search?.trim() || undefined, status: params.status, archived: params.archived || undefined },
       headers: requireAuthHeaders(),
     });
 
@@ -710,6 +720,19 @@ export class QuotesService {
     const raw = await getRawQuoteById(quoteId);
     if (!raw) return null;
     return mapApiQuoteToSavedRecord(raw);
+  }
+
+  static async registerErpQuote(quoteId: string, erpQuoteNumber: string): Promise<SavedQuoteRecord> {
+    try {
+      const { data } = await coreHttpClient.patch<ApiQuote>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/erp-registration`,
+        { erpQuoteNumber: erpQuoteNumber.trim() },
+        { headers: requireAuthHeaders() }
+      );
+      return mapApiQuoteToSavedRecord(data);
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudo registrar la cotización en ERP."));
+    }
   }
 
   static async createFromDraft(

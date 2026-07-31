@@ -2,7 +2,7 @@ import { AlertCircle, FileSpreadsheet, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/services/quote-extraction-jobs.service";
 import type { ExtractedQuotedExcelItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
-import { useManualQuoteStore } from "../../../store/quote/manual-quote.store";
+import { useManualQuoteStore, type QuoteCurrency } from "../../../store/quote/manual-quote.store";
 import { AttachmentsService } from "../../../modules/attachments/services/attachments.service";
 
 interface QuotedExcelImportModalProps {
@@ -20,15 +20,20 @@ const updateNumber = (rawValue: string): number | null => {
 export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExcelImportModalProps) => {
   const currentItemsCount = useManualQuoteStore((state) => state.draft.items.length);
   const clientDraftId = useManualQuoteStore((state) => state.draft.id);
+  const lockedImportCurrency = useManualQuoteStore((state) => (
+    state.draft.captureMethod === "EXCEL_IMPORT" ? state.draft.currency : null
+  ));
   const setItems = useManualQuoteStore((state) => state.setItemsFromQuotedExcel);
   const addItems = useManualQuoteStore((state) => state.addItemsFromQuotedExcel);
   const [file, setFile] = useState<File | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<QuoteCurrency | "">("");
   const [items, setExtractedItems] = useState<ExtractedQuotedExcelItem[] | null>(null);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
+  const importCurrency = lockedImportCurrency || selectedCurrency;
 
   if (!open) return null;
 
@@ -36,6 +41,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
     if (processing) return;
     if (!keepAttachment && attachmentId) void AttachmentsService.delete(attachmentId).catch(() => undefined);
     setFile(null);
+    setSelectedCurrency("");
     setExtractedItems(null);
     setProgress(0);
     setStatus("");
@@ -52,6 +58,10 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
 
   const processFile = async () => {
     if (!file || processing) return;
+    if (!importCurrency) {
+      setError("Selecciona la moneda en la que fue elaborada la cotización.");
+      return;
+    }
 
     let uploadedAttachmentId: string | null = null;
     try {
@@ -96,9 +106,9 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
   };
 
   const apply = (mode: "append" | "replace") => {
-    if (!items?.length) return;
-    if (mode === "append") addItems(items);
-    else setItems(items);
+    if (!items?.length || !importCurrency) return;
+    if (mode === "append") addItems(items, importCurrency);
+    else setItems(items, importCurrency);
     onCompleted(items.length);
     close(true);
   };
@@ -121,19 +131,46 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
 
         <div className="overflow-y-auto p-5">
           {!items && (
-            <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-5">
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                disabled={processing}
-                onChange={(event) => {
-                  setFile(event.currentTarget.files?.[0] ?? null);
-                  setError(null);
-                  setStatus("");
-                }}
-                className="w-full text-sm text-gray-700 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-700"
-              />
-              <p className="mt-3 text-xs text-gray-500">Formatos permitidos: XLSX y XLS. El número de partida y los encabezados serán ignorados.</p>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <label htmlFor="quoted-excel-currency" className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  Moneda de la cotización Excel *
+                </label>
+                <select
+                  id="quoted-excel-currency"
+                  value={importCurrency}
+                  disabled={processing || Boolean(lockedImportCurrency)}
+                  onChange={(event) => {
+                    setSelectedCurrency(event.target.value as QuoteCurrency);
+                    setError(null);
+                  }}
+                  className="mt-2 w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 disabled:bg-slate-100 disabled:text-slate-500"
+                >
+                  <option value="">Selecciona MXN o USD</option>
+                  <option value="MXN">MXN - Pesos mexicanos</option>
+                  <option value="USD">USD - Dólares estadounidenses</option>
+                </select>
+                <p className="mt-2 text-xs text-amber-800">
+                  {lockedImportCurrency
+                    ? `Esta cotización ya fue importada en ${lockedImportCurrency}; las partidas adicionales usarán la misma moneda.`
+                    : "Los precios y totales se tomarán tal como están en el Excel. El tipo de cambio será únicamente informativo."}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-5">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  disabled={processing}
+                  onChange={(event) => {
+                    setFile(event.currentTarget.files?.[0] ?? null);
+                    setError(null);
+                    setStatus("");
+                  }}
+                  className="w-full text-sm text-gray-700 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-700"
+                />
+                <p className="mt-3 text-xs text-gray-500">Formatos permitidos: XLSX y XLS. El número de partida y los encabezados serán ignorados.</p>
+              </div>
             </div>
           )}
 
@@ -193,7 +230,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         <footer className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-4">
           <button onClick={() => close()} disabled={processing} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
           {!items ? (
-            <button onClick={() => void processFile()} disabled={!file || processing} className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            <button onClick={() => void processFile()} disabled={!file || !importCurrency || processing} className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
               {processing && <Loader2 className="h-4 w-4 animate-spin" />}
               {processing ? "Procesando..." : "Procesar cotización"}
             </button>
