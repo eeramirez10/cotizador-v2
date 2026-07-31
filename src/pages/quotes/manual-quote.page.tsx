@@ -180,8 +180,6 @@ export const ManualQuotePage = () => {
   const setItemQty = useManualQuoteStore((state) => state.setItemQty);
   const setItemMargin = useManualQuoteStore((state) => state.setItemMargin);
   const setItemUnitPrice = useManualQuoteStore((state) => state.setItemUnitPrice);
-  const setExcelItemSourceCurrency = useManualQuoteStore((state) => state.setExcelItemSourceCurrency);
-  const setExcelItemsSourceCurrency = useManualQuoteStore((state) => state.setExcelItemsSourceCurrency);
   const setItemDeliveryTime = useManualQuoteStore((state) => state.setItemDeliveryTime);
   const setItemComment = useManualQuoteStore((state) => state.setItemComment);
   const setItemProcurementPrequote = useManualQuoteStore((state) => state.setItemProcurementPrequote);
@@ -290,6 +288,14 @@ export const ManualQuotePage = () => {
   }, [fromExtractionSource, hasActiveDraft, hydrateDraftFromQuote, initializeDraft, navigate, quoteIdFromQuery, user]);
 
   const quoteCurrency = draft.currency;
+  const isExcelImportedQuote = draft.captureMethod === "EXCEL_IMPORT";
+  useEffect(() => {
+    if (!isExcelImportedQuote) return;
+    setExtractionModal(null);
+    setOpenModal(false);
+    setOpenQuotedExcelImport(false);
+    setErpTargetItemId(null);
+  }, [isExcelImportedQuote]);
   const paymentTermsOptions = useMemo(() => {
     const current = (draft.paymentTerms || "").trim();
     const options = paymentCatalog.data || [];
@@ -623,32 +629,36 @@ export const ManualQuotePage = () => {
             </button>
           )}
 
-          <button
-            onClick={() => setOpenQuotedExcelImport(true)}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Importar cotización Excel
-          </button>
+          {!isExcelImportedQuote && (
+            <>
+              <button
+                onClick={() => setOpenQuotedExcelImport(true)}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Importar cotización Excel
+              </button>
 
-          <button
-            onClick={() => setExtractionModal("file")}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <FileUp className="h-4 w-4" />
-            Subir archivo
-          </button>
+              <button
+                onClick={() => setExtractionModal("file")}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <FileUp className="h-4 w-4" />
+                Subir archivo
+              </button>
 
-          <button
-            onClick={() => setExtractionModal("text")}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <MessageSquareText className="h-4 w-4" />
-            Pegar texto
-          </button>
+              <button
+                onClick={() => setExtractionModal("text")}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <MessageSquareText className="h-4 w-4" />
+                Pegar texto
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => setShowAttachmentsModal(true)}
@@ -681,25 +691,27 @@ export const ManualQuotePage = () => {
             {savingAction === "quote" ? "Procesando..." : "Generar cotización"}
           </button>
 
-          <button
-            onClick={() => {
-              setErpTargetItemId(null);
-              setOpenModal(true);
-            }}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
-          >
-            <Plus className="h-4 w-4" />
-            Agregar productos
-          </button>
+          {!isExcelImportedQuote && (
+            <button
+              onClick={() => {
+                setErpTargetItemId(null);
+                setOpenModal(true);
+              }}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
+            >
+              <Plus className="h-4 w-4" />
+              Agregar productos
+            </button>
+          )}
         </div>
       </div>
 
       {draft.captureMethod === "EXCEL_IMPORT" && (
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase text-teal-800">Cotización importada desde Excel</p>
-            <p className="mt-1 text-xs text-teal-700">Las partidas pueden cotizarse sin vincular. La vinculación con ERP será obligatoria al generar el pedido.</p>
+            <p className="text-xs font-semibold uppercase text-teal-800">Cotización Excel para seguimiento</p>
+            <p className="mt-1 text-xs text-teal-700">Las partidas son de solo lectura y no se vinculan con ERP. Esta cotización no genera requisición de compra ni pedido ERP.</p>
           </div>
           <label className="text-xs font-semibold uppercase text-teal-800" htmlFor="originalQuoteDate">
             Fecha original *
@@ -786,12 +798,16 @@ export const ManualQuotePage = () => {
           <select
             id="currency"
             value={draft.currency}
+            disabled={isExcelImportedQuote}
             onChange={(event) => setCurrency(event.target.value as "MXN" | "USD")}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
           >
             <option value="MXN">MXN</option>
             <option value="USD">USD</option>
           </select>
+          {isExcelImportedQuote && (
+            <p className="mt-1 text-xs text-gray-500">Definida al importar la cotización Excel.</p>
+          )}
         </div>
 
         <div>
@@ -844,7 +860,10 @@ export const ManualQuotePage = () => {
             }}
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
           />
-          <p className="mt-1 text-xs text-gray-500">Fecha TC: {draft.exchangeRateDate}</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Fecha TC: {draft.exchangeRateDate}
+            {isExcelImportedQuote ? " · Solo informativo; no modifica los importes." : ""}
+          </p>
         </div>
 
         <div>
@@ -949,14 +968,6 @@ export const ManualQuotePage = () => {
         <ExcelImportedQuoteItemsTable
           items={draft.items}
           quoteCurrency={quoteCurrency}
-          exchangeRate={draft.exchangeRate}
-          onQtyChange={setItemQty}
-          onSourcePriceChange={setItemUnitPrice}
-          onSourceCurrencyChange={setExcelItemSourceCurrency}
-          onAllSourceCurrencyChange={setExcelItemsSourceCurrency}
-          onDeliveryTimeChange={setItemDeliveryTime}
-          onComment={openCommentModal}
-          onRemove={removeItem}
         />
       ) : (
         <>
@@ -1466,7 +1477,7 @@ export const ManualQuotePage = () => {
           setOpenClientModal(false);
         }}
       />
-      {extractionModal && (
+      {extractionModal && !isExcelImportedQuote && (
         <QuoteExtractionModal
           mode={extractionModal}
           open

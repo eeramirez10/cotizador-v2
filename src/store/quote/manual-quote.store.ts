@@ -198,14 +198,12 @@ interface ManualQuoteState {
   ) => void;
   setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
   addItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
-  setItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[]) => void;
-  addItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[]) => void;
+  setItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
+  addItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
   removeItem: (itemId: string) => void;
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
-  setExcelItemSourceCurrency: (itemId: string, currency: QuoteCurrency) => void;
-  setExcelItemsSourceCurrency: (currency: QuoteCurrency) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
   setItemComment: (itemId: string, itemComment: string) => void;
   setItemProcurementPrequote: (itemId: string, data: ProcurementPrequoteData) => void;
@@ -279,6 +277,20 @@ const newDraft = (): ManualQuoteDraft => ({
   items: [],
 });
 
+const normalizeImportedItemsToQuoteCurrency = (
+  items: ManualQuoteItem[],
+  currency: QuoteCurrency
+): ManualQuoteItem[] => items.map((item) => (
+  item.importedFromExcel
+    ? {
+        ...item,
+        sourceCurrency: currency,
+        sourceUnitPrice: item.unitPrice,
+        sourceSubtotal: item.subtotal,
+      }
+    : item
+));
+
 const getCostInQuoteCurrency = (
   item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">,
   currency: QuoteCurrency,
@@ -313,7 +325,7 @@ const computeItem = (
     && (item.sourceUnitPrice ?? 0) >= 0;
   const hasManualPrice = Number.isFinite(item.manualUnitPrice) && (item.manualUnitPrice ?? 0) >= 0;
   const unitPrice = hasExcelSourcePrice
-    ? round(convertQuoteAmount(item.sourceUnitPrice ?? 0, item.sourceCurrency || currency, currency, exchangeRate))
+    ? round(item.sourceUnitPrice ?? 0)
     : hasManualPrice
     ? round(Math.max(0, item.manualUnitPrice ?? 0))
     : sellerPriceCostBase > 0
@@ -441,7 +453,7 @@ const createItemsFromQuotedExcel = (
         costCurrency: currency,
         marginPct: 0,
         manualUnitPrice: undefined,
-        sourceCurrency: "MXN",
+        sourceCurrency: currency,
         sourceUnitPrice: item.precio_vendedor ?? undefined,
         sourceSubtotal: item.subtotal ?? undefined,
         sourceRequiresReview: item.requiere_revision,
@@ -487,7 +499,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 
   setCurrency: (currency) =>
     set((state) => {
-      if (currency === state.draft.currency) return state;
+      if (currency === state.draft.currency || state.draft.captureMethod === "EXCEL_IMPORT") return state;
       const convertedItems = state.draft.items.map((item) => ({
         ...item,
         manualUnitPrice: Number.isFinite(item.manualUnitPrice)
@@ -510,7 +522,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         exchangeRate,
         exchangeRateDate: nowDateOnly(),
         exchangeRateSource: "manual",
-        items: recalcItems(state.draft.items, state.draft.currency, exchangeRate),
+        items: state.draft.captureMethod === "EXCEL_IMPORT"
+          ? state.draft.items
+          : recalcItems(state.draft.items, state.draft.currency, exchangeRate),
       },
     })),
 
@@ -674,30 +688,47 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       },
     })),
 
-  setItemsFromQuotedExcel: (items) =>
+  setItemsFromQuotedExcel: (items, currency) =>
     set((state) => ({
       draft: {
         ...state.draft,
         status: "BORRADOR",
+        currency,
         captureMethod: "EXCEL_IMPORT",
         originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
-        items: createItemsFromQuotedExcel(items, state.draft.currency, state.draft.exchangeRate),
+        items: createItemsFromQuotedExcel(items, currency, state.draft.exchangeRate),
       },
     })),
 
-  addItemsFromQuotedExcel: (items) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        status: "BORRADOR",
-        captureMethod: "EXCEL_IMPORT",
-        originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
-        items: [
-          ...state.draft.items,
-          ...createItemsFromQuotedExcel(items, state.draft.currency, state.draft.exchangeRate),
-        ],
-      },
-    })),
+  addItemsFromQuotedExcel: (items, currency) =>
+    set((state) => {
+      const existingItems = currency === state.draft.currency
+        ? state.draft.items
+        : recalcItems(
+            state.draft.items.map((item) => ({
+              ...item,
+              manualUnitPrice: Number.isFinite(item.manualUnitPrice)
+                ? round(convertQuoteAmount(item.manualUnitPrice ?? 0, state.draft.currency, currency, state.draft.exchangeRate))
+                : undefined,
+            })),
+            currency,
+            state.draft.exchangeRate
+          );
+
+      return {
+        draft: {
+          ...state.draft,
+          status: "BORRADOR",
+          currency,
+          captureMethod: "EXCEL_IMPORT",
+          originalQuoteDate: state.draft.originalQuoteDate || nowDateOnly(),
+          items: [
+            ...existingItems,
+            ...createItemsFromQuotedExcel(items, currency, state.draft.exchangeRate),
+          ],
+        },
+      };
+    }),
 
   removeItem: (itemId) =>
     set((state) => ({
@@ -767,32 +798,6 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         },
       };
     }),
-
-  setExcelItemSourceCurrency: (itemId, currency) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        items: recalcItems(
-          state.draft.items.map((item) => item.id === itemId ? { ...item, sourceCurrency: currency } : item),
-          state.draft.currency,
-          state.draft.exchangeRate
-        ),
-      },
-    })),
-
-  setExcelItemsSourceCurrency: (currency) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        items: recalcItems(
-          state.draft.items.map((item) =>
-            item.importedFromExcel ? { ...item, sourceCurrency: currency } : item
-          ),
-          state.draft.currency,
-          state.draft.exchangeRate
-        ),
-      },
-    })),
 
   setItemDeliveryTime: (itemId, deliveryTime) =>
     set((state) => ({
@@ -898,9 +903,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
-        sourceCurrency: item.sourceCurrency || (item.importedFromExcel ? quote.currency : undefined),
-        sourceUnitPrice: item.sourceUnitPrice ?? (item.importedFromExcel ? item.unitPrice : undefined),
-        sourceSubtotal: item.sourceSubtotal ?? (item.importedFromExcel ? item.subtotal : undefined),
+        sourceCurrency: item.importedFromExcel ? quote.currency : item.sourceCurrency,
+        sourceUnitPrice: item.importedFromExcel ? item.unitPrice : item.sourceUnitPrice,
+        sourceSubtotal: item.importedFromExcel ? item.subtotal : item.sourceSubtotal,
         manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
       }));
 
@@ -972,9 +977,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,
-      sourceCurrency: item.sourceCurrency || (item.importedFromExcel ? stored.currency : undefined),
-      sourceUnitPrice: item.sourceUnitPrice ?? (item.importedFromExcel ? item.unitPrice : undefined),
-      sourceSubtotal: item.sourceSubtotal ?? (item.importedFromExcel ? item.subtotal : undefined),
+      sourceCurrency: item.importedFromExcel ? stored.currency : item.sourceCurrency,
+      sourceUnitPrice: item.importedFromExcel ? item.unitPrice : item.sourceUnitPrice,
+      sourceSubtotal: item.importedFromExcel ? item.subtotal : item.sourceSubtotal,
       manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
     }));
 
@@ -1075,4 +1080,24 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 }), {
   name: "cotizador-v2-manual-quote-draft",
   partialize: (state) => ({ draft: state.draft }),
+  merge: (persistedState, currentState) => {
+    const persisted = persistedState as Partial<ManualQuoteState>;
+    if (!persisted.draft) return currentState;
+
+    const draft = persisted.draft.captureMethod === "EXCEL_IMPORT"
+      ? {
+          ...persisted.draft,
+          items: normalizeImportedItemsToQuoteCurrency(
+            persisted.draft.items,
+            persisted.draft.currency
+          ),
+        }
+      : persisted.draft;
+
+    return {
+      ...currentState,
+      ...persisted,
+      draft,
+    };
+  },
 }));

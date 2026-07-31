@@ -38,6 +38,7 @@ export interface QuoteMeta {
 export interface Quote {
   id: string;
   quoteNumber?: string;
+  erpQuoteNumber?: string | null;
   status:
     | "DRAFT"
     | "FINAL"
