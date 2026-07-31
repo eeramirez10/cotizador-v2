@@ -430,7 +430,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
                   <td className="px-1.5 py-3 text-center align-top font-bold" style={{ color: ink }}>{index + 1}.</td>
                   <td className="px-1.5 py-3 align-top font-medium" style={{ color: muted }}>{item.erpCode || "-"}</td>
                   <td className="px-1.5 py-3 align-top">
-                    <p className="font-semibold" style={{ color: ink }}>{item.erpDescription || item.customerDescription || "-"}</p>
+                    <p className="font-semibold" style={{ color: ink }}>{item.customerDescription || item.erpDescription || "-"}</p>
                     {item.itemComment && <p className="mt-1 text-[7px] leading-3" style={{ color: muted }}>{item.itemComment}</p>}
                   </td>
                   <td className="px-1 py-3 text-center align-top">{item.unit || "-"}</td>
@@ -581,7 +581,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
               {quote.items.map((item) => (
                 <tr key={item.id}>
                   <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
-                  <td className="px-2 py-2 align-top">{item.erpDescription || item.customerDescription || "-"}</td>
+                  <td className="px-2 py-2 align-top">{item.customerDescription || item.erpDescription || "-"}</td>
                   <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
                   <td className="px-2 py-2 text-right align-top">{item.qty}</td>
                   <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
@@ -1886,7 +1886,16 @@ export const QuoteDetailPage = () => {
                   )}
                 </td>
                 {showCustomerExtractionColumns && showCustomerOrderColumns && (
-                  <td className="px-3 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>
+                  <td className="px-3 py-2 text-xs text-gray-700">
+                    <p>{item.customerDescription || "-"}</p>
+                    {item.customerDescriptionOriginal?.trim()
+                      && item.customerDescriptionOriginal.trim() !== (item.customerDescription || "").trim() && (
+                        <div className="mt-2 border-t border-gray-100 pt-2">
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">Original</p>
+                          <p className="mt-0.5 text-[10px] leading-4 text-gray-500">{item.customerDescriptionOriginal}</p>
+                        </div>
+                      )}
+                  </td>
                 )}
                 {showCustomerExtractionColumns && showCustomerOrderColumns && (
                   <td className="px-3 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>

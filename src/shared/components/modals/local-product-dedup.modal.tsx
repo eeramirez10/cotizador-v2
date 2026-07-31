@@ -8,32 +8,32 @@ import {
 interface LocalProductDedupModalProps {
   open: boolean;
   description: string;
+  originalDescription: string;
   unit: string;
   onClose: () => void;
   onReuse: (candidate: SimilarLocalProductCandidate) => void;
-  onCreateNew: () => void;
+  onCreateNew: (description: string) => void;
 }
 
 export const LocalProductDedupModal = ({
   open,
   description,
+  originalDescription,
   unit,
   onClose,
   onReuse,
   onCreateNew,
 }: LocalProductDedupModalProps) => {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [semanticAvailable, setSemanticAvailable] = useState(true);
   const [items, setItems] = useState<SimilarLocalProductCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [localDescription, setLocalDescription] = useState(description.trim().toUpperCase());
   const hasExactMatch = useMemo(() => items.some((item) => item.matchType === "EXACT"), [items]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setItems([]);
 
     void LocalProductsService.searchSimilar({ description, unit })
       .then((result) => {
@@ -73,9 +73,32 @@ export const LocalProductDedupModal = ({
 
         <div className="overflow-y-auto p-5">
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Producto solicitado</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Descripción para el cliente</p>
             <p className="mt-1 text-sm font-semibold text-gray-800">{description}</p>
+            {originalDescription.trim() && originalDescription.trim() !== description.trim() && (
+              <div className="mt-3 border-t border-amber-200 pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Descripción original extraída</p>
+                <p className="mt-1 text-xs leading-5 text-gray-600">{originalDescription}</p>
+              </div>
+            )}
             <p className="mt-1 text-xs text-gray-600">Unidad: {unit}</p>
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="local-product-description" className="text-xs font-semibold text-gray-700">
+              Descripción final del producto local
+            </label>
+            <textarea
+              id="local-product-description"
+              value={localDescription}
+              onChange={(event) => setLocalDescription(event.target.value.toUpperCase())}
+              rows={3}
+              maxLength={500}
+              className="mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Puedes ajustarla antes de crear el producto. La búsqueda de coincidencias usa la descripción editada de la partida.
+            </p>
           </div>
 
           {loading && (
@@ -133,7 +156,12 @@ export const LocalProductDedupModal = ({
             Cancelar
           </button>
           {!hasExactMatch && (
-            <button type="button" onClick={onCreateNew} disabled={loading} className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <button
+              type="button"
+              onClick={() => onCreateNew(localDescription.trim())}
+              disabled={loading || !localDescription.trim()}
+              className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Crear producto nuevo
             </button>
           )}

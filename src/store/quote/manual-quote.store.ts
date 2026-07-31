@@ -35,6 +35,9 @@ export interface ManualQuoteItem {
   erpCode: string;
   ean: string;
   customerDescription: string;
+  customerDescriptionOriginal: string;
+  customerDescriptionEditedAt?: string | null;
+  customerDescriptionEditedByUser?: { id: string; firstName: string; lastName: string } | null;
   customerUnit: string;
   erpDescription: string;
   unit: string;
@@ -205,6 +208,7 @@ interface ManualQuoteState {
   setItemMargin: (itemId: string, marginPct: number) => void;
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
   setItemDeliveryTime: (itemId: string, deliveryTime: string) => void;
+  setItemCustomerDescription: (itemId: string, customerDescription: string) => void;
   setItemComment: (itemId: string, itemComment: string) => void;
   setItemProcurementPrequote: (itemId: string, data: ProcurementPrequoteData) => void;
   setItemsProcurementPrequote: (updates: ProcurementPrequoteUpdate[]) => void;
@@ -361,6 +365,9 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         erpCode: item.erpCode,
         ean: item.ean,
         customerDescription: item.customerDescription,
+        customerDescriptionOriginal: item.customerDescriptionOriginal || item.customerDescription,
+        customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
+        customerDescriptionEditedByUser: item.customerDescriptionEditedByUser || null,
         customerUnit: item.customerUnit,
         erpDescription: item.erpDescription,
         unit: item.unit,
@@ -409,6 +416,9 @@ const createItemsFromExtraction = (
         erpCode: "",
         ean: "",
         customerDescription: (item.description_normalizada || item.description_original || "").toString().trim().toUpperCase(),
+        customerDescriptionOriginal: (item.description_original || item.description_normalizada || "").toString().trim(),
+        customerDescriptionEditedAt: null,
+        customerDescriptionEditedByUser: null,
         customerUnit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
         erpDescription: "",
         unit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
@@ -441,6 +451,9 @@ const createItemsFromQuotedExcel = (
         erpCode: "",
         ean: "",
         customerDescription: (item.description_normalizada || item.description_original || "").trim().toUpperCase(),
+        customerDescriptionOriginal: (item.description_original || item.description_normalizada || "").trim(),
+        customerDescriptionEditedAt: null,
+        customerDescriptionEditedByUser: null,
         customerUnit: (item.unidad || "").trim(),
         erpDescription: "",
         unit: (item.unidad || "").trim(),
@@ -584,6 +597,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         erpCode: product.code,
         ean: product.ean,
         customerDescription: "",
+        customerDescriptionOriginal: "",
+        customerDescriptionEditedAt: null,
+        customerDescriptionEditedByUser: null,
         customerUnit: "",
         erpDescription: product.description,
         unit: product.unit,
@@ -815,6 +831,22 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       },
     })),
 
+  setItemCustomerDescription: (itemId, customerDescription) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        items: state.draft.items.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                customerDescription,
+                customerDescriptionEditedAt: new Date().toISOString(),
+              }
+            : item
+        ),
+      },
+    })),
+
   setItemComment: (itemId, itemComment) =>
     set((state) => ({
       draft: {
@@ -886,6 +918,10 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         localProductId: item.localProductId || null,
         ean: item.ean || item.erpCode,
         customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+        customerDescriptionOriginal:
+          item.customerDescriptionOriginal || item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+        customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
+        customerDescriptionEditedByUser: item.customerDescriptionEditedByUser || null,
         customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
         itemComment: item.itemComment || "",
         sellerSupplierId: item.sellerSupplierId || null,
@@ -960,6 +996,10 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       localProductId: item.localProductId || null,
       ean: item.ean || item.erpCode,
       customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+      customerDescriptionOriginal:
+        item.customerDescriptionOriginal || item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
+      customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
+      customerDescriptionEditedByUser: item.customerDescriptionEditedByUser || null,
       customerUnit: item.customerUnit || (!item.erpCode ? item.unit || "" : ""),
       itemComment: item.itemComment || "",
       sellerSupplierId: item.sellerSupplierId || null,

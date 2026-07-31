@@ -116,6 +116,9 @@ export interface SavedQuoteRecord {
     erpCode: string;
     ean?: string;
     customerDescription?: string;
+    customerDescriptionOriginal?: string;
+    customerDescriptionEditedAt?: string | null;
+    customerDescriptionEditedByUser?: { id: string; firstName: string; lastName: string } | null;
     customerUnit?: string;
     erpDescription: string;
     unit: string;
@@ -157,6 +160,9 @@ interface ApiQuoteItem {
   externalProductCode: string | null;
   ean: string | null;
   customerDescription: string | null;
+  customerDescriptionOriginal: string | null;
+  customerDescriptionEditedAt: string | null;
+  customerDescriptionEditedByUser: { id: string; firstName: string; lastName: string } | null;
   customerUnit: string | null;
   erpDescription: string | null;
   unit: string;
@@ -473,6 +479,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       erpCode: item.externalProductCode || item.product?.code || "",
       ean: item.ean || item.product?.ean || "",
       customerDescription: item.customerDescription || "",
+      customerDescriptionOriginal: item.customerDescriptionOriginal || item.customerDescription || "",
+      customerDescriptionEditedAt: item.customerDescriptionEditedAt,
+      customerDescriptionEditedByUser: item.customerDescriptionEditedByUser,
       customerUnit: item.customerUnit || "",
       erpDescription: item.erpDescription || item.product?.description || "",
       unit: item.unit || item.product?.unit || "",
@@ -579,6 +588,10 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     externalProductCode: erpCode,
     ean: item.ean?.trim() ? item.ean.trim() : null,
     customerDescription: item.customerDescription?.trim() ? item.customerDescription.trim() : null,
+    customerDescriptionOriginal: item.customerDescriptionOriginal?.trim()
+      ? item.customerDescriptionOriginal.trim()
+      : item.customerDescription?.trim() || null,
+    customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
     customerUnit: item.customerUnit?.trim() ? item.customerUnit.trim() : null,
     erpDescription: erpDescriptionForPayload,
     unit: item.unit?.trim() ? item.unit.trim() : "PZA",
