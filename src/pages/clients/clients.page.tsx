@@ -167,11 +167,6 @@ export const ClientsPage = () => {
     contactable: clients.filter((client) => Boolean(client.email || client.whatsappPhone || client.contacts?.some((contact) => contact.email || contact.mobile))).length,
   }), [clients]);
 
-  const openLocalCreate = () => {
-    setSelectedClient({ id: "", source: "LOCAL" } as Client);
-    setForm({ ...EMPTY_FORM, contacts: [emptyCustomerContact(true)] });
-  };
-
   const openClient = (client: Client) => {
     setSelectedClient(client);
     setForm(clientToForm(client));
@@ -379,10 +374,6 @@ export const ClientsPage = () => {
       {onboardingOpen && (
         <ErpCustomerOnboardingModal
           onClose={() => setOnboardingOpen(false)}
-          onCreateLocal={() => {
-            setOnboardingOpen(false);
-            openLocalCreate();
-          }}
           onImported={(client) => {
             setOnboardingOpen(false);
             openClient(client);
