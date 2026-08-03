@@ -52,6 +52,7 @@ export interface Supplier {
 
 export interface SupplierContact {
   id: string;
+  contactKey: string;
   channel: "EMAIL" | "PHONE";
   value: string;
   normalizedValue: string;
@@ -59,6 +60,7 @@ export interface SupplierContact {
   extension: string | null;
   isWhatsApp: boolean;
   contactName: string | null;
+  contactPosition: string | null;
   label: string | null;
   isPrimary: boolean;
 }
@@ -240,12 +242,14 @@ export interface SaveSupplierInput {
 }
 
 export interface SaveSupplierContactInput {
+  contactKey?: string | null;
   channel: "EMAIL" | "PHONE";
   value: string;
   phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
   extension?: string | null;
   isWhatsApp: boolean;
   contactName?: string | null;
+  contactPosition?: string | null;
   label?: string | null;
   isPrimary?: boolean;
 }

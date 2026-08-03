@@ -28,6 +28,7 @@ import {
 import {
   SelectOrCreateSupplierModal,
   SupplierContactsEditor,
+  groupSupplierContacts,
 } from "../../shared/components/modals/select-or-create-supplier.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -67,19 +68,22 @@ const EMPTY_FORM: SupplierFormState = {
 const supplierContacts = (supplier: Supplier): SaveSupplierContactInput[] => {
   if (supplier.contacts?.length) {
     return supplier.contacts.map((contact) => ({
+      contactKey: contact.contactKey,
       channel: contact.channel,
       value: contact.value,
       phoneKind: contact.phoneKind,
       extension: contact.extension,
       isWhatsApp: contact.isWhatsApp,
       contactName: contact.contactName,
+      contactPosition: contact.contactPosition,
       label: contact.label,
       isPrimary: contact.isPrimary,
     }));
   }
+  const legacyContactKey = `legacy-primary-${supplier.id}`;
   return [
-    ...(supplier.email ? [{ channel: "EMAIL" as const, value: supplier.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: supplier.contactName, label: null, isPrimary: true }] : []),
-    ...(supplier.phone ? [{ channel: "PHONE" as const, value: supplier.phone, phoneKind: "UNKNOWN" as const, extension: supplier.phoneExtension, isWhatsApp: false, contactName: supplier.contactName, label: null, isPrimary: true }] : []),
+    ...(supplier.email ? [{ contactKey: legacyContactKey, channel: "EMAIL" as const, value: supplier.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: supplier.contactName, contactPosition: supplier.contactPosition, label: null, isPrimary: true }] : []),
+    ...(supplier.phone ? [{ contactKey: legacyContactKey, channel: "PHONE" as const, value: supplier.phone, phoneKind: "UNKNOWN" as const, extension: supplier.phoneExtension, isWhatsApp: false, contactName: supplier.contactName, contactPosition: supplier.contactPosition, label: null, isPrimary: true }] : []),
   ];
 };
 
@@ -158,14 +162,16 @@ export const SuppliersPage = () => {
     if (!form.name.trim()) return notifier.warning("El nombre del proveedor es obligatorio.");
     if (!form.country.trim()) return notifier.warning("El país es obligatorio.");
     const contacts = form.contacts.filter((contact) => contact.value.trim());
+    const primaryContact = contacts.find((contact) => contact.isPrimary && contact.contactName)
+      || contacts.find((contact) => contact.contactName);
     const input: SaveSupplierInput = {
       name: form.name.trim(),
       scope: form.scope,
       taxId: form.taxId.trim() || null,
       state: form.state.trim() || null,
       country: form.country.trim(),
-      contactName: form.contactName.trim() || null,
-      contactPosition: form.contactPosition.trim() || null,
+      contactName: primaryContact?.contactName?.trim() || null,
+      contactPosition: primaryContact?.contactPosition?.trim() || null,
       creditTerms: form.creditTerms.trim() || null,
       currency: form.currency || null,
       notes: form.notes.trim() || null,
@@ -367,8 +373,6 @@ const SupplierDetailModal = ({ supplier, form, setForm, editable, busy, onClose,
             <FormField label="RFC" value={form.taxId} disabled={!editable} onChange={(taxId) => setForm((current) => ({ ...current, taxId: taxId.toUpperCase() }))} />
             <FormField label="País *" value={form.country} disabled={!editable} onChange={(country) => setForm((current) => ({ ...current, country }))} />
             <FormField label="Estado" value={form.state} disabled={!editable} onChange={(state) => setForm((current) => ({ ...current, state }))} />
-            <FormField label="Contacto principal" value={form.contactName} disabled={!editable} onChange={(contactName) => setForm((current) => ({ ...current, contactName }))} />
-            <FormField label="Puesto" value={form.contactPosition} disabled={!editable} onChange={(contactPosition) => setForm((current) => ({ ...current, contactPosition }))} />
             <FormField label="Condiciones de crédito" value={form.creditTerms} disabled={!editable} onChange={(creditTerms) => setForm((current) => ({ ...current, creditTerms }))} />
             <label className="text-xs font-semibold text-slate-600">Moneda<select value={form.currency} disabled={!editable} onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value as SupplierFormState["currency"] }))} className={fieldClass}><option value="">Sin definir</option><option value="MXN">MXN</option><option value="USD">USD</option></select></label>
             <label className="text-xs font-semibold text-slate-600 sm:col-span-2 lg:col-span-3">Notas<textarea value={form.notes} disabled={!editable} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} rows={3} maxLength={2000} className={fieldClass} /></label>
@@ -389,10 +393,9 @@ const fieldClass = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3
 const FormField = ({ label, value, onChange, disabled, wide = false }: { label: string; value: string; onChange: (value: string) => void; disabled: boolean; wide?: boolean }) => <label className={`text-xs font-semibold text-slate-600 ${wide ? "sm:col-span-2" : ""}`}>{label}<input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className={fieldClass} /></label>;
 
 const ReadOnlyContacts = ({ supplier }: { supplier: Supplier }) => {
-  const contacts = supplier.contacts?.length
-    ? supplier.contacts.map((contact) => ({ ...contact, displayValue: contact.normalizedValue }))
-    : supplierContacts(supplier).map((contact, index) => ({ ...contact, id: `legacy-${contact.channel}-${index}`, displayValue: contact.value }));
-  return <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Correos y teléfonos</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{contacts.length === 0 && <p className="text-xs text-slate-500">Sin contactos registrados.</p>}{contacts.map((contact) => <div key={contact.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2"><p className="flex items-center gap-2 text-xs font-semibold text-slate-900">{contact.channel === "EMAIL" ? <Mail className="h-3.5 w-3.5 text-blue-600" /> : <Phone className="h-3.5 w-3.5 text-emerald-600" />}{contact.displayValue}{contact.isPrimary && <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-600">Principal</span>}</p><p className="mt-1 text-[10px] text-slate-500">{[contact.contactName, contact.label, contact.extension ? `Ext. ${contact.extension}` : null, contact.isWhatsApp ? "WhatsApp" : null].filter(Boolean).join(" · ") || "Sin detalles"}</p></div>)}</div></section>;
+  const people = groupSupplierContacts(supplierContacts(supplier));
+  const hasContactData = people.some((person) => person.name || person.position || person.email || person.phone);
+  return <section className="mt-5"><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contactos del proveedor</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{!hasContactData && <p className="text-xs text-slate-500">Sin contactos registrados.</p>}{hasContactData && people.map((person) => <div key={person.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-bold text-slate-900">{person.name || "Contacto sin nombre"}</p><p className="mt-1 text-[11px] text-slate-500">{[person.position, person.label].filter(Boolean).join(" · ") || "Sin puesto definido"}</p></div>{person.isPrimary && <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-900">PRINCIPAL</span>}</div>{person.email && <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-700"><Mail className="h-3.5 w-3.5 text-blue-600" />{person.email}</p>}{person.phone && <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-700"><Phone className="h-3.5 w-3.5 text-emerald-600" />{person.phone}{person.extension ? ` ext. ${person.extension}` : ""}{person.isWhatsApp && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700">WhatsApp</span>}</p>}</div>)}</div></section>;
 };
 
 const ConfirmStatusModal = ({ supplier, busy, onClose, onConfirm }: { supplier: Supplier; busy: boolean; onClose: () => void; onConfirm: () => void }) => <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"><div className="flex gap-3"><span className={`rounded-xl p-2 ${supplier.isActive ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>{supplier.isActive ? <CircleOff className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}</span><div><h2 className="text-lg font-bold text-slate-950">{supplier.isActive ? "Desactivar proveedor" : "Activar proveedor"}</h2><p className="mt-2 text-sm text-slate-600">{supplier.isActive ? "El proveedor dejará de aparecer en selecciones activas, pero conservará su historial." : "El proveedor volverá a estar disponible para nuevas propuestas y requisiciones."}</p><p className="mt-3 text-sm font-bold text-slate-900">{supplier.name}</p></div></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button><button type="button" onClick={onConfirm} disabled={busy} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 ${supplier.isActive ? "bg-rose-600 text-white hover:bg-rose-500" : "bg-emerald-600 text-white hover:bg-emerald-500"}`}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}{supplier.isActive ? "Desactivar" : "Activar"}</button></div></div></div>;

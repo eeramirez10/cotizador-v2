@@ -12,6 +12,7 @@ interface Props {
 }
 
 export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched, onCreate, onChooseOther, onClose }: Props) => {
+  const detectedContactKey = `detected-${canonicalContactKey(detected.contactName || detected.name || "supplier")}`;
   const initialValues: Partial<SaveSupplierInput> = {
     name: detected.name || "",
     taxId: detected.taxId || "",
@@ -20,12 +21,14 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
     email: detected.email || "",
     phone: detected.phone || "",
     contacts: detectedContacts(detected).map((contact, index, contacts) => ({
+      contactKey: detectedContactKey,
       channel: contact.channel,
       value: contact.value,
       phoneKind: contact.phoneKind,
       extension: contact.extension,
       isWhatsApp: contact.isWhatsApp,
       contactName: contact.contactName,
+      contactPosition: null,
       label: contact.label,
       isPrimary: contacts.findIndex((entry) => entry.channel === contact.channel) === index,
     })),
@@ -80,6 +83,8 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
     </div>
   );
 };
+
+const canonicalContactKey = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "contact";
 
 const Info = ({ label, value }: { label: string; value: string | null }) => <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold text-slate-900">{value || "No identificado"}</p></div>;
 
