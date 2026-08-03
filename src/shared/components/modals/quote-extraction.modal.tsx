@@ -3,6 +3,7 @@ import { useState } from "react";
 import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/services/quote-extraction-jobs.service";
 import { useManualQuoteStore } from "../../../store/quote/manual-quote.store";
 import type { ExtractedQuoteItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
+import type { ExtractedPartyData } from "../../../modules/ai/types/party-data.types";
 import { AttachmentsService } from "../../../modules/attachments/services/attachments.service";
 
 type QuoteExtractionMode = "file" | "text";
@@ -12,9 +13,10 @@ interface QuoteExtractionModalProps {
   open: boolean;
   onClose: () => void;
   onCompleted: (source: QuoteExtractionMode) => void;
+  onDetectedCustomer?: (customer: ExtractedPartyData) => void;
 }
 
-export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: QuoteExtractionModalProps) => {
+export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetectedCustomer }: QuoteExtractionModalProps) => {
   const draftItemsCount = useManualQuoteStore((state) => state.draft.items.length);
   const clientDraftId = useManualQuoteStore((state) => state.draft.id);
   const setItemsFromExtraction = useManualQuoteStore((state) => state.setItemsFromExtraction);
@@ -27,6 +29,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<ExtractedQuoteItem[] | null>(null);
   const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
+  const [pendingCustomer, setPendingCustomer] = useState<ExtractedPartyData | null>(null);
   const isFile = mode === "file";
   const requiresManualOcr = errorMessage?.toLowerCase().includes("aplica ocr") ?? false;
 
@@ -46,6 +49,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
     resetFeedback();
     setPendingItems(null);
     setPendingAttachmentId(null);
+    setPendingCustomer(null);
     onClose();
   };
 
@@ -62,6 +66,8 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
     setPendingAttachmentId(null);
     setSelectedFile(null);
     setInputText("");
+    if (pendingCustomer) onDetectedCustomer?.(pendingCustomer);
+    setPendingCustomer(null);
     onCompleted(mode);
   };
 
@@ -97,9 +103,11 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
       });
 
       const extractedItems = result.result?.items ?? [];
+      const detectedCustomer = result.result?.detected_customer ?? null;
       setProgress(100);
       if (draftItemsCount > 0) {
         setPendingAttachmentId(uploadedAttachmentId);
+        setPendingCustomer(detectedCustomer);
         setStatusText(`Se extrajeron ${extractedItems.length} partidas. Elige cómo incorporarlas.`);
         setPendingItems(extractedItems);
         return;
@@ -109,6 +117,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
       setStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);
       setSelectedFile(null);
       setInputText("");
+      if (detectedCustomer) onDetectedCustomer?.(detectedCustomer);
       onCompleted(mode);
     } catch (error) {
       if (uploadedAttachmentId) {

@@ -1,13 +1,16 @@
-import { Loader2, Search, UserPlus, X } from "lucide-react";
+import { Loader2, Search, Sparkles, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { ClientInput, Client } from "../../../modules/clients/types/client.types";
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
+import { erpCustomerHasDeliveryChannel, erpCustomerToClientInput } from "../../../modules/clients/utils/erp-customer-mapper";
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
 import { useClientsStore } from "../../../store/clients/clients.store";
 import { CustomerContactsModal } from "./customer-contacts.modal";
+import { PartyTextCompletionModal } from "./party-text-completion.modal";
+import { mergePartyIntoCustomer } from "../../../modules/ai/utils/party-data-form.mapper";
 
 interface SelectClientModalProps {
   open: boolean;
@@ -27,39 +30,8 @@ const EMPTY_FORM: ClientInput = {
   phone: "",
 };
 
-const splitDisplayName = (displayName: string): { name: string; lastname: string } => {
-  const safe = displayName.trim();
-  if (!safe) return { name: "", lastname: "." };
-
-  const [first, ...rest] = safe.split(/\s+/);
-  return {
-    name: first,
-    lastname: rest.join(" ") || ".",
-  };
-};
-
-const toInputFromErp = (erpCustomer: ErpCustomer): ClientInput => {
-  const split = splitDisplayName(erpCustomer.displayName);
-
-  return {
-    source: "ERP",
-    externalId: erpCustomer.externalId,
-    externalSystem: "ERP",
-    code: erpCustomer.code || null,
-    name: erpCustomer.firstName || split.name,
-    lastname: erpCustomer.lastName || split.lastname,
-    whatsappPhone: erpCustomer.whatsapp,
-    email: erpCustomer.email || "",
-    rfc: erpCustomer.taxId || "",
-    companyName: erpCustomer.companyName || erpCustomer.displayName,
-    phone: erpCustomer.phone || "",
-  };
-};
-
 const hasMissingContactData = (erpCustomer: ErpCustomer): boolean => {
-  const hasPhone = Boolean(erpCustomer.whatsapp.trim() || erpCustomer.phone.trim());
-  const hasEmail = Boolean(erpCustomer.email.trim());
-  return !hasPhone || !hasEmail;
+  return !erpCustomerHasDeliveryChannel(erpCustomer);
 };
 
 export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModalProps) => {
@@ -75,6 +47,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const [contactsModalOpen, setContactsModalOpen] = useState(false);
   const [contactsCustomerId, setContactsCustomerId] = useState<string | null>(null);
   const [contactsCustomerLabel, setContactsCustomerLabel] = useState("");
+  const [textCompletionOpen, setTextCompletionOpen] = useState(false);
 
   const debouncedTerm = useDebouncedValue(term, 300);
   const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
@@ -125,7 +98,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const handleSelectErp = async (erpCustomer: ErpCustomer) => {
     try {
       setCreating(true);
-      const created = await addClient(toInputFromErp(erpCustomer));
+      const created = await addClient(erpCustomerToClientInput(erpCustomer));
       onSelect(created);
       onClose();
     } catch (error) {
@@ -139,7 +112,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const handleOpenContactsModal = async (erpCustomer: ErpCustomer) => {
     try {
       setCreating(true);
-      const upserted = await addClient(toInputFromErp(erpCustomer));
+      const upserted = await addClient(erpCustomerToClientInput(erpCustomer));
       setContactsCustomerId(upserted.id);
       setContactsCustomerLabel(upserted.companyName || `${upserted.name} ${upserted.lastname}`.trim() || erpCustomer.displayName);
       setContactsModalOpen(true);
@@ -160,19 +133,15 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
       notifier.warning("El apellido es obligatorio.");
       return;
     }
-    if (!createForm.whatsappPhone.trim()) {
-      notifier.warning("El WhatsApp es obligatorio.");
+    if (!createForm.whatsappPhone.trim() && !createForm.email.trim()) {
+      notifier.warning("Captura al menos un correo o WhatsApp.");
       return;
     }
-    if (!isValidPhoneNumber(createForm.whatsappPhone)) {
+    if (createForm.whatsappPhone.trim() && !isValidPhoneNumber(createForm.whatsappPhone)) {
       notifier.warning("El WhatsApp debe ser un número válido de 10 a 15 dígitos.");
       return;
     }
-    if (!createForm.email.trim()) {
-      notifier.warning("El correo es obligatorio.");
-      return;
-    }
-    if (!isValidEmail(createForm.email)) {
+    if (createForm.email.trim() && !isValidEmail(createForm.email)) {
       notifier.warning("El correo no tiene un formato válido.");
       return;
     }
@@ -373,6 +342,8 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
             <h4 className="text-xs font-semibold uppercase text-gray-600">Crear cliente rápido</h4>
             <p className="mb-3 text-xs text-gray-500">Los campos marcados con * son obligatorios.</p>
 
+            <button type="button" onClick={() => setTextCompletionOpen(true)} className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"><Sparkles className="h-4 w-4" />Completar con texto</button>
+
             <div className="space-y-2">
               <Input
                 label="Nombre"
@@ -389,14 +360,12 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
               <Input
                 label="WhatsApp"
                 type="tel"
-                required
                 value={createForm.whatsappPhone}
                 onChange={(value) => setCreateForm((prev) => ({ ...prev, whatsappPhone: value }))}
               />
               <Input
                 label="Correo"
                 type="email"
-                required
                 value={createForm.email}
                 onChange={(value) => setCreateForm((prev) => ({ ...prev, email: value }))}
               />
@@ -434,6 +403,15 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
         customerId={contactsCustomerId}
         customerLabel={contactsCustomerLabel}
       />
+      {textCompletionOpen && <PartyTextCompletionModal
+        partyType="CUSTOMER"
+        onClose={() => setTextCompletionOpen(false)}
+        onApply={(party) => {
+          setCreateForm((current) => mergePartyIntoCustomer(current, party));
+          setTextCompletionOpen(false);
+          notifier.success("Datos del cliente aplicados. Revísalos antes de crear.");
+        }}
+      />}
     </div>
   );
 };

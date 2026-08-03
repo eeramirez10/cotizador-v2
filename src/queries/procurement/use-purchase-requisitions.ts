@@ -13,6 +13,7 @@ export const purchaseRequisitionKeys = {
   detail: (id: string) => [...purchaseRequisitionKeys.all, "detail", id] as const,
   byQuote: (quoteId: string) => [...purchaseRequisitionKeys.all, "quote", quoteId] as const,
   suppliers: ["purchase-requisitions", "suppliers"] as const,
+  supplierList: (params: object) => [...purchaseRequisitionKeys.suppliers, params] as const,
 };
 
 export const usePurchaseRequisitions = (params: {
@@ -40,9 +41,9 @@ export const useQuotePurchaseRequisition = (quoteId?: string, enabled = true) =>
   retry: false,
 });
 
-export const useSuppliers = (enabled = true) => useQuery({
-  queryKey: purchaseRequisitionKeys.suppliers,
-  queryFn: () => PurchaseRequisitionsService.listSuppliers(),
+export const useSuppliers = (enabled = true, params?: { search?: string; includeInactive?: boolean }) => useQuery({
+  queryKey: purchaseRequisitionKeys.supplierList(params || {}),
+  queryFn: () => PurchaseRequisitionsService.listSuppliers(params?.search, params?.includeInactive),
   enabled,
   staleTime: 30_000,
 });
@@ -94,6 +95,20 @@ export const usePurchaseRequisitionMutations = () => {
       await client.invalidateQueries({ queryKey: purchaseRequisitionKeys.suppliers });
     },
   });
+  const updateSupplier = useMutation({
+    mutationFn: ({ supplierId, input }: { supplierId: string; input: SaveSupplierInput }) =>
+      PurchaseRequisitionsService.updateSupplier(supplierId, input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: purchaseRequisitionKeys.suppliers });
+    },
+  });
+  const setSupplierActive = useMutation({
+    mutationFn: ({ supplierId, isActive }: { supplierId: string; isActive: boolean }) =>
+      PurchaseRequisitionsService.setSupplierActive(supplierId, isActive),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: purchaseRequisitionKeys.suppliers });
+    },
+  });
   const syncErpSupplier = useMutation({
     mutationFn: PurchaseRequisitionsService.syncErpSupplier,
     onSuccess: async () => {
@@ -110,8 +125,11 @@ export const usePurchaseRequisitionMutations = () => {
     selectOffer,
     approveCostVariance,
     createSupplier,
+    updateSupplier,
+    setSupplierActive,
     syncErpSupplier,
     isPending: updateItem.isPending || linkItemToErp.isPending || submit.isPending || assign.isPending || createOffer.isPending
-      || selectOffer.isPending || approveCostVariance.isPending || createSupplier.isPending || syncErpSupplier.isPending,
+      || selectOffer.isPending || approveCostVariance.isPending || createSupplier.isPending || updateSupplier.isPending
+      || setSupplierActive.isPending || syncErpSupplier.isPending,
   };
 };

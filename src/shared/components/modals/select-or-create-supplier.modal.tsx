@@ -1,9 +1,11 @@
-import { Loader2, Mail, MessageCircle, Phone, Plus, Search, Store, Trash2, X } from "lucide-react";
+import { Loader2, MessageCircle, Plus, Search, Sparkles, Store, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { ErpSupplier, SaveSupplierContactInput, SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 import { useErpSupplierSearch, usePurchaseRequisitionMutations, useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
 import { notifier } from "../../notifications/notifier";
+import { PartyTextCompletionModal } from "./party-text-completion.modal";
+import { partyToSupplierInput } from "../../../modules/ai/utils/party-data-form.mapper";
 
 type SupplierForm = Omit<SaveSupplierInput, "scope" | "contacts"> & {
   scope: "" | SaveSupplierInput["scope"];
@@ -17,6 +19,10 @@ const EMPTY_SUPPLIER: SupplierForm = {
   state: "",
   country: "MÉXICO",
   contactName: "",
+  contactPosition: "",
+  creditTerms: "",
+  currency: null,
+  notes: "",
   email: "",
   phone: "",
   contacts: [],
@@ -31,6 +37,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
 }) => {
   const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
   const [term, setTerm] = useState("");
+  const [textCompletionOpen, setTextCompletionOpen] = useState(false);
   const [form, setForm] = useState<SupplierForm>(() => ({
     ...EMPTY_SUPPLIER,
     ...initialValues,
@@ -40,7 +47,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
   const debouncedTerm = useDebouncedValue(term, 400);
   const erpSearch = useErpSupplierSearch(debouncedTerm, mode === "ERP");
   const mutations = usePurchaseRequisitionMutations();
-  const localSuppliers = useSuppliers(mode === "LOCAL");
+  const localSuppliers = useSuppliers(mode === "LOCAL", { includeInactive: true });
   const busy = mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending;
   const potentialDuplicates = useMemo(() => {
     const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -85,7 +92,17 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
         || contacts.find((contact) => contact.channel === "EMAIL")?.value || null;
       const primaryPhone = contacts.find((contact) => contact.channel === "PHONE" && contact.isPrimary)?.value
         || contacts.find((contact) => contact.channel === "PHONE")?.value || null;
-      const created = await mutations.createSupplier.mutateAsync({ ...form, scope: form.scope, contacts, email: primaryEmail, phone: primaryPhone });
+      const primaryContact = contacts.find((contact) => contact.isPrimary && contact.contactName)
+        || contacts.find((contact) => contact.contactName);
+      const created = await mutations.createSupplier.mutateAsync({
+        ...form,
+        scope: form.scope,
+        contacts,
+        contactName: primaryContact?.contactName || null,
+        contactPosition: primaryContact?.contactPosition || null,
+        email: primaryEmail,
+        phone: primaryPhone,
+      });
       if (toast !== undefined) notifier.update(toast, "success", "Proveedor local creado y seleccionado.");
       else notifier.success("Proveedor local creado y seleccionado.");
       onSelect(created);
@@ -96,7 +113,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
     }
   };
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/65 p-4" role="dialog" aria-modal="true" aria-labelledby="supplier-selector-title">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
@@ -144,13 +161,27 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
             </div>
           ) : (
             <form onSubmit={createLocal}>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div><p className="text-xs font-bold text-slate-900">¿Ya tienes los datos en un mensaje?</p><p className="mt-0.5 text-[11px] text-slate-600">Pégalos y deja que la IA complete este formulario.</p></div>
+                <button type="button" onClick={() => setTextCompletionOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"><Sparkles className="h-4 w-4" />Completar con texto</button>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
                 <Field label="RFC" value={form.taxId || ""} onChange={(taxId) => setForm((state) => ({ ...state, taxId }))} />
                 <label className="text-xs font-semibold text-slate-600">Tipo *<select value={form.scope} onChange={(event) => setForm((state) => ({ ...state, scope: event.target.value as SupplierForm["scope"] }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>Seleccionar tipo...</option><option value="NATIONAL">Nacional</option><option value="INTERNATIONAL">Internacional</option></select></label>
                 <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
                 <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
-                <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
+                <Field label="Condiciones de crédito" value={form.creditTerms || ""} onChange={(creditTerms) => setForm((state) => ({ ...state, creditTerms }))} />
+                <label className="text-xs font-semibold text-slate-600">Moneda
+                  <select value={form.currency || ""} onChange={(event) => setForm((state) => ({ ...state, currency: event.target.value ? event.target.value as "MXN" | "USD" : null }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100">
+                    <option value="">Sin definir</option>
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Notas
+                  <textarea value={form.notes || ""} onChange={(event) => setForm((state) => ({ ...state, notes: event.target.value }))} rows={3} maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" />
+                </label>
               </div>
               <SupplierContactsEditor contacts={form.contacts} onChange={(contacts) => setForm((state) => ({ ...state, contacts }))} />
               {potentialDuplicates.length > 0 && (
@@ -179,7 +210,37 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
         </div>
       </div>
     </div>
-  );
+    {textCompletionOpen && <PartyTextCompletionModal
+      partyType="SUPPLIER"
+      onClose={() => setTextCompletionOpen(false)}
+      onApply={(party) => {
+        const detected = partyToSupplierInput(party);
+        setForm((current) => {
+          const hasContacts = current.contacts.some((contact) => contact.value.trim());
+          return {
+            ...current,
+            name: current.name.trim() || detected.name || "",
+            scope: current.scope || detected.scope || "",
+            taxId: current.taxId?.trim() || detected.taxId || "",
+            state: current.state?.trim() || detected.state || "",
+            country: current.country?.trim() && current.country.trim().toUpperCase() !== "MÉXICO"
+              ? current.country
+              : detected.country || current.country || "MÉXICO",
+            creditTerms: current.creditTerms?.trim() || detected.creditTerms || "",
+            currency: current.currency || detected.currency || null,
+            notes: current.notes?.trim() || detected.notes || "",
+            contactName: current.contactName?.trim() || detected.contactName || "",
+            contactPosition: current.contactPosition?.trim() || detected.contactPosition || "",
+            email: current.email?.trim() || detected.email || "",
+            phone: current.phone?.trim() || detected.phone || "",
+            contacts: hasContacts ? current.contacts : initialContacts(detected),
+          };
+        });
+        setTextCompletionOpen(false);
+        notifier.success("Datos del proveedor aplicados. Revísalos antes de guardar.");
+      }}
+    />}
+  </>);
 };
 
 const Field = ({ label, value, type = "text", onChange }: {
@@ -192,49 +253,176 @@ const Field = ({ label, value, type = "text", onChange }: {
 );
 
 const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSupplierContactInput[] => {
-  if (initialValues?.contacts?.length) return initialValues.contacts;
-  return [
-    ...(initialValues?.email ? [{ channel: "EMAIL" as const, value: initialValues.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
-    ...(initialValues?.phone ? [{ channel: "PHONE" as const, value: initialValues.phone, phoneKind: "UNKNOWN" as const, extension: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
-  ];
+  if (initialValues?.contacts?.length) {
+    const fallbackKeys = new Map<string, string>();
+    return initialValues.contacts.map((contact, index) => {
+      const personSignature = `${contact.contactName || "contact"}:${contact.contactPosition || ""}`.toLowerCase();
+      const contactKey = contact.contactKey || fallbackKeys.get(personSignature) || `legacy-${index + 1}`;
+      fallbackKeys.set(personSignature, contactKey);
+      return { ...contact, contactKey };
+    });
+  }
+  return personToContacts({
+    key: nextContactKey(),
+    name: initialValues?.contactName || "",
+    position: initialValues?.contactPosition || "",
+    email: initialValues?.email || "",
+    landlinePhone: initialValues?.phone || "",
+    landlineExtension: "",
+    whatsAppPhone: "",
+    label: "",
+    isPrimary: true,
+  });
 };
 
-const SupplierContactsEditor = ({ contacts, onChange }: {
+interface SupplierContactPersonForm {
+  key: string;
+  name: string;
+  position: string;
+  email: string;
+  landlinePhone: string;
+  landlineExtension: string;
+  whatsAppPhone: string;
+  label: string;
+  isPrimary: boolean;
+}
+
+let contactSequence = 0;
+const nextContactKey = () => `contact-${Date.now().toString(36)}-${(++contactSequence).toString(36)}`;
+
+const emptyContactPerson = (isPrimary: boolean): SupplierContactPersonForm => ({
+  key: nextContactKey(),
+  name: "",
+  position: "",
+  email: "",
+  landlinePhone: "",
+  landlineExtension: "",
+  whatsAppPhone: "",
+  label: "",
+  isPrimary,
+});
+
+const personToContacts = (person: SupplierContactPersonForm): SaveSupplierContactInput[] => [
+  {
+    contactKey: person.key,
+    channel: "EMAIL",
+    value: person.email,
+    phoneKind: null,
+    extension: null,
+    isWhatsApp: false,
+    contactName: person.name || null,
+    contactPosition: person.position || null,
+    label: person.label || null,
+    isPrimary: person.isPrimary,
+  },
+  {
+    contactKey: person.key,
+    channel: "PHONE",
+    value: person.landlinePhone,
+    phoneKind: "LANDLINE",
+    extension: person.landlineExtension || null,
+    isWhatsApp: false,
+    contactName: person.name || null,
+    contactPosition: person.position || null,
+    label: person.label || null,
+    isPrimary: person.isPrimary,
+  },
+  {
+    contactKey: person.key,
+    channel: "PHONE",
+    value: person.whatsAppPhone,
+    phoneKind: "MOBILE",
+    extension: null,
+    isWhatsApp: true,
+    contactName: person.name || null,
+    contactPosition: person.position || null,
+    label: person.label || null,
+    isPrimary: person.isPrimary,
+  },
+];
+
+export const groupSupplierContacts = (contacts: SaveSupplierContactInput[]): SupplierContactPersonForm[] => {
+  const people: SupplierContactPersonForm[] = [];
+  contacts.forEach((contact, index) => {
+    const baseKey = contact.contactKey || `legacy-${index + 1}`;
+    const isWhatsAppPhone = contact.channel === "PHONE" && (contact.isWhatsApp);
+    let person = people.find((candidate) => candidate.key === baseKey);
+    if (person && (
+      (contact.channel === "EMAIL" && person.email)
+      || (contact.channel === "PHONE" && isWhatsAppPhone && person.whatsAppPhone)
+      || (contact.channel === "PHONE" && !isWhatsAppPhone && person.landlinePhone)
+    )) {
+      person = undefined;
+    }
+    if (!person) {
+      person = {
+        ...emptyContactPerson(false),
+        key: people.some((candidate) => candidate.key === baseKey) ? `${baseKey}-${index + 1}` : baseKey,
+        name: contact.contactName || "",
+        position: contact.contactPosition || "",
+        label: contact.label || "",
+        isPrimary: Boolean(contact.isPrimary),
+      };
+      people.push(person);
+    }
+    person.name ||= contact.contactName || "";
+    person.position ||= contact.contactPosition || "";
+    person.label ||= contact.label || "";
+    person.isPrimary ||= Boolean(contact.isPrimary);
+    if (contact.channel === "EMAIL") person.email = contact.value;
+    if (contact.channel === "PHONE") {
+      if (isWhatsAppPhone) {
+        person.whatsAppPhone = contact.value;
+      } else {
+        person.landlinePhone = contact.value;
+        person.landlineExtension = contact.extension || "";
+      }
+    }
+  });
+  return people.length > 0 ? people : [emptyContactPerson(true)];
+};
+
+export const SupplierContactsEditor = ({ contacts, onChange }: {
   contacts: SaveSupplierContactInput[];
   onChange: (contacts: SaveSupplierContactInput[]) => void;
 }) => {
-  const add = (channel: SaveSupplierContactInput["channel"]) => onChange([
-    ...contacts,
-    { channel, value: "", phoneKind: channel === "PHONE" ? "UNKNOWN" : null, extension: null, isWhatsApp: false, isPrimary: !contacts.some((contact) => contact.channel === channel) },
-  ]);
-  const update = (index: number, data: Partial<SaveSupplierContactInput>) => onChange(contacts.map((contact, current) => current === index ? { ...contact, ...data } : contact));
-  const remove = (index: number) => onChange(contacts.filter((_, current) => current !== index));
+  const people = groupSupplierContacts(contacts);
+  const commit = (nextPeople: SupplierContactPersonForm[]) => onChange(nextPeople.flatMap(personToContacts));
+  const update = (index: number, data: Partial<SupplierContactPersonForm>) => commit(people.map((person, current) => current === index ? { ...person, ...data } : person));
+  const setPrimary = (index: number) => commit(people.map((person, current) => ({ ...person, isPrimary: current === index })));
+  const remove = (index: number) => {
+    const nextPeople = people.filter((_, current) => current !== index);
+    if (nextPeople.length === 0) return commit([emptyContactPerson(true)]);
+    if (!nextPeople.some((person) => person.isPrimary)) nextPeople[0] = { ...nextPeople[0]!, isPrimary: true };
+    commit(nextPeople);
+  };
   return (
-    <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="mt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Correos y teléfonos</p><p className="mt-1 text-[11px] text-slate-500">Agrega cada medio por separado. Marca WhatsApp únicamente cuando esté confirmado.</p></div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => add("EMAIL")} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700"><Mail className="h-3.5 w-3.5" /><Plus className="h-3 w-3" />Correo</button>
-          <button type="button" onClick={() => add("PHONE")} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700"><Phone className="h-3.5 w-3.5" /><Plus className="h-3 w-3" />Teléfono</button>
-        </div>
+        <div><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contactos del proveedor</p><p className="mt-1 text-[11px] text-slate-500">Registra correo, teléfono fijo y WhatsApp por separado. El primer contacto aparece por defecto.</p></div>
+        <button type="button" onClick={() => commit([...people, emptyContactPerson(false)])} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100"><Plus className="h-3.5 w-3.5" />Agregar otro contacto</button>
       </div>
       <div className="mt-3 space-y-3">
-        {contacts.map((contact, index) => (
-          <div key={index} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-12">
-            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Tipo<select value={contact.channel} onChange={(event) => update(index, { channel: event.target.value as SaveSupplierContactInput["channel"], phoneKind: event.target.value === "PHONE" ? "UNKNOWN" : null, isWhatsApp: false })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal"><option value="EMAIL">Correo</option><option value="PHONE">Teléfono</option></select></label>
-            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-4">Valor<input type={contact.channel === "EMAIL" ? "email" : "tel"} value={contact.value} onChange={(event) => update(index, { value: event.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
-            {contact.channel === "PHONE" ? <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Clase<select value={contact.phoneKind || "UNKNOWN"} onChange={(event) => update(index, { phoneKind: event.target.value as SaveSupplierContactInput["phoneKind"] })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal"><option value="UNKNOWN">Sin definir</option><option value="LANDLINE">Fijo</option><option value="MOBILE">Celular</option></select></label> : <div className="sm:col-span-2" />}
-            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-3">Etiqueta<input value={contact.label || ""} onChange={(event) => update(index, { label: event.target.value })} placeholder="Ventas, oficina..." className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
-            <button type="button" onClick={() => remove(index)} className="self-end justify-self-end rounded-md p-2 text-rose-600 hover:bg-rose-50 sm:col-span-1" aria-label="Eliminar contacto"><Trash2 className="h-4 w-4" /></button>
-            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-4">Nombre del contacto<input value={contact.contactName || ""} onChange={(event) => update(index, { contactName: event.target.value })} placeholder="Persona o departamento" className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
-            {contact.channel === "PHONE" ? <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Extensión<input inputMode="numeric" value={contact.extension || ""} onChange={(event) => update(index, { extension: event.target.value.replace(/\D/g, "").slice(0, 10) })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label> : <div className="sm:col-span-2" />}
-            <div className="flex flex-wrap items-center gap-4 sm:col-span-6 sm:self-end sm:pb-2">
-              <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600"><input type="checkbox" checked={Boolean(contact.isPrimary)} onChange={(event) => onChange(contacts.map((entry, current) => entry.channel === contact.channel ? { ...entry, isPrimary: current === index && event.target.checked } : entry))} />Principal</label>
-              {contact.channel === "PHONE" && <label className="inline-flex items-center gap-2 text-[11px] font-medium text-emerald-700"><input type="checkbox" checked={contact.isWhatsApp} onChange={(event) => update(index, { isWhatsApp: event.target.checked })} /><MessageCircle className="h-3.5 w-3.5" />Tiene WhatsApp confirmado</label>}
+        {people.map((person, index) => (
+          <div key={person.key} className={`rounded-xl border p-4 ${person.isPrimary ? "border-amber-300 bg-amber-50/40" : "border-slate-200 bg-slate-50"}`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><p className="text-xs font-bold text-slate-800">Contacto {index + 1}</p>{person.isPrimary && <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-900">PRINCIPAL</span>}</div>
+              <button type="button" onClick={() => remove(index)} disabled={people.length === 1} className="rounded-md p-1.5 text-rose-600 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Eliminar contacto ${index + 1}`}><Trash2 className="h-4 w-4" /></button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-12">
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Nombre<input value={person.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="Nombre de la persona" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Puesto<input value={person.position} onChange={(event) => update(index, { position: event.target.value })} placeholder="Compras, ventas, dirección..." className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Área o etiqueta<input value={person.label} onChange={(event) => update(index, { label: event.target.value })} placeholder="Oficina, cotizaciones..." className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Correo<input type="email" value={person.email} onChange={(event) => update(index, { email: event.target.value })} placeholder="correo@proveedor.com" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-3">Teléfono fijo<input type="tel" value={person.landlinePhone} onChange={(event) => update(index, { landlinePhone: event.target.value })} placeholder="+52 55 1234 5678" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-2">Extensión<input inputMode="numeric" value={person.landlineExtension} onChange={(event) => update(index, { landlineExtension: event.target.value.replace(/\D/g, "").slice(0, 10) })} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-emerald-700 lg:col-span-3">Teléfono WhatsApp<div className="relative mt-1"><MessageCircle className="absolute left-2.5 top-2 h-3.5 w-3.5 text-emerald-600" /><input type="tel" value={person.whatsAppPhone} onChange={(event) => update(index, { whatsAppPhone: event.target.value })} placeholder="+52 81 9876 5432" className="w-full rounded-md border border-emerald-300 bg-white py-2 pl-8 pr-2.5 text-xs font-normal text-slate-900" /></div></label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-5 border-t border-slate-200 pt-3">
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700"><input type="radio" name="supplier-primary-contact" checked={person.isPrimary} onChange={() => setPrimary(index)} />Contacto principal</label>
             </div>
           </div>
         ))}
-        {contacts.length === 0 && <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">Sin contactos. Puedes agregarlos ahora o completar el proveedor después.</p>}
       </div>
     </section>
   );

@@ -18,8 +18,10 @@ interface CustomerContactsModalProps {
 const EMPTY_FORM: CustomerContactInput = {
   name: "",
   jobTitle: "",
+  label: "",
   email: "",
   phone: "",
+  phoneExtension: "",
   mobile: "",
   isPrimary: false,
 };
@@ -65,8 +67,10 @@ export const CustomerContactsModal = ({
     setForm({
       name: contact.name,
       jobTitle: contact.jobTitle || "",
+      label: contact.label || "",
       email: contact.email || "",
       phone: contact.phone || "",
+      phoneExtension: contact.phoneExtension || "",
       mobile: contact.mobile || "",
       isPrimary: contact.isPrimary,
     });
@@ -277,16 +281,26 @@ export const CustomerContactsModal = ({
                 onChange={(value) => setForm((prev) => ({ ...prev, jobTitle: value }))}
               />
               <Input
+                label="Área o etiqueta"
+                value={form.label || ""}
+                onChange={(value) => setForm((prev) => ({ ...prev, label: value }))}
+              />
+              <Input
                 label="WhatsApp"
                 type="tel"
                 value={form.mobile || ""}
                 onChange={(value) => setForm((prev) => ({ ...prev, mobile: value }))}
               />
               <Input
-                label="Teléfono"
+                label="Teléfono fijo"
                 type="tel"
                 value={form.phone || ""}
                 onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
+              />
+              <Input
+                label="Extensión"
+                value={form.phoneExtension || ""}
+                onChange={(value) => setForm((prev) => ({ ...prev, phoneExtension: value.replace(/\D/g, "").slice(0, 10) }))}
               />
               <Input
                 label="Correo"

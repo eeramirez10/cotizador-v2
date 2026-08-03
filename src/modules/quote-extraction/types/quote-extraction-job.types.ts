@@ -1,3 +1,5 @@
+import type { ExtractedPartyData } from "../../ai/types/party-data.types";
+
 export type ExtractionJobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface ExtractedQuoteItem {
@@ -42,6 +44,7 @@ export interface ExtractionJobResultPayload {
   file_type: string;
   items_count: number;
   items: ExtractedQuoteItem[];
+  detected_customer?: ExtractedPartyData | null;
 }
 
 export interface ExtractionJobResultResponse {
