@@ -194,7 +194,15 @@ export const SupplierOfferModal = ({
                   </select>
                 </label>
                 <label className={`${labelClass} sm:col-span-2`}>Descripción según el proveedor
-                  <textarea value={value.supplierDescription} onChange={(event) => update("supplierDescription", event.target.value.toUpperCase())} rows={3} maxLength={500} className={inputClass} placeholder="Descripción utilizada por el proveedor" />
+                  <textarea
+                    value={value.supplierDescription}
+                    onChange={(event) => update("supplierDescription", event.target.value)}
+                    onBlur={(event) => update("supplierDescription", event.currentTarget.value.toUpperCase())}
+                    rows={3}
+                    maxLength={500}
+                    className={inputClass}
+                    placeholder="Descripción utilizada por el proveedor"
+                  />
                 </label>
               </div>
             </section>

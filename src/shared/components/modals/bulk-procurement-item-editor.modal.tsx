@@ -88,7 +88,7 @@ export const BulkProcurementItemEditorModal = ({ item, value, brands, origins, d
         </header>
         <div className="overflow-y-auto p-5">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>Descripción según el proveedor *<textarea value={form.supplierDescription} onChange={(event) => update("supplierDescription", event.target.value.toUpperCase())} rows={3} maxLength={500} className={inputClass} /></label>
+            <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>Descripción según el proveedor *<textarea value={form.supplierDescription} onChange={(event) => update("supplierDescription", event.target.value)} onBlur={(event) => update("supplierDescription", event.currentTarget.value.toUpperCase())} rows={3} maxLength={500} className={inputClass} /></label>
             <label className={labelClass}>Costo unitario *<input type="number" min="0" step="0.0001" value={form.unitCost} onChange={(event) => update("unitCost", event.target.value)} className={inputClass} /></label>
             <label className={labelClass}>Moneda *<select value={form.currency} onChange={(event) => update("currency", event.target.value as QuoteCurrency)} className={inputClass}><option value="MXN">MXN</option><option value="USD">USD</option></select></label>
             {form.currency === "USD" && <label className={labelClass}>Tipo de cambio *<input type="number" min="0" step="0.0001" value={form.exchangeRate} onChange={(event) => update("exchangeRate", event.target.value)} className={inputClass} /></label>}
