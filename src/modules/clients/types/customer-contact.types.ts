@@ -3,8 +3,10 @@ export interface CustomerContact {
   customerId: string;
   name: string;
   jobTitle: string | null;
+  label: string | null;
   email: string | null;
   phone: string | null;
+  phoneExtension: string | null;
   mobile: string | null;
   isPrimary: boolean;
   createdAt: string;
@@ -14,9 +16,10 @@ export interface CustomerContact {
 export interface CustomerContactInput {
   name: string;
   jobTitle?: string | null;
+  label?: string | null;
   email?: string | null;
   phone?: string | null;
+  phoneExtension?: string | null;
   mobile?: string | null;
   isPrimary?: boolean;
 }
-

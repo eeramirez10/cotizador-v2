@@ -7,8 +7,10 @@ interface ApiCustomerContact {
   customerId: string;
   name: string;
   jobTitle: string | null;
+  label: string | null;
   email: string | null;
   phone: string | null;
+  phoneExtension: string | null;
   mobile: string | null;
   isPrimary: boolean;
   createdAt: string;
@@ -41,8 +43,10 @@ const mapApiContact = (row: ApiCustomerContact): CustomerContact => ({
   customerId: row.customerId,
   name: row.name,
   jobTitle: row.jobTitle,
+  label: row.label,
   email: row.email,
   phone: row.phone,
+  phoneExtension: row.phoneExtension,
   mobile: row.mobile,
   isPrimary: row.isPrimary,
   createdAt: row.createdAt,
@@ -52,8 +56,10 @@ const mapApiContact = (row: ApiCustomerContact): CustomerContact => ({
 const toPayload = (input: CustomerContactInput): CustomerContactInput => ({
   name: input.name.trim(),
   jobTitle: asTextOrNull(input.jobTitle ?? null),
+  label: asTextOrNull(input.label ?? null),
   email: asTextOrNull(input.email ?? null),
   phone: asTextOrNull(input.phone ?? null),
+  phoneExtension: asTextOrNull(input.phoneExtension ?? null),
   mobile: asTextOrNull(input.mobile ?? null),
   isPrimary: Boolean(input.isPrimary),
 });
@@ -97,4 +103,3 @@ export class CustomerContactsService {
     });
   }
 }
-

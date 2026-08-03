@@ -1,3 +1,5 @@
+import type { CustomerContact, CustomerContactInput } from "./customer-contact.types";
+
 export interface Client {
   id: string;
   source?: "LOCAL" | "ERP";
@@ -11,6 +13,19 @@ export interface Client {
   rfc: string;
   companyName: string;
   phone?: string;
+  taxRegime?: string;
+  billingStreet?: string;
+  billingExteriorNumber?: string;
+  billingInteriorNumber?: string;
+  billingNeighborhood?: string;
+  billingCity?: string;
+  billingState?: string;
+  billingPostalCode?: string;
+  billingCountry?: string;
+  profileStatus?: "PROSPECT" | "FISCAL_COMPLETED";
+  isActive?: boolean;
+  notes?: string;
+  contacts?: CustomerContact[];
   createdAt: string;
   updatedAt: string;
   createdByUserId?: string | null;
@@ -31,6 +46,18 @@ export interface ClientInput {
   rfc: string;
   companyName: string;
   phone?: string;
+  taxRegime?: string;
+  billingStreet?: string;
+  billingExteriorNumber?: string;
+  billingInteriorNumber?: string;
+  billingNeighborhood?: string;
+  billingCity?: string;
+  billingState?: string;
+  billingPostalCode?: string;
+  billingCountry?: string;
+  profileStatus?: "PROSPECT" | "FISCAL_COMPLETED";
+  notes?: string;
+  contacts?: CustomerContactInput[];
 }
 
 export interface ClientActor {
