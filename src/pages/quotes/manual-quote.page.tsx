@@ -111,7 +111,8 @@ const requiresProcurementPrequote = (item: ManualQuoteItem): boolean => {
 
 const hasCompleteProcurementPrequote = (item: ManualQuoteItem): boolean => {
   return Boolean(
-    item.sellerSupplierName.trim()
+    item.sellerSupplierId
+    && item.sellerSupplierName.trim()
     && item.sellerQuotedUnitCost !== null
     && item.sellerQuotedUnitCost > 0
     && item.sellerDeliveryState.trim()
@@ -256,7 +257,13 @@ export const ManualQuotePage = () => {
             sellerSupplierName: item.sellerSupplierName || "",
             sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost ?? null : null,
             sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+            sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate ?? null : null,
             sellerQuotedBrand: item.sellerQuotedBrand || "",
+            sellerSupplierDescription: item.sellerSupplierDescription || "",
+            sellerSupplierOrigin: item.sellerSupplierOrigin || "",
+            sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
+            sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
+            sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes || "",
             sellerOriginRestrictions: item.sellerOriginRestrictions || [],
             sellerDeliveryState: item.sellerDeliveryState || "",
             sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
@@ -264,6 +271,8 @@ export const ManualQuotePage = () => {
             purchaseDiameter: item.purchaseDiameter || "",
             purchaseThickness: item.purchaseThickness || "",
             purchaseBore: item.purchaseBore || "",
+            technicalFamily: item.technicalFamily || "",
+            technicalAttributes: item.technicalAttributes || {},
             costCurrency: item.costCurrency || "USD",
             sourceCurrency: item.sourceCurrency ?? undefined,
             sourceUnitPrice: item.sourceUnitPrice ?? undefined,
@@ -1498,6 +1507,7 @@ export const ManualQuotePage = () => {
           key={procurementItem.id}
           item={procurementItem}
           clientDraftId={draft.id}
+          quoteExchangeRate={draft.exchangeRate}
           onClose={() => setProcurementItemId(null)}
           onSave={(data) => {
             if (!procurementItemId) return;
@@ -1507,7 +1517,7 @@ export const ManualQuotePage = () => {
                 data.sellerQuotedUnitCost,
                 data.sellerQuotedCurrency,
                 draft.currency,
-                draft.exchangeRate
+                data.sellerQuotedExchangeRate || draft.exchangeRate
               );
               setItemUnitPrice(procurementItemId, sellerPrice);
             }
@@ -1522,6 +1532,7 @@ export const ManualQuotePage = () => {
         <SellerProcurementBulkPrequoteModal
           items={procurementItems}
           clientDraftId={draft.id}
+          quoteExchangeRate={draft.exchangeRate}
           onClose={() => setShowBulkProcurement(false)}
           onSave={(updates) => {
             setItemsProcurementPrequote(updates);

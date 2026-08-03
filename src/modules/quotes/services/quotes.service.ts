@@ -130,7 +130,13 @@ export interface SavedQuoteRecord {
     sellerSupplierName?: string;
     sellerQuotedUnitCost?: number | null;
     sellerQuotedCurrency?: "MXN" | "USD";
+    sellerQuotedExchangeRate?: number | null;
     sellerQuotedBrand?: string;
+    sellerSupplierDescription?: string;
+    sellerSupplierOrigin?: string;
+    sellerSupplierQuoteValidUntil?: string;
+    sellerSupplierQuoteReference?: string;
+    sellerSupplierQuoteNotes?: string;
     sellerOriginRestrictions?: string[];
     sellerDeliveryState?: string;
     sellerSupplierDeliveryTime?: string;
@@ -138,6 +144,8 @@ export interface SavedQuoteRecord {
     purchaseDiameter?: string;
     purchaseThickness?: string;
     purchaseBore?: string;
+    technicalFamily?: string;
+    technicalAttributes?: Record<string, string>;
     costUsd: number;
     costCurrency?: "MXN" | "USD";
     marginPct: number;
@@ -174,7 +182,13 @@ interface ApiQuoteItem {
   sellerSupplierNameSnapshot: string | null;
   sellerQuotedUnitCost: number | null;
   sellerQuotedCurrency: "MXN" | "USD" | null;
+  sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string | null;
+  sellerSupplierDescription: string | null;
+  sellerSupplierOrigin: string | null;
+  sellerSupplierQuoteValidUntil: string | null;
+  sellerSupplierQuoteReference: string | null;
+  sellerSupplierQuoteNotes: string | null;
   sellerOriginRestrictions: string[];
   sellerDeliveryState: string | null;
   sellerSupplierDeliveryTime: string | null;
@@ -182,6 +196,8 @@ interface ApiQuoteItem {
   purchaseDiameter: string | null;
   purchaseThickness: string | null;
   purchaseBore: string | null;
+  technicalFamily: string | null;
+  technicalAttributes: Record<string, string>;
   cost: number;
   costCurrency: "MXN" | "USD";
   marginPct: number;
@@ -493,7 +509,13 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       sellerSupplierName: item.sellerSupplierNameSnapshot || "",
       sellerQuotedUnitCost: item.sellerQuotedUnitCost,
       sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+      sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
       sellerQuotedBrand: item.sellerQuotedBrand || "",
+      sellerSupplierDescription: item.sellerSupplierDescription || "",
+      sellerSupplierOrigin: item.sellerSupplierOrigin || "",
+      sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil?.slice(0, 10) || "",
+      sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
+      sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes || "",
       sellerOriginRestrictions: item.sellerOriginRestrictions || [],
       sellerDeliveryState: item.sellerDeliveryState || "",
       sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
@@ -501,6 +523,8 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       purchaseDiameter: item.purchaseDiameter || "",
       purchaseThickness: item.purchaseThickness || "",
       purchaseBore: item.purchaseBore || "",
+      technicalFamily: item.technicalFamily || "",
+      technicalAttributes: item.technicalAttributes || {},
       costUsd: item.cost,
       costCurrency: item.costCurrency,
       marginPct: item.marginPct,
@@ -603,7 +627,13 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     sellerSupplierNameSnapshot: item.sellerSupplierName?.trim() || null,
     sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
     sellerQuotedCurrency: item.sellerQuotedUnitCost !== null ? item.sellerQuotedCurrency : null,
+    sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
     sellerQuotedBrand: item.sellerQuotedBrand?.trim() || null,
+    sellerSupplierDescription: item.sellerSupplierDescription?.trim() || null,
+    sellerSupplierOrigin: item.sellerSupplierOrigin?.trim() || null,
+    sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || null,
+    sellerSupplierQuoteReference: item.sellerSupplierQuoteReference?.trim() || null,
+    sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes?.trim() || null,
     sellerOriginRestrictions: item.sellerOriginRestrictions || [],
     sellerDeliveryState: item.sellerDeliveryState?.trim() || null,
     sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime?.trim() || null,
@@ -611,6 +641,8 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     purchaseDiameter: item.purchaseDiameter?.trim() || null,
     purchaseThickness: item.purchaseThickness?.trim() || null,
     purchaseBore: item.purchaseBore?.trim() || null,
+    technicalFamily: item.technicalFamily?.trim() || null,
+    technicalAttributes: item.technicalAttributes || {},
     cost: safeCost,
     costCurrency: item.costCurrency || "USD",
     marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,

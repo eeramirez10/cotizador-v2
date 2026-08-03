@@ -31,6 +31,7 @@ export interface Supplier {
   erpCode: string | null;
   name: string;
   source: "ERP" | "LOCAL";
+  status: "PROSPECT" | "PENDING_ERP" | "ERP_SYNCED";
   scope: "NATIONAL" | "INTERNATIONAL";
   taxId: string | null;
   state: string | null;
@@ -70,8 +71,16 @@ export interface ErpSupplier {
 
 export interface SupplierOffer {
   id: string;
+  supplierQuoteId: string | null;
   supplierId: string;
+  source: "SELLER" | "PURCHASING";
+  supplierProductCode: string | null;
+  alternateCodes: string[];
+  supplierDescription: string | null;
   qty: number;
+  unit: string | null;
+  listUnitPrice: number | null;
+  discountPct: number | null;
   unitCost: number;
   currency: Currency;
   exchangeRate: number | null;
@@ -82,6 +91,8 @@ export interface SupplierOffer {
   brand: string | null;
   origin: string | null;
   deliveryTime: string | null;
+  availableDate: string | null;
+  minimumQty: number | null;
   validUntil: string | null;
   quoteDate: string;
   externalReference: string | null;
@@ -90,6 +101,26 @@ export interface SupplierOffer {
   supplier: Supplier;
   createdBy: ProcurementUser;
   createdAt: string;
+  supplierQuote: {
+    id: string;
+    reference: string | null;
+    quoteDate: string;
+    validUntil: string | null;
+    currency: Currency;
+    exchangeRate: number | null;
+    paymentTerms: string | null;
+    deliveryTerms: string | null;
+    subtotal: number;
+    discount: number;
+    freight: number;
+    otherCharges: number;
+    taxIncluded: boolean;
+    taxRate: number;
+    tax: number;
+    total: number;
+    notes: string | null;
+    fileAssetId: string | null;
+  } | null;
 }
 
 export interface RequisitionItem {
@@ -110,6 +141,8 @@ export interface RequisitionItem {
   diameter: string | null;
   thickness: string | null;
   bore: string | null;
+  technicalFamily: string | null;
+  technicalAttributes: Record<string, string>;
   sellerUnitCost: number;
   sellerCurrency: Currency;
   sellerExchangeRate: number;
@@ -164,6 +197,8 @@ export interface UpdateRequisitionItemInput {
   diameter?: string | null;
   thickness?: string | null;
   bore?: string | null;
+  technicalFamily?: string | null;
+  technicalAttributes?: Record<string, string>;
   sellerUnitCost?: number;
   sellerCurrency?: Currency;
   sellerCostSource?: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "ESTIMATED";
@@ -182,11 +217,18 @@ export interface SaveSupplierInput {
   contactName?: string | null;
   email?: string | null;
   phone?: string | null;
+  allowPotentialDuplicate?: boolean;
 }
 
 export interface SaveOfferInput {
   supplierId: string;
+  supplierProductCode?: string | null;
+  alternateCodes?: string[];
+  supplierDescription?: string | null;
   qty: number;
+  unit?: string | null;
+  listUnitPrice?: number | null;
+  discountPct?: number | null;
   unitCost: number;
   currency: Currency;
   exchangeRate?: number | null;
@@ -194,9 +236,20 @@ export interface SaveOfferInput {
   brand?: string | null;
   origin?: string | null;
   deliveryTime?: string | null;
+  availableDate?: string | null;
+  minimumQty?: number | null;
   validUntil?: string | null;
   quoteDate?: string;
   externalReference?: string | null;
+  paymentTerms?: string | null;
+  deliveryTerms?: string | null;
+  documentSubtotal?: number | null;
+  documentDiscount?: number;
+  documentFreight?: number;
+  documentOtherCharges?: number;
+  taxIncluded?: boolean;
+  documentTax?: number | null;
+  documentTotal?: number | null;
   notes?: string | null;
 }
 

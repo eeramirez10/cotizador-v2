@@ -49,7 +49,13 @@ export interface ManualQuoteItem {
   sellerSupplierName: string;
   sellerQuotedUnitCost: number | null;
   sellerQuotedCurrency: QuoteCurrency;
+  sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string;
+  sellerSupplierDescription: string;
+  sellerSupplierOrigin: string;
+  sellerSupplierQuoteValidUntil: string;
+  sellerSupplierQuoteReference: string;
+  sellerSupplierQuoteNotes: string;
   sellerOriginRestrictions: string[];
   sellerDeliveryState: string;
   sellerSupplierDeliveryTime: string;
@@ -57,6 +63,8 @@ export interface ManualQuoteItem {
   purchaseDiameter: string;
   purchaseThickness: string;
   purchaseBore: string;
+  technicalFamily: string;
+  technicalAttributes: Record<string, string>;
   costUsd: number;
   costCurrency: ErpProductCurrency;
   marginPct: number;
@@ -77,7 +85,13 @@ export type ProcurementPrequoteData = Pick<
   | "sellerSupplierName"
   | "sellerQuotedUnitCost"
   | "sellerQuotedCurrency"
+  | "sellerQuotedExchangeRate"
   | "sellerQuotedBrand"
+  | "sellerSupplierDescription"
+  | "sellerSupplierOrigin"
+  | "sellerSupplierQuoteValidUntil"
+  | "sellerSupplierQuoteReference"
+  | "sellerSupplierQuoteNotes"
   | "sellerOriginRestrictions"
   | "sellerDeliveryState"
   | "sellerSupplierDeliveryTime"
@@ -85,6 +99,8 @@ export type ProcurementPrequoteData = Pick<
   | "purchaseDiameter"
   | "purchaseThickness"
   | "purchaseBore"
+  | "technicalFamily"
+  | "technicalAttributes"
 >;
 
 export interface ProcurementPrequoteUpdate {
@@ -234,7 +250,13 @@ const emptyProcurementPrequote = (): ProcurementPrequoteData => ({
   sellerSupplierName: "",
   sellerQuotedUnitCost: null,
   sellerQuotedCurrency: "MXN",
+  sellerQuotedExchangeRate: null,
   sellerQuotedBrand: "",
+  sellerSupplierDescription: "",
+  sellerSupplierOrigin: "",
+  sellerSupplierQuoteValidUntil: "",
+  sellerSupplierQuoteReference: "",
+  sellerSupplierQuoteNotes: "",
   sellerOriginRestrictions: [],
   sellerDeliveryState: "",
   sellerSupplierDeliveryTime: "",
@@ -242,6 +264,8 @@ const emptyProcurementPrequote = (): ProcurementPrequoteData => ({
   purchaseDiameter: "",
   purchaseThickness: "",
   purchaseBore: "",
+  technicalFamily: "",
+  technicalAttributes: {},
 });
 
 const deliverySuggestion = (stock: number, costUsd: number): string => {
@@ -379,7 +403,13 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         sellerSupplierName: item.sellerSupplierName,
         sellerQuotedUnitCost: item.sellerQuotedUnitCost,
         sellerQuotedCurrency: item.sellerQuotedCurrency,
+        sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
         sellerQuotedBrand: item.sellerQuotedBrand,
+        sellerSupplierDescription: item.sellerSupplierDescription,
+        sellerSupplierOrigin: item.sellerSupplierOrigin,
+        sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil,
+        sellerSupplierQuoteReference: item.sellerSupplierQuoteReference,
+        sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes,
         sellerOriginRestrictions: item.sellerOriginRestrictions,
         sellerDeliveryState: item.sellerDeliveryState,
         sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime,
@@ -387,6 +417,8 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         purchaseDiameter: item.purchaseDiameter,
         purchaseThickness: item.purchaseThickness,
         purchaseBore: item.purchaseBore,
+        technicalFamily: item.technicalFamily,
+        technicalAttributes: item.technicalAttributes,
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
         marginPct: item.marginPct,
@@ -879,7 +911,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           quotedCost,
           data.sellerQuotedCurrency,
           state.draft.currency,
-          state.draft.exchangeRate
+          data.sellerQuotedExchangeRate || state.draft.exchangeRate
         ));
         const sellerPriceCostBase = getSellerPriceCostBase(
           item,
@@ -928,7 +960,13 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         sellerSupplierName: item.sellerSupplierName || "",
         sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
         sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+        sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
         sellerQuotedBrand: item.sellerQuotedBrand || "",
+        sellerSupplierDescription: item.sellerSupplierDescription || "",
+        sellerSupplierOrigin: item.sellerSupplierOrigin || "",
+        sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
+        sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
+        sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes || "",
         sellerOriginRestrictions: Array.isArray(item.sellerOriginRestrictions) ? item.sellerOriginRestrictions : [],
         sellerDeliveryState: item.sellerDeliveryState || "",
         sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
@@ -936,6 +974,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         purchaseDiameter: item.purchaseDiameter || "",
         purchaseThickness: item.purchaseThickness || "",
         purchaseBore: item.purchaseBore || "",
+        technicalFamily: item.technicalFamily || "",
+        technicalAttributes: item.technicalAttributes || {},
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
@@ -1006,7 +1046,13 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       sellerSupplierName: item.sellerSupplierName || "",
       sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
       sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+      sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
       sellerQuotedBrand: item.sellerQuotedBrand || "",
+      sellerSupplierDescription: item.sellerSupplierDescription || "",
+      sellerSupplierOrigin: item.sellerSupplierOrigin || "",
+      sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
+      sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
+      sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes || "",
       sellerOriginRestrictions: Array.isArray(item.sellerOriginRestrictions) ? item.sellerOriginRestrictions : [],
       sellerDeliveryState: item.sellerDeliveryState || "",
       sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
@@ -1014,6 +1060,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       purchaseDiameter: item.purchaseDiameter || "",
       purchaseThickness: item.purchaseThickness || "",
       purchaseBore: item.purchaseBore || "",
+      technicalFamily: item.technicalFamily || "",
+      technicalAttributes: item.technicalAttributes || {},
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,

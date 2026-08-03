@@ -14,7 +14,7 @@ import {
   Plus,
   Search,
   Send,
-  Store,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -23,7 +23,6 @@ import { NavLink } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   type Currency,
-  type ErpSupplier,
   type PurchaseRequisition,
   type RequisitionItem,
   type RequisitionStatus,
@@ -33,7 +32,6 @@ import {
 } from "../../modules/procurement/services/purchase-requisitions.service";
 import {
   usePurchaseRequisition,
-  useErpSupplierSearch,
   usePurchaseRequisitionMutations,
   usePurchaseRequisitions,
   useSuppliers,
@@ -49,6 +47,9 @@ import { useSystemCapabilities } from "../../queries/system/use-system-capabilit
 import { useRequisitionAttachments } from "../../queries/attachments/use-attachments";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
+import { TechnicalDataService } from "../../modules/procurement/services/technical-data.service";
+import { SelectOrCreateSupplierModal } from "../../shared/components/modals/select-or-create-supplier.modal";
+import { SupplierOfferModal, type SupplierOfferFormValue } from "../../shared/components/modals/supplier-offer.modal";
 
 const PAGE_SIZE = 15;
 
@@ -74,6 +75,8 @@ interface ItemForm {
   diameter: string;
   thickness: string;
   bore: string;
+  technicalFamily: string;
+  technicalAttributes: Record<string, string>;
   sellerUnitCost: string;
   sellerCurrency: Currency;
   sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "ESTIMATED";
@@ -88,6 +91,8 @@ const itemForm = (item: RequisitionItem): ItemForm => ({
   diameter: item.diameter || "",
   thickness: item.thickness || "",
   bore: item.bore || "",
+  technicalFamily: item.technicalFamily || "OTHER",
+  technicalAttributes: item.technicalAttributes || {},
   sellerUnitCost: item.sellerUnitCost > 0 ? String(item.sellerUnitCost) : "",
   sellerCurrency: item.sellerCurrency,
   sellerCostSource: item.sellerCostSource,
@@ -97,22 +102,12 @@ const itemForm = (item: RequisitionItem): ItemForm => ({
   deliveryPlace: item.deliveryPlace || "",
 });
 
-interface OfferForm {
-  supplierId: string;
-  qty: string;
-  unitCost: string;
-  currency: Currency;
-  exchangeRate: string;
-  brand: string;
-  origin: string;
-  deliveryTime: string;
-  validUntil: string;
-  externalReference: string;
-  notes: string;
-}
+type OfferForm = SupplierOfferFormValue;
 
 const offerForm = (item: RequisitionItem): OfferForm => ({
   supplierId: "",
+  supplierName: "",
+  supplierDescription: item.description,
   qty: String(item.qty),
   unitCost: "",
   currency: item.sellerCurrency,
@@ -124,17 +119,6 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
   externalReference: "",
   notes: "",
 });
-
-const EMPTY_SUPPLIER: SaveSupplierInput = {
-  name: "",
-  scope: "NATIONAL",
-  taxId: "",
-  state: "",
-  country: "MÉXICO",
-  contactName: "",
-  email: "",
-  phone: "",
-};
 
 const catalogValue = (option: QuoteCatalogOption): string => option.value || option.label;
 
@@ -155,19 +139,12 @@ export const PurchaseRequisitionsPage = () => {
   const [showOfferAttachmentModal, setShowOfferAttachmentModal] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
-  const [supplierMode, setSupplierMode] = useState<"ERP" | "LOCAL">("ERP");
-  const [erpSupplierTerm, setErpSupplierTerm] = useState("");
-  const [supplierForm, setSupplierForm] = useState<SaveSupplierInput>(EMPTY_SUPPLIER);
+  const [supplierInitialValues, setSupplierInitialValues] = useState<Partial<SaveSupplierInput> | undefined>();
   const debouncedSearch = useDebouncedValue(search, 350);
-  const debouncedErpSupplierTerm = useDebouncedValue(erpSupplierTerm, 400);
   const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status });
   const detail = usePurchaseRequisition(selectedId);
   const requisitionAttachments = useRequisitionAttachments(selectedId);
   const suppliers = useSuppliers(Boolean(offerItem));
-  const erpSupplierSearch = useErpSupplierSearch(
-    debouncedErpSupplierTerm,
-    supplierOpen && supplierMode === "ERP",
-  );
   const brandCatalog = useQuoteCatalogs("PURCHASE_BRAND");
   const restrictionCatalog = useQuoteCatalogs("ORIGIN_RESTRICTION");
   const deliveryStateCatalog = useQuoteCatalogs("DELIVERY_STATE");
@@ -243,6 +220,8 @@ export const PurchaseRequisitionsPage = () => {
           diameter: editingItemForm.diameter,
           thickness: editingItemForm.thickness,
           bore: editingItemForm.bore,
+          technicalFamily: editingItemForm.technicalFamily,
+          technicalAttributes: editingItemForm.technicalAttributes,
           sellerUnitCost,
           sellerCurrency: editingItemForm.sellerCurrency,
           sellerCostSource: editingItemForm.sellerCostSource,
@@ -280,16 +259,36 @@ export const PurchaseRequisitionsPage = () => {
     if (!requisition || !offerItem || !currentOfferForm) return;
     const input: SaveOfferInput = {
       supplierId: currentOfferForm.supplierId,
+      supplierProductCode: currentOfferForm.supplierProductCode || null,
+      alternateCodes: currentOfferForm.alternateCodes || [],
+      supplierDescription: currentOfferForm.supplierDescription,
       qty: Number(currentOfferForm.qty),
+      unit: currentOfferForm.unit || null,
+      listUnitPrice: currentOfferForm.listUnitPrice ?? null,
+      discountPct: currentOfferForm.discountPct ?? null,
       unitCost: Number(currentOfferForm.unitCost),
       currency: currentOfferForm.currency,
       exchangeRate: currentOfferForm.currency === "USD" ? Number(currentOfferForm.exchangeRate) : null,
       brand: currentOfferForm.brand,
       origin: currentOfferForm.origin,
       deliveryTime: currentOfferForm.deliveryTime,
+      availableDate: currentOfferForm.availableDate || null,
+      minimumQty: currentOfferForm.minimumQty ?? null,
       validUntil: currentOfferForm.validUntil || null,
-      quoteDate: new Date().toISOString().slice(0, 10),
+      quoteDate: currentOfferForm.quoteDate || new Date().toISOString().slice(0, 10),
       externalReference: currentOfferForm.externalReference,
+      paymentTerms: currentOfferForm.paymentTerms || null,
+      deliveryTerms: currentOfferForm.deliveryTerms || null,
+      documentSubtotal: currentOfferForm.documentSubtotal ?? null,
+      documentDiscount: currentOfferForm.documentDiscount || 0,
+      documentFreight: currentOfferForm.documentFreight || 0,
+      documentOtherCharges: currentOfferForm.documentOtherCharges || 0,
+      taxIncluded: currentOfferForm.taxIncluded === true,
+      taxRate: currentOfferForm.documentTaxRate === null || currentOfferForm.documentTaxRate === undefined
+        ? 0.16
+        : currentOfferForm.documentTaxRate > 1 ? currentOfferForm.documentTaxRate / 100 : currentOfferForm.documentTaxRate,
+      documentTax: currentOfferForm.documentTax ?? null,
+      documentTotal: currentOfferForm.documentTotal ?? null,
       notes: currentOfferForm.notes,
     };
     if (!input.supplierId || !Number.isFinite(input.qty) || input.qty <= 0 || !Number.isFinite(input.unitCost) || input.unitCost < 0) {
@@ -380,44 +379,6 @@ export const PurchaseRequisitionsPage = () => {
       if (toast !== undefined) notifier.update(toast, "error", message);
       else notifier.error(message);
       return false;
-    }
-  };
-
-  const saveSupplier = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!supplierForm.name.trim()) {
-      notifier.warning("El nombre del proveedor es obligatorio.");
-      return;
-    }
-    const toast = notifier.loading("Guardando proveedor local...");
-    try {
-      const supplier = await mutations.createSupplier.mutateAsync(supplierForm);
-      setCurrentOfferForm((state) => state ? { ...state, supplierId: supplier.id } : state);
-      if (toast !== undefined) notifier.update(toast, "success", "Proveedor local creado y seleccionado.");
-      else notifier.success("Proveedor local creado y seleccionado.");
-      setSupplierOpen(false);
-      setSupplierForm(EMPTY_SUPPLIER);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el proveedor.";
-      if (toast !== undefined) notifier.update(toast, "error", message);
-      else notifier.error(message);
-    }
-  };
-
-  const syncErpSupplier = async (supplier: ErpSupplier) => {
-    if (mutations.syncErpSupplier.isPending) return;
-    const toast = notifier.loading(`Vinculando ${supplier.code}...`);
-    try {
-      const synced = await mutations.syncErpSupplier.mutateAsync(supplier.code);
-      setCurrentOfferForm((state) => state ? { ...state, supplierId: synced.id } : state);
-      if (toast !== undefined) notifier.update(toast, "success", "Proveedor ERP vinculado y seleccionado.");
-      else notifier.success("Proveedor ERP vinculado y seleccionado.");
-      setSupplierOpen(false);
-      setErpSupplierTerm("");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo vincular el proveedor ERP.";
-      if (toast !== undefined) notifier.update(toast, "error", message);
-      else notifier.error(message);
     }
   };
 
@@ -569,7 +530,10 @@ export const PurchaseRequisitionsPage = () => {
           busy={mutations.isPending}
           attachmentFile={offerAttachmentFile}
           onAttachmentFile={setOfferAttachmentFile}
-          onNewSupplier={() => { setSupplierMode("ERP"); setErpSupplierTerm(""); setSupplierOpen(true); }}
+          onNewSupplier={(initialValues) => {
+            setSupplierInitialValues(initialValues);
+            setSupplierOpen(true);
+          }}
           onClose={() => { setOfferItem(null); setCurrentOfferForm(null); setOfferAttachmentFile(null); }}
           onSubmit={saveOffer}
         />
@@ -583,20 +547,18 @@ export const PurchaseRequisitionsPage = () => {
         />
       )}
       {supplierOpen && (
-        <SupplierModal
-          form={supplierForm}
-          setForm={setSupplierForm}
-          mode={supplierMode}
-          setMode={setSupplierMode}
-          erpTerm={erpSupplierTerm}
-          setErpTerm={setErpSupplierTerm}
-          erpSuppliers={erpSupplierSearch.data || []}
-          erpLoading={erpSupplierSearch.isLoading || erpSupplierSearch.isFetching}
-          erpError={erpSupplierSearch.error instanceof Error ? erpSupplierSearch.error.message : null}
-          busy={mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending}
-          onSelectErp={(supplier) => { void syncErpSupplier(supplier); }}
-          onClose={() => setSupplierOpen(false)}
-          onSubmit={saveSupplier}
+        <SelectOrCreateSupplierModal
+          initialValues={supplierInitialValues}
+          initialMode={supplierInitialValues ? "LOCAL" : "ERP"}
+          onClose={() => {
+            setSupplierOpen(false);
+            setSupplierInitialValues(undefined);
+          }}
+          onSelect={(supplier) => {
+            setCurrentOfferForm((state) => state ? { ...state, supplierId: supplier.id, supplierName: supplier.name } : state);
+            setSupplierOpen(false);
+            setSupplierInitialValues(undefined);
+          }}
         />
       )}
       <AddErpProductsModal
@@ -782,6 +744,20 @@ const RequisitionDetail = ({
                 <InfoBlock label="Entrega proveedor" value={item.sellerDeliveryTime || "-"} />
               </div>
               {item.originRestrictions.length > 0 && <p className="border-t border-slate-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900">Restricción de origen: {item.originRestrictions.join(", ")}</p>}
+              {(item.technicalFamily || Object.keys(item.technicalAttributes).length > 0) && (
+                <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Datos técnicos · {item.technicalFamily || "Sin familia"}</p>
+                  {Object.keys(item.technicalAttributes).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {Object.entries(item.technicalAttributes).map(([key, value]) => (
+                        <span key={key} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700">
+                          <strong>{key.replaceAll("_", " ")}:</strong> {value}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2 p-4">
                 {item.offers.length === 0 && <p className="py-4 text-center text-xs text-slate-500">Compras aún no registra propuestas.</p>}
@@ -790,9 +766,18 @@ const RequisitionDetail = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-bold text-slate-900">{offer.supplier.name}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${offer.source === "SELLER" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
+                          {offer.source === "SELLER" ? "Propuesta del vendedor" : "Propuesta de Compras"}
+                        </span>
                         {offer.isSelected && <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">Elegida</span>}
                       </div>
                       <p className="mt-1 text-xs text-slate-500">{offer.brand || "Sin marca"} · Origen: {offer.origin || "No indicado"} · Entrega: {offer.deliveryTime || "-"}</p>
+                      {offer.supplierDescription && <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-700"><span className="font-semibold">Descripción proveedor:</span> {offer.supplierDescription}</p>}
+                      {offer.source === "SELLER" && sellerAttachmentCount > 0 && item.quoteClientItemId && (
+                        <button type="button" onClick={() => setAttachmentView({ type: "SELLER_ITEM", clientItemId: item.quoteClientItemId!, position: item.position })} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline">
+                          <Paperclip className="h-3.5 w-3.5" />Ver cotización adjunta del vendedor
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-center justify-between gap-4 sm:justify-end">
                       <div className="text-right">
@@ -800,8 +785,8 @@ const RequisitionDetail = ({
                         <p className="text-[10px] text-slate-500">por {item.unit}</p>
                       </div>
                       {canBuy && !offer.isSelected && (
-                        <button type="button" disabled={busy} onClick={() => void onSelect(item.id, offer.id)} className="rounded-lg bg-emerald-600 p-2 text-white" title="Seleccionar propuesta">
-                          <Check className="h-4 w-4" />
+                        <button type="button" disabled={busy} onClick={() => void onSelect(item.id, offer.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" title="Seleccionar propuesta">
+                          <Check className="h-4 w-4" />{offer.source === "SELLER" ? "Aplicar cotización del vendedor" : "Seleccionar"}
                         </button>
                       )}
                     </div>
@@ -865,6 +850,9 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
 }) => {
+  const [suggestingTechnical, setSuggestingTechnical] = useState(false);
+  const [newTechnicalKey, setNewTechnicalKey] = useState("");
+  const [newTechnicalValue, setNewTechnicalValue] = useState("");
   const noRestriction = restrictions.find((option) => option.code === "NO_RESTRICTION");
   const noRestrictionValue = noRestriction ? catalogValue(noRestriction) : "SIN RESTRICCIÓN";
   const toggleRestriction = (value: string) => setForm((state) => {
@@ -879,6 +867,39 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
         : [...state.originRestrictions.filter((entry) => entry !== noRestrictionValue), value],
     };
   });
+  const suggestTechnical = async () => {
+    try {
+      setSuggestingTechnical(true);
+      const sellerOfferDescription = item.offers.find((offer) => offer.source === "SELLER")?.supplierDescription || undefined;
+      const suggestion = await TechnicalDataService.suggest({
+        requestedDescription: item.description,
+        supplierDescription: sellerOfferDescription,
+        existingAttributes: form.technicalAttributes,
+      });
+      const attributes = Object.fromEntries(suggestion.attributes.map((attribute) => [attribute.key, attribute.value]));
+      setForm((state) => state && ({
+        ...state,
+        technicalFamily: suggestion.family,
+        technicalAttributes: { ...state.technicalAttributes, ...attributes },
+        standard: attributes.STANDARD || state.standard,
+        diameter: attributes.NOMINAL_DIAMETER || state.diameter,
+        thickness: attributes.THICKNESS || attributes.SCHEDULE || state.thickness,
+      }));
+      notifier.success(`IA sugirió ${suggestion.attributes.length} dato(s) técnicos. Revisa antes de guardar.`);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudieron sugerir los datos técnicos.");
+    } finally {
+      setSuggestingTechnical(false);
+    }
+  };
+  const addTechnicalAttribute = () => {
+    const key = newTechnicalKey.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    const value = newTechnicalValue.trim().toUpperCase();
+    if (!key || !value) return;
+    setForm((state) => state && ({ ...state, technicalAttributes: { ...state.technicalAttributes, [key]: value } }));
+    setNewTechnicalKey("");
+    setNewTechnicalValue("");
+  };
   return (
   <Modal title={`Partida ${item.position}`} subtitle={item.description} onClose={onClose}>
     <form onSubmit={onSubmit}>
@@ -887,6 +908,14 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
         <Field label="Diámetro" value={form.diameter} onChange={(diameter) => setForm((state) => state && ({ ...state, diameter }))} />
         <Field label="Espesor" value={form.thickness} onChange={(thickness) => setForm((state) => state && ({ ...state, thickness }))} />
         <Field label="Bore" value={form.bore} onChange={(bore) => setForm((state) => state && ({ ...state, bore }))} />
+        <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Datos técnicos variables</p><button type="button" disabled={suggestingTechnical} onClick={() => void suggestTechnical()} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{suggestingTechnical ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}Completar con IA</button></div>
+          <select value={form.technicalFamily} onChange={(event) => setForm((state) => state && ({ ...state, technicalFamily: event.target.value }))} className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            {[['PIPE','Tubería'],['VALVE','Válvula'],['FITTING','Conexión'],['FLANGE','Brida'],['GASKET','Empaque'],['FASTENER','Tornillería'],['OTHER','Otro']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">{Object.entries(form.technicalAttributes).map(([key, value]) => <label key={key} className="text-[11px] font-semibold text-slate-500">{key.replaceAll('_', ' ')}<input value={value} onChange={(event) => setForm((state) => state && ({ ...state, technicalAttributes: { ...state.technicalAttributes, [key]: event.target.value.toUpperCase() } }))} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800" /></label>)}</div>
+          <div className="mt-3 flex gap-2"><input value={newTechnicalKey} onChange={(event) => setNewTechnicalKey(event.target.value)} placeholder="Nuevo campo" className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs" /><input value={newTechnicalValue} onChange={(event) => setNewTechnicalValue(event.target.value)} placeholder="Valor" className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs" /><button type="button" onClick={addTechnicalAttribute} className="rounded-md bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-950">Agregar</button></div>
+        </div>
         <Field label="Costo unitario del vendedor *" type="number" value={form.sellerUnitCost} onChange={(sellerUnitCost) => setForm((state) => state && ({ ...state, sellerUnitCost }))} />
         <Select label="Moneda *" value={form.sellerCurrency} onChange={(sellerCurrency) => setForm((state) => state && ({ ...state, sellerCurrency: sellerCurrency as Currency }))} options={[["MXN", "MXN"], ["USD", "USD"]]} />
         <Select label="Origen del costo *" value={form.sellerCostSource} onChange={(sellerCostSource) => setForm((state) => state && ({ ...state, sellerCostSource: sellerCostSource as ItemForm["sellerCostSource"] }))} options={[["ERP_COST", "Costo ERP"], ["SELLER_SUPPLIER_QUOTE", "Cotización del vendedor"], ["ESTIMATED", "Estimado"]]} />
@@ -912,39 +941,26 @@ const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryT
   busy: boolean;
   attachmentFile: File | null;
   onAttachmentFile: (file: File | null) => void;
-  onNewSupplier: () => void;
+  onNewSupplier: (initialValues?: Partial<SaveSupplierInput>) => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
 }) => (
-  <Modal title="Nueva propuesta de proveedor" subtitle={item.description} onClose={onClose}>
-    <form onSubmit={onSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="text-xs font-semibold text-slate-600 sm:col-span-2">
-          <span className="flex items-center justify-between">Proveedor *<button type="button" onClick={onNewSupplier} className="inline-flex items-center gap-1 text-amber-700"><Store className="h-3.5 w-3.5" />Nuevo proveedor</button></span>
-          <select value={form.supplierId} onChange={(event) => setForm((state) => state && ({ ...state, supplierId: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal">
-            <option value="">Selecciona...</option>
-            {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.erpCode ? `${supplier.erpCode} · ` : ""}{supplier.name}</option>)}
-          </select>
-        </label>
-        <Field label="Cantidad *" type="number" value={form.qty} onChange={(qty) => setForm((state) => state && ({ ...state, qty }))} />
-        <Field label="Costo unitario *" type="number" value={form.unitCost} onChange={(unitCost) => setForm((state) => state && ({ ...state, unitCost }))} />
-        <Select label="Moneda *" value={form.currency} onChange={(currency) => setForm((state) => state && ({ ...state, currency: currency as Currency }))} options={[["MXN", "MXN"], ["USD", "USD"]]} />
-        {form.currency === "USD" && <Field label="Tipo de cambio *" type="number" value={form.exchangeRate} onChange={(exchangeRate) => setForm((state) => state && ({ ...state, exchangeRate }))} />}
-        <Select label="Marca" value={form.brand} onChange={(brand) => setForm((state) => state && ({ ...state, brand }))} options={[["", "Seleccionar"], ...brands.map((option) => [catalogValue(option), option.label] as [string, string])]} />
-        <Select label="Procedencia" value={form.origin} onChange={(origin) => setForm((state) => state && ({ ...state, origin }))} options={[["", "Seleccionar"], ...origins.map((option) => [catalogValue(option), option.label] as [string, string])]} />
-        <Select label="Tiempo de entrega" value={form.deliveryTime} onChange={(deliveryTime) => setForm((state) => state && ({ ...state, deliveryTime }))} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [catalogValue(option), option.label] as [string, string])]} />
-        <Field label="Vigencia" type="date" value={form.validUntil} onChange={(validUntil) => setForm((state) => state && ({ ...state, validUntil }))} />
-        <Field label="Referencia del proveedor" value={form.externalReference} onChange={(externalReference) => setForm((state) => state && ({ ...state, externalReference }))} />
-        <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Notas<textarea value={form.notes} onChange={(event) => setForm((state) => state && ({ ...state, notes: event.target.value }))} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" /></label>
-        <label className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3 text-xs font-semibold text-slate-600 sm:col-span-2">
-          <span className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-amber-700" />Archivo de la propuesta (opcional)</span>
-          <input type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" disabled={busy} onChange={(event) => onAttachmentFile(event.currentTarget.files?.[0] || null)} className="mt-2 w-full text-xs font-normal file:mr-3 file:rounded-md file:border-0 file:bg-amber-400 file:px-3 file:py-2 file:font-semibold file:text-slate-950" />
-          {attachmentFile && <span className="mt-2 block font-normal text-slate-500">{attachmentFile.name}</span>}
-        </label>
-      </div>
-      <ModalActions busy={busy} onClose={onClose} label="Registrar propuesta" />
-    </form>
-  </Modal>
+  <SupplierOfferModal
+    mode="PURCHASING"
+    itemDescription={item.description}
+    value={form}
+    onChange={(value) => setForm(value)}
+    suppliers={suppliers}
+    brands={brands}
+    origins={origins}
+    deliveryTimes={deliveryTimes}
+    busy={busy}
+    attachmentFile={attachmentFile}
+    onAttachmentFile={onAttachmentFile}
+    onNewSupplier={onNewSupplier}
+    onClose={onClose}
+    onSubmit={onSubmit}
+  />
 );
 
 const PurchaseOfferAttachmentModal = ({ requisition, busy, onClose, onSubmit }: {
@@ -1001,96 +1017,6 @@ const PurchaseOfferAttachmentModal = ({ requisition, busy, onClose, onSubmit }: 
     </Modal>
   );
 };
-
-const SupplierModal = ({
-  form,
-  setForm,
-  mode,
-  setMode,
-  erpTerm,
-  setErpTerm,
-  erpSuppliers,
-  erpLoading,
-  erpError,
-  busy,
-  onSelectErp,
-  onClose,
-  onSubmit,
-}: {
-  form: SaveSupplierInput;
-  setForm: React.Dispatch<React.SetStateAction<SaveSupplierInput>>;
-  mode: "ERP" | "LOCAL";
-  setMode: (mode: "ERP" | "LOCAL") => void;
-  erpTerm: string;
-  setErpTerm: (term: string) => void;
-  erpSuppliers: ErpSupplier[];
-  erpLoading: boolean;
-  erpError: string | null;
-  busy: boolean;
-  onSelectErp: (supplier: ErpSupplier) => void;
-  onClose: () => void;
-  onSubmit: (event: React.FormEvent) => void;
-}) => (
-  <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4">
-    <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
-      <div className="flex items-start justify-between">
-        <div><h2 className="text-lg font-bold">Seleccionar proveedor</h2><p className="mt-1 text-xs text-slate-500">Busca el proveedor oficial en ERP o registra uno local.</p></div>
-        <button type="button" disabled={busy} onClick={onClose}><X className="h-5 w-5" /></button>
-      </div>
-
-      <div className="mt-5 inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1">
-        {(["ERP", "LOCAL"] as const).map((value) => (
-          <button key={value} type="button" disabled={busy} onClick={() => setMode(value)} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === value ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>
-            {value === "ERP" ? "Buscar en ERP" : "Crear local"}
-          </button>
-        ))}
-      </div>
-
-      {mode === "ERP" ? (
-        <div className="mt-5">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input value={erpTerm} onChange={(event) => setErpTerm(event.target.value)} disabled={busy} placeholder="Código, razón social, RFC o contacto..." className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-500" />
-          </div>
-          <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-lg border border-slate-200">
-            {erpLoading && <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Consultando Proscai...</div>}
-            {!erpLoading && erpError && <p className="p-6 text-center text-sm text-rose-600">{erpError}</p>}
-            {!erpLoading && !erpError && !erpTerm.trim() && <p className="p-8 text-center text-sm text-slate-500">Escribe para buscar proveedores del ERP.</p>}
-            {!erpLoading && !erpError && erpTerm.trim() && erpSuppliers.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No se encontraron proveedores.</p>}
-            {!erpLoading && erpSuppliers.map((supplier) => {
-              const contact = supplier.contacts[0];
-              return (
-                <div key={supplier.code} className="flex flex-col gap-3 border-b border-slate-100 p-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{supplier.code}</span><p className="text-sm font-bold text-slate-900">{supplier.name}</p></div>
-                    <p className="mt-1 text-xs text-slate-500">RFC: {supplier.taxId || "-"} · {supplier.state || "Sin estado"} · {supplier.currency}</p>
-                    {contact && <p className="mt-1 text-xs text-slate-500">{contact.name || "Sin contacto"}{contact.position ? ` · ${contact.position}` : ""} · {contact.email || contact.mobile || contact.phone || "Sin datos"}</p>}
-                    {supplier.contacts.length > 1 && <p className="mt-1 text-[10px] font-semibold text-blue-700">{supplier.contacts.length} contactos registrados</p>}
-                  </div>
-                  <button type="button" disabled={busy} onClick={() => onSelectErp(supplier)} className="shrink-0 rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">Vincular y seleccionar</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={onSubmit}>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
-            <Field label="RFC" value={form.taxId || ""} onChange={(taxId) => setForm((state) => ({ ...state, taxId }))} />
-            <Select label="Tipo *" value={form.scope} onChange={(scope) => setForm((state) => ({ ...state, scope: scope as SaveSupplierInput["scope"] }))} options={[["NATIONAL", "Nacional"], ["INTERNATIONAL", "Internacional"]]} />
-            <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
-            <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
-            <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
-            <Field label="Correo" type="email" value={form.email || ""} onChange={(email) => setForm((state) => ({ ...state, email }))} />
-            <Field label="Teléfono" value={form.phone || ""} onChange={(phone) => setForm((state) => ({ ...state, phone }))} />
-          </div>
-          <ModalActions busy={busy} onClose={onClose} label="Crear y seleccionar" />
-        </form>
-      )}
-    </div>
-  </div>
-);
 
 const Modal = ({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) => (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4">
