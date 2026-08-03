@@ -1,32 +1,50 @@
 import { Loader2, Search, Store, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { ErpSupplier, SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
-import { useErpSupplierSearch, usePurchaseRequisitionMutations } from "../../../queries/procurement/use-purchase-requisitions";
+import { useErpSupplierSearch, usePurchaseRequisitionMutations, useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
 import { notifier } from "../../notifications/notifier";
 
-const EMPTY_SUPPLIER: SaveSupplierInput = {
+type SupplierForm = Omit<SaveSupplierInput, "scope"> & { scope: "" | SaveSupplierInput["scope"] };
+
+const EMPTY_SUPPLIER: SupplierForm = {
   name: "",
-  scope: "NATIONAL",
+  scope: "",
   taxId: "",
   state: "",
   country: "MÉXICO",
   contactName: "",
   email: "",
   phone: "",
+  allowPotentialDuplicate: false,
 };
 
-export const SelectOrCreateSupplierModal = ({ onClose, onSelect }: {
+export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, initialMode = "ERP" }: {
   onClose: () => void;
   onSelect: (supplier: Supplier) => void;
+  initialValues?: Partial<SaveSupplierInput>;
+  initialMode?: "ERP" | "LOCAL";
 }) => {
-  const [mode, setMode] = useState<"ERP" | "LOCAL">("ERP");
+  const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
   const [term, setTerm] = useState("");
-  const [form, setForm] = useState<SaveSupplierInput>(EMPTY_SUPPLIER);
+  const [form, setForm] = useState<SupplierForm>(() => ({ ...EMPTY_SUPPLIER, ...initialValues, scope: initialValues?.scope || "" }));
   const debouncedTerm = useDebouncedValue(term, 400);
   const erpSearch = useErpSupplierSearch(debouncedTerm, mode === "ERP");
   const mutations = usePurchaseRequisitionMutations();
+  const localSuppliers = useSuppliers(mode === "LOCAL");
   const busy = mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending;
+  const potentialDuplicates = useMemo(() => {
+    const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    const name = canonical(form.name);
+    const email = (form.email || "").trim().toLowerCase();
+    const phone = (form.phone || "").replace(/\D/g, "");
+    if (!name && !email && !phone) return [];
+    return (localSuppliers.data || []).filter((supplier) =>
+      (name && canonical(supplier.name) === name)
+      || (email && supplier.email?.trim().toLowerCase() === email)
+      || (phone && supplier.phone?.replace(/\D/g, "") === phone),
+    ).slice(0, 5);
+  }, [form.email, form.name, form.phone, localSuppliers.data]);
 
   const selectErp = async (supplier: ErpSupplier) => {
     if (busy) return;
@@ -46,9 +64,14 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect }: {
   const createLocal = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.name.trim()) return notifier.warning("El nombre del proveedor es obligatorio.");
+    if (!form.scope) return notifier.warning("Selecciona si el proveedor es nacional o internacional.");
+    if (potentialDuplicates.length > 0 && !form.allowPotentialDuplicate) {
+      notifier.warning("Revisa los proveedores coincidentes o confirma que realmente necesitas crear otro.");
+      return;
+    }
     const toast = notifier.loading("Creando proveedor local...");
     try {
-      const created = await mutations.createSupplier.mutateAsync(form);
+      const created = await mutations.createSupplier.mutateAsync({ ...form, scope: form.scope });
       if (toast !== undefined) notifier.update(toast, "success", "Proveedor local creado y seleccionado.");
       else notifier.success("Proveedor local creado y seleccionado.");
       onSelect(created);
@@ -110,13 +133,30 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect }: {
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
                 <Field label="RFC" value={form.taxId || ""} onChange={(taxId) => setForm((state) => ({ ...state, taxId }))} />
-                <label className="text-xs font-semibold text-slate-600">Tipo *<select value={form.scope} onChange={(event) => setForm((state) => ({ ...state, scope: event.target.value as SaveSupplierInput["scope"] }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal"><option value="NATIONAL">Nacional</option><option value="INTERNATIONAL">Internacional</option></select></label>
+                <label className="text-xs font-semibold text-slate-600">Tipo *<select value={form.scope} onChange={(event) => setForm((state) => ({ ...state, scope: event.target.value as SupplierForm["scope"] }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>Seleccionar tipo...</option><option value="NATIONAL">Nacional</option><option value="INTERNATIONAL">Internacional</option></select></label>
                 <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
                 <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
                 <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
                 <Field label="Correo" type="email" value={form.email || ""} onChange={(email) => setForm((state) => ({ ...state, email }))} />
                 <Field label="Teléfono" value={form.phone || ""} onChange={(phone) => setForm((state) => ({ ...state, phone }))} />
               </div>
+              {potentialDuplicates.length > 0 && (
+                <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Posibles proveedores duplicados</p>
+                  <div className="mt-2 space-y-2">
+                    {potentialDuplicates.map((supplier) => (
+                      <div key={supplier.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
+                        <div><p className="text-sm font-semibold text-slate-900">{supplier.name}</p><p className="text-[11px] text-slate-500">{supplier.email || supplier.phone || supplier.taxId || "Sin contacto"}</p></div>
+                        <button type="button" onClick={() => onSelect(supplier)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Usar existente</button>
+                      </div>
+                    ))}
+                  </div>
+                  <label className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-900">
+                    <input type="checkbox" checked={Boolean(form.allowPotentialDuplicate)} onChange={(event) => setForm((state) => ({ ...state, allowPotentialDuplicate: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-amber-400" />
+                    Confirmo que es un proveedor diferente y deseo crearlo de todos modos.
+                  </label>
+                </div>
+              )}
               <div className="mt-6 flex justify-end gap-2">
                 <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button>
                 <button type="submit" disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}Crear y seleccionar</button>
