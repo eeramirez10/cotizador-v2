@@ -28,6 +28,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
   const [pendingItems, setPendingItems] = useState<ExtractedQuoteItem[] | null>(null);
   const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
   const isFile = mode === "file";
+  const requiresManualOcr = errorMessage?.toLowerCase().includes("aplica ocr") ?? false;
 
   if (!open) return null;
 
@@ -173,6 +174,9 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
               <FileSpreadsheet className="h-4 w-4" />
               Tipos permitidos: PDF, XLSX, XLS
             </div>
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              Si el PDF es escaneado, primero aplica OCR con Acrobat Pro y guarda una copia con texto reconocible.
+            </p>
             {selectedFile && <p className="mt-3 text-xs text-gray-600">Archivo seleccionado: <span className="font-semibold">{selectedFile.name}</span></p>}
           </div>
         ) : (
@@ -200,9 +204,13 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted }: Quote
         )}
 
         {errorMessage && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            <AlertCircle className="h-4 w-4" />
-            {errorMessage}
+          <div className={`mt-4 flex items-start gap-2 rounded-md border px-3 py-3 text-xs ${requiresManualOcr ? "border-amber-300 bg-amber-50 text-amber-900" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              {requiresManualOcr && <p className="mb-1 font-bold">El PDF necesita OCR</p>}
+              <p>{errorMessage}</p>
+              {requiresManualOcr && <p className="mt-1">Después del OCR, verifica que puedas seleccionar el texto del PDF antes de volver a subirlo.</p>}
+            </div>
           </div>
         )}
 
