@@ -194,8 +194,8 @@ const Field = ({ label, value, type = "text", onChange }: {
 const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSupplierContactInput[] => {
   if (initialValues?.contacts?.length) return initialValues.contacts;
   return [
-    ...(initialValues?.email ? [{ channel: "EMAIL" as const, value: initialValues.email, phoneKind: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
-    ...(initialValues?.phone ? [{ channel: "PHONE" as const, value: initialValues.phone, phoneKind: "UNKNOWN" as const, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
+    ...(initialValues?.email ? [{ channel: "EMAIL" as const, value: initialValues.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
+    ...(initialValues?.phone ? [{ channel: "PHONE" as const, value: initialValues.phone, phoneKind: "UNKNOWN" as const, extension: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
   ];
 };
 
@@ -205,7 +205,7 @@ const SupplierContactsEditor = ({ contacts, onChange }: {
 }) => {
   const add = (channel: SaveSupplierContactInput["channel"]) => onChange([
     ...contacts,
-    { channel, value: "", phoneKind: channel === "PHONE" ? "UNKNOWN" : null, isWhatsApp: false, isPrimary: !contacts.some((contact) => contact.channel === channel) },
+    { channel, value: "", phoneKind: channel === "PHONE" ? "UNKNOWN" : null, extension: null, isWhatsApp: false, isPrimary: !contacts.some((contact) => contact.channel === channel) },
   ]);
   const update = (index: number, data: Partial<SaveSupplierContactInput>) => onChange(contacts.map((contact, current) => current === index ? { ...contact, ...data } : contact));
   const remove = (index: number) => onChange(contacts.filter((_, current) => current !== index));
@@ -226,8 +226,9 @@ const SupplierContactsEditor = ({ contacts, onChange }: {
             {contact.channel === "PHONE" ? <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Clase<select value={contact.phoneKind || "UNKNOWN"} onChange={(event) => update(index, { phoneKind: event.target.value as SaveSupplierContactInput["phoneKind"] })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal"><option value="UNKNOWN">Sin definir</option><option value="LANDLINE">Fijo</option><option value="MOBILE">Celular</option></select></label> : <div className="sm:col-span-2" />}
             <label className="text-[11px] font-semibold text-slate-600 sm:col-span-3">Etiqueta<input value={contact.label || ""} onChange={(event) => update(index, { label: event.target.value })} placeholder="Ventas, oficina..." className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
             <button type="button" onClick={() => remove(index)} className="self-end justify-self-end rounded-md p-2 text-rose-600 hover:bg-rose-50 sm:col-span-1" aria-label="Eliminar contacto"><Trash2 className="h-4 w-4" /></button>
-            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-5">Nombre del contacto<input value={contact.contactName || ""} onChange={(event) => update(index, { contactName: event.target.value })} placeholder="Persona o departamento" className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
-            <div className="flex flex-wrap items-center gap-4 sm:col-span-7 sm:self-end sm:pb-2">
+            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-4">Nombre del contacto<input value={contact.contactName || ""} onChange={(event) => update(index, { contactName: event.target.value })} placeholder="Persona o departamento" className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
+            {contact.channel === "PHONE" ? <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Extensión<input inputMode="numeric" value={contact.extension || ""} onChange={(event) => update(index, { extension: event.target.value.replace(/\D/g, "").slice(0, 10) })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label> : <div className="sm:col-span-2" />}
+            <div className="flex flex-wrap items-center gap-4 sm:col-span-6 sm:self-end sm:pb-2">
               <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600"><input type="checkbox" checked={Boolean(contact.isPrimary)} onChange={(event) => onChange(contacts.map((entry, current) => entry.channel === contact.channel ? { ...entry, isPrimary: current === index && event.target.checked } : entry))} />Principal</label>
               {contact.channel === "PHONE" && <label className="inline-flex items-center gap-2 text-[11px] font-medium text-emerald-700"><input type="checkbox" checked={contact.isWhatsApp} onChange={(event) => update(index, { isWhatsApp: event.target.checked })} /><MessageCircle className="h-3.5 w-3.5" />Tiene WhatsApp confirmado</label>}
             </div>

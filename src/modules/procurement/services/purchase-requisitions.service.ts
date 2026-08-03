@@ -56,6 +56,7 @@ export interface SupplierContact {
   value: string;
   normalizedValue: string;
   phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
+  extension: string | null;
   isWhatsApp: boolean;
   contactName: string | null;
   label: string | null;
@@ -238,6 +239,7 @@ export interface SaveSupplierContactInput {
   channel: "EMAIL" | "PHONE";
   value: string;
   phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
+  extension?: string | null;
   isWhatsApp: boolean;
   contactName?: string | null;
   label?: string | null;
