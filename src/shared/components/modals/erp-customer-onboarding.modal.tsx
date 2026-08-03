@@ -1,4 +1,4 @@
-import { Building2, Loader2, Mail, MessageCircle, Search, Store, X } from "lucide-react";
+import { Building2, Loader2, Mail, MessageCircle, Search, Sparkles, Store, X } from "lucide-react";
 import { useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { Client, ClientInput } from "../../../modules/clients/types/client.types";
@@ -13,10 +13,14 @@ import { useClientsStore } from "../../../store/clients/clients.store";
 import { CustomerContactsEditor } from "../forms/customer-contacts.editor";
 import { notifier } from "../../notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
+import { PartyTextCompletionModal } from "./party-text-completion.modal";
+import { mergePartyIntoCustomer } from "../../../modules/ai/utils/party-data-form.mapper";
 
 interface ErpCustomerOnboardingModalProps {
   onClose: () => void;
   onImported: (client: Client) => void;
+  initialValues?: Partial<ClientInput>;
+  initialMode?: "ERP" | "LOCAL";
 }
 
 const EMPTY_LOCAL_FORM: ClientInput = {
@@ -43,12 +47,19 @@ const EMPTY_LOCAL_FORM: ClientInput = {
 export const ErpCustomerOnboardingModal = ({
   onClose,
   onImported,
+  initialValues,
+  initialMode = "ERP",
 }: ErpCustomerOnboardingModalProps) => {
   const clients = useClientsStore((state) => state.clients);
   const addClient = useClientsStore((state) => state.addClient);
-  const [mode, setMode] = useState<"ERP" | "LOCAL">("ERP");
+  const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
   const [term, setTerm] = useState("");
-  const [form, setForm] = useState<ClientInput>(EMPTY_LOCAL_FORM);
+  const [form, setForm] = useState<ClientInput>(() => ({
+    ...EMPTY_LOCAL_FORM,
+    ...initialValues,
+    contacts: initialValues?.contacts?.length ? initialValues.contacts : EMPTY_LOCAL_FORM.contacts,
+  }));
+  const [textCompletionOpen, setTextCompletionOpen] = useState(false);
   const [pendingCustomer, setPendingCustomer] = useState<ErpCustomer | null>(null);
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -163,7 +174,7 @@ export const ErpCustomerOnboardingModal = ({
     }
   };
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-[175] flex items-center justify-center bg-slate-950/65 p-4" role="dialog" aria-modal="true" aria-labelledby="customer-selector-title">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
@@ -219,6 +230,10 @@ export const ErpCustomerOnboardingModal = ({
             )
           ) : (
             <form onSubmit={createLocal}>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div><p className="text-xs font-bold text-slate-900">¿Tienes los datos en un mensaje?</p><p className="mt-0.5 text-[11px] text-slate-600">Pega una firma, correo o WhatsApp y completa el formulario con IA.</p></div>
+                <button type="button" onClick={() => setTextCompletionOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"><Sparkles className="h-4 w-4" />Completar con texto</button>
+              </div>
               <SectionTitle title="Datos generales" description="Identificación comercial y fiscal." />
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
@@ -248,7 +263,16 @@ export const ErpCustomerOnboardingModal = ({
         </div>
       </div>
     </div>
-  );
+    {textCompletionOpen && <PartyTextCompletionModal
+      partyType="CUSTOMER"
+      onClose={() => setTextCompletionOpen(false)}
+      onApply={(party) => {
+        setForm((current) => mergePartyIntoCustomer(current, party));
+        setTextCompletionOpen(false);
+        notifier.success("Datos del cliente aplicados. Revísalos antes de guardar.");
+      }}
+    />}
+  </>);
 };
 
 const Field = ({ label, value, type = "text", onChange, wide = false, accent = false, icon }: {

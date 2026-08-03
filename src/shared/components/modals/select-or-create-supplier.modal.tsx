@@ -1,9 +1,11 @@
-import { Loader2, MessageCircle, Plus, Search, Store, Trash2, X } from "lucide-react";
+import { Loader2, MessageCircle, Plus, Search, Sparkles, Store, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { ErpSupplier, SaveSupplierContactInput, SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 import { useErpSupplierSearch, usePurchaseRequisitionMutations, useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
 import { notifier } from "../../notifications/notifier";
+import { PartyTextCompletionModal } from "./party-text-completion.modal";
+import { partyToSupplierInput } from "../../../modules/ai/utils/party-data-form.mapper";
 
 type SupplierForm = Omit<SaveSupplierInput, "scope" | "contacts"> & {
   scope: "" | SaveSupplierInput["scope"];
@@ -35,6 +37,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
 }) => {
   const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
   const [term, setTerm] = useState("");
+  const [textCompletionOpen, setTextCompletionOpen] = useState(false);
   const [form, setForm] = useState<SupplierForm>(() => ({
     ...EMPTY_SUPPLIER,
     ...initialValues,
@@ -110,7 +113,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
     }
   };
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/65 p-4" role="dialog" aria-modal="true" aria-labelledby="supplier-selector-title">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
@@ -158,6 +161,10 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
             </div>
           ) : (
             <form onSubmit={createLocal}>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <div><p className="text-xs font-bold text-slate-900">¿Ya tienes los datos en un mensaje?</p><p className="mt-0.5 text-[11px] text-slate-600">Pégalos y deja que la IA complete este formulario.</p></div>
+                <button type="button" onClick={() => setTextCompletionOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"><Sparkles className="h-4 w-4" />Completar con texto</button>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nombre *" value={form.name} onChange={(name) => setForm((state) => ({ ...state, name }))} />
                 <Field label="RFC" value={form.taxId || ""} onChange={(taxId) => setForm((state) => ({ ...state, taxId }))} />
@@ -203,7 +210,37 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
         </div>
       </div>
     </div>
-  );
+    {textCompletionOpen && <PartyTextCompletionModal
+      partyType="SUPPLIER"
+      onClose={() => setTextCompletionOpen(false)}
+      onApply={(party) => {
+        const detected = partyToSupplierInput(party);
+        setForm((current) => {
+          const hasContacts = current.contacts.some((contact) => contact.value.trim());
+          return {
+            ...current,
+            name: current.name.trim() || detected.name || "",
+            scope: current.scope || detected.scope || "",
+            taxId: current.taxId?.trim() || detected.taxId || "",
+            state: current.state?.trim() || detected.state || "",
+            country: current.country?.trim() && current.country.trim().toUpperCase() !== "MÉXICO"
+              ? current.country
+              : detected.country || current.country || "MÉXICO",
+            creditTerms: current.creditTerms?.trim() || detected.creditTerms || "",
+            currency: current.currency || detected.currency || null,
+            notes: current.notes?.trim() || detected.notes || "",
+            contactName: current.contactName?.trim() || detected.contactName || "",
+            contactPosition: current.contactPosition?.trim() || detected.contactPosition || "",
+            email: current.email?.trim() || detected.email || "",
+            phone: current.phone?.trim() || detected.phone || "",
+            contacts: hasContacts ? current.contacts : initialContacts(detected),
+          };
+        });
+        setTextCompletionOpen(false);
+        notifier.success("Datos del proveedor aplicados. Revísalos antes de guardar.");
+      }}
+    />}
+  </>);
 };
 
 const Field = ({ label, value, type = "text", onChange }: {

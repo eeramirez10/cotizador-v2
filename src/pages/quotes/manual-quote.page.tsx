@@ -22,6 +22,13 @@ import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manu
 import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
+import type { ExtractedPartyData } from "../../modules/ai/types/party-data.types";
+import type { ClientInput } from "../../modules/clients/types/client.types";
+import { partyToCustomerInput } from "../../modules/ai/utils/party-data-form.mapper";
+import { erpCustomerToClientInput } from "../../modules/clients/utils/erp-customer-mapper";
+import { useClientsStore } from "../../store/clients/clients.store";
+import { DetectedCustomerModal } from "../../shared/components/modals/detected-customer.modal";
+import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
@@ -149,6 +156,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [showBulkProcurement, setShowBulkProcurement] = useState(false);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
+  const [detectedCustomer, setDetectedCustomer] = useState<ExtractedPartyData | null>(null);
+  const [customerOnboardingInitial, setCustomerOnboardingInitial] = useState<ClientInput | null>(null);
+  const [syncingDetectedCustomer, setSyncingDetectedCustomer] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -191,6 +201,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const setItemProcurementPrequote = useManualQuoteStore((state) => state.setItemProcurementPrequote);
   const setItemsProcurementPrequote = useManualQuoteStore((state) => state.setItemsProcurementPrequote);
   const setClient = useManualQuoteStore((state) => state.setClient);
+  const clients = useClientsStore((state) => state.clients);
+  const loadClients = useClientsStore((state) => state.loadClients);
+  const addClient = useClientsStore((state) => state.addClient);
   const hydrateDraftFromQuote = useManualQuoteStore((state) => state.hydrateDraftFromQuote);
   const clearDraft = useManualQuoteStore((state) => state.clearDraft);
   const subtotal = useManualQuoteStore((state) => state.subtotal);
@@ -1669,6 +1682,51 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           setOpenClientModal(false);
         }}
       />
+      {detectedCustomer && !syncingDetectedCustomer && (
+        <DetectedCustomerModal
+          detected={detectedCustomer}
+          clients={clients}
+          onUseLocal={(client) => {
+            setClient(client);
+            setDetectedCustomer(null);
+            notifier.success("Cliente encontrado ligado a la cotización.");
+          }}
+          onUseErp={(customer) => {
+            setSyncingDetectedCustomer(true);
+            const toast = notifier.loading("Vinculando cliente ERP...");
+            void addClient(erpCustomerToClientInput(customer)).then((client) => {
+              setClient(client);
+              setDetectedCustomer(null);
+              if (toast !== undefined) notifier.update(toast, "success", "Cliente ERP ligado a la cotización.");
+              else notifier.success("Cliente ERP ligado a la cotización.");
+            }).catch((error) => {
+              const message = error instanceof Error ? error.message : "No se pudo vincular el cliente ERP.";
+              if (toast !== undefined) notifier.update(toast, "error", message);
+              else notifier.error(message);
+            }).finally(() => setSyncingDetectedCustomer(false));
+          }}
+          onCreate={() => {
+            setCustomerOnboardingInitial(partyToCustomerInput(detectedCustomer));
+            setDetectedCustomer(null);
+          }}
+          onChooseOther={() => {
+            setDetectedCustomer(null);
+            setOpenClientModal(true);
+          }}
+          onDismiss={() => setDetectedCustomer(null)}
+        />
+      )}
+      {customerOnboardingInitial && (
+        <ErpCustomerOnboardingModal
+          initialMode="LOCAL"
+          initialValues={customerOnboardingInitial}
+          onClose={() => setCustomerOnboardingInitial(null)}
+          onImported={(client) => {
+            setClient(client);
+            setCustomerOnboardingInitial(null);
+          }}
+        />
+      )}
       {extractionModal && entryMode === "SYSTEM" && !isExcelImportedQuote && (
         <QuoteExtractionModal
           mode={extractionModal}
@@ -1678,6 +1736,10 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             setExtractionModal(null);
             void draftAttachments.refetch();
             navigate(`/cotizador/sistema?source=${source}`, { replace: true });
+          }}
+          onDetectedCustomer={(customer) => {
+            setDetectedCustomer(customer);
+            void loadClients().catch(() => undefined);
           }}
         />
       )}
