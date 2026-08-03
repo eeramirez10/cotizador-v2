@@ -29,6 +29,18 @@ export interface ExtractedSupplierData {
   contactName: string | null;
   email: string | null;
   phone: string | null;
+  contacts: ExtractedSupplierContact[];
+  confidence: number;
+  evidence: string | null;
+}
+
+export interface ExtractedSupplierContact {
+  channel: "EMAIL" | "PHONE";
+  value: string;
+  phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
+  isWhatsApp: boolean;
+  contactName: string | null;
+  label: string | null;
   confidence: number;
   evidence: string | null;
 }

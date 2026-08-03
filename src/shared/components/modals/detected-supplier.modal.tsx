@@ -1,4 +1,4 @@
-import { Building2, CheckCircle2, Search, Store, X } from "lucide-react";
+import { Building2, CheckCircle2, Mail, MessageCircle, Phone, Search, Store, X } from "lucide-react";
 import type { ExtractedSupplierData } from "../../../modules/procurement/services/supplier-quote-extraction.service";
 import type { SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 
@@ -19,6 +19,15 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
     contactName: detected.contactName || "",
     email: detected.email || "",
     phone: detected.phone || "",
+    contacts: detectedContacts(detected).map((contact, index, contacts) => ({
+      channel: contact.channel,
+      value: contact.value,
+      phoneKind: contact.phoneKind,
+      isWhatsApp: contact.isWhatsApp,
+      contactName: contact.contactName,
+      label: contact.label,
+      isPrimary: contacts.findIndex((entry) => entry.channel === contact.channel) === index,
+    })),
     country: "MÉXICO",
   };
   return (
@@ -34,8 +43,22 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
             <Info label="RFC" value={detected.taxId} />
             <Info label="Estado" value={detected.state} />
             <Info label="Contacto" value={detected.contactName} />
-            <Info label="Correo" value={detected.email} />
-            <Info label="Teléfono" value={detected.phone} />
+            <div className="sm:col-span-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Contactos detectados</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {detectedContacts(detected).map((contact, index) => (
+                  <div key={`${contact.channel}-${contact.value}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                      {contact.channel === "EMAIL" ? <Mail className="h-3.5 w-3.5 text-blue-600" /> : <Phone className="h-3.5 w-3.5 text-emerald-600" />}
+                      {contact.value}
+                      {contact.isWhatsApp && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><MessageCircle className="h-3 w-3" />WhatsApp</span>}
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-500">{[contact.contactName, contact.label, contact.phoneKind === "MOBILE" ? "Celular" : contact.phoneKind === "LANDLINE" ? "Teléfono fijo" : null].filter(Boolean).join(" · ") || "Sin etiqueta"}</p>
+                  </div>
+                ))}
+                {detectedContacts(detected).length === 0 && <p className="text-xs text-slate-500">No se identificaron correos ni teléfonos.</p>}
+              </div>
+            </div>
           </section>
           {detected.evidence && <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">Fuente: {detected.evidence}</p>}
           {detected.confidence < 0.75 && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">La identificación tiene baja confianza. Verifica especialmente razón social y RFC.</p>}
@@ -60,13 +83,29 @@ const Info = ({ label, value }: { label: string; value: string | null }) => <div
 
 export const findDetectedSupplierMatch = (detected: ExtractedSupplierData, suppliers: Supplier[]): Supplier | null => {
   const canonical = (value: string | null | undefined) => (value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const email = (detected.email || "").trim().toLowerCase();
-  const phone = (detected.phone || "").replace(/\D/g, "");
+  const emails = detectedContacts(detected).filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value.trim().toLowerCase());
+  const phones = detectedContacts(detected).filter((contact) => contact.channel === "PHONE").map((contact) => contact.value.replace(/\D/g, ""));
   const taxId = canonical(detected.taxId);
   const name = canonical(detected.name);
   return suppliers.find((supplier) => taxId && canonical(supplier.taxId) === taxId)
-    || suppliers.find((supplier) => email && supplier.email?.trim().toLowerCase() === email)
-    || suppliers.find((supplier) => phone && [supplier.phone, supplier.mobile].some((value) => value?.replace(/\D/g, "") === phone))
+    || suppliers.find((supplier) => {
+      const supplierEmails = [supplier.email, ...(supplier.contacts || []).filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value)]
+        .filter(Boolean).map((value) => value!.trim().toLowerCase());
+      return emails.some((email) => supplierEmails.includes(email));
+    })
+    || suppliers.find((supplier) => {
+      const supplierPhones = [supplier.phone, supplier.mobile, ...(supplier.contacts || []).filter((contact) => contact.channel === "PHONE").map((contact) => contact.value)]
+        .filter(Boolean).map((value) => value!.replace(/\D/g, ""));
+      return phones.some((phone) => supplierPhones.includes(phone));
+    })
     || suppliers.find((supplier) => name && canonical(supplier.name) === name)
     || null;
+};
+
+const detectedContacts = (detected: ExtractedSupplierData) => {
+  if (detected.contacts?.length) return detected.contacts;
+  return [
+    ...(detected.email ? [{ channel: "EMAIL" as const, value: detected.email, phoneKind: null, isWhatsApp: false, contactName: detected.contactName, label: null, confidence: detected.confidence, evidence: null }] : []),
+    ...(detected.phone ? [{ channel: "PHONE" as const, value: detected.phone, phoneKind: "UNKNOWN" as const, isWhatsApp: false, contactName: detected.contactName, label: null, confidence: detected.confidence, evidence: null }] : []),
+  ];
 };

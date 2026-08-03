@@ -1,11 +1,14 @@
-import { Loader2, Search, Store, X } from "lucide-react";
+import { Loader2, Mail, MessageCircle, Phone, Plus, Search, Store, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
-import type { ErpSupplier, SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
+import type { ErpSupplier, SaveSupplierContactInput, SaveSupplierInput, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 import { useErpSupplierSearch, usePurchaseRequisitionMutations, useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
 import { notifier } from "../../notifications/notifier";
 
-type SupplierForm = Omit<SaveSupplierInput, "scope"> & { scope: "" | SaveSupplierInput["scope"] };
+type SupplierForm = Omit<SaveSupplierInput, "scope" | "contacts"> & {
+  scope: "" | SaveSupplierInput["scope"];
+  contacts: SaveSupplierContactInput[];
+};
 
 const EMPTY_SUPPLIER: SupplierForm = {
   name: "",
@@ -16,6 +19,7 @@ const EMPTY_SUPPLIER: SupplierForm = {
   contactName: "",
   email: "",
   phone: "",
+  contacts: [],
   allowPotentialDuplicate: false,
 };
 
@@ -27,7 +31,12 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
 }) => {
   const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
   const [term, setTerm] = useState("");
-  const [form, setForm] = useState<SupplierForm>(() => ({ ...EMPTY_SUPPLIER, ...initialValues, scope: initialValues?.scope || "" }));
+  const [form, setForm] = useState<SupplierForm>(() => ({
+    ...EMPTY_SUPPLIER,
+    ...initialValues,
+    scope: initialValues?.scope || "",
+    contacts: initialContacts(initialValues),
+  }));
   const debouncedTerm = useDebouncedValue(term, 400);
   const erpSearch = useErpSupplierSearch(debouncedTerm, mode === "ERP");
   const mutations = usePurchaseRequisitionMutations();
@@ -36,15 +45,15 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
   const potentialDuplicates = useMemo(() => {
     const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
     const name = canonical(form.name);
-    const email = (form.email || "").trim().toLowerCase();
-    const phone = (form.phone || "").replace(/\D/g, "");
-    if (!name && !email && !phone) return [];
+    const emails = form.contacts.filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value.trim().toLowerCase()).filter(Boolean);
+    const phones = form.contacts.filter((contact) => contact.channel === "PHONE").map((contact) => contact.value.replace(/\D/g, "")).filter(Boolean);
+    if (!name && emails.length === 0 && phones.length === 0) return [];
     return (localSuppliers.data || []).filter((supplier) =>
       (name && canonical(supplier.name) === name)
-      || (email && supplier.email?.trim().toLowerCase() === email)
-      || (phone && supplier.phone?.replace(/\D/g, "") === phone),
+      || emails.some((email) => [supplier.email, ...(supplier.contacts || []).filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value)].some((value) => value?.trim().toLowerCase() === email))
+      || phones.some((phone) => [supplier.phone, supplier.mobile, ...(supplier.contacts || []).filter((contact) => contact.channel === "PHONE").map((contact) => contact.value)].some((value) => value?.replace(/\D/g, "") === phone)),
     ).slice(0, 5);
-  }, [form.email, form.name, form.phone, localSuppliers.data]);
+  }, [form.contacts, form.name, localSuppliers.data]);
 
   const selectErp = async (supplier: ErpSupplier) => {
     if (busy) return;
@@ -71,7 +80,12 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
     }
     const toast = notifier.loading("Creando proveedor local...");
     try {
-      const created = await mutations.createSupplier.mutateAsync({ ...form, scope: form.scope });
+      const contacts = form.contacts.filter((contact) => contact.value.trim());
+      const primaryEmail = contacts.find((contact) => contact.channel === "EMAIL" && contact.isPrimary)?.value
+        || contacts.find((contact) => contact.channel === "EMAIL")?.value || null;
+      const primaryPhone = contacts.find((contact) => contact.channel === "PHONE" && contact.isPrimary)?.value
+        || contacts.find((contact) => contact.channel === "PHONE")?.value || null;
+      const created = await mutations.createSupplier.mutateAsync({ ...form, scope: form.scope, contacts, email: primaryEmail, phone: primaryPhone });
       if (toast !== undefined) notifier.update(toast, "success", "Proveedor local creado y seleccionado.");
       else notifier.success("Proveedor local creado y seleccionado.");
       onSelect(created);
@@ -137,9 +151,8 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
                 <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
                 <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
                 <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
-                <Field label="Correo" type="email" value={form.email || ""} onChange={(email) => setForm((state) => ({ ...state, email }))} />
-                <Field label="Teléfono" value={form.phone || ""} onChange={(phone) => setForm((state) => ({ ...state, phone }))} />
               </div>
+              <SupplierContactsEditor contacts={form.contacts} onChange={(contacts) => setForm((state) => ({ ...state, contacts }))} />
               {potentialDuplicates.length > 0 && (
                 <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Posibles proveedores duplicados</p>
@@ -177,3 +190,51 @@ const Field = ({ label, value, type = "text", onChange }: {
 }) => (
   <label className="text-xs font-semibold text-slate-600">{label}<input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" /></label>
 );
+
+const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSupplierContactInput[] => {
+  if (initialValues?.contacts?.length) return initialValues.contacts;
+  return [
+    ...(initialValues?.email ? [{ channel: "EMAIL" as const, value: initialValues.email, phoneKind: null, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
+    ...(initialValues?.phone ? [{ channel: "PHONE" as const, value: initialValues.phone, phoneKind: "UNKNOWN" as const, isWhatsApp: false, contactName: initialValues.contactName, label: null, isPrimary: true }] : []),
+  ];
+};
+
+const SupplierContactsEditor = ({ contacts, onChange }: {
+  contacts: SaveSupplierContactInput[];
+  onChange: (contacts: SaveSupplierContactInput[]) => void;
+}) => {
+  const add = (channel: SaveSupplierContactInput["channel"]) => onChange([
+    ...contacts,
+    { channel, value: "", phoneKind: channel === "PHONE" ? "UNKNOWN" : null, isWhatsApp: false, isPrimary: !contacts.some((contact) => contact.channel === channel) },
+  ]);
+  const update = (index: number, data: Partial<SaveSupplierContactInput>) => onChange(contacts.map((contact, current) => current === index ? { ...contact, ...data } : contact));
+  const remove = (index: number) => onChange(contacts.filter((_, current) => current !== index));
+  return (
+    <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Correos y teléfonos</p><p className="mt-1 text-[11px] text-slate-500">Agrega cada medio por separado. Marca WhatsApp únicamente cuando esté confirmado.</p></div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => add("EMAIL")} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700"><Mail className="h-3.5 w-3.5" /><Plus className="h-3 w-3" />Correo</button>
+          <button type="button" onClick={() => add("PHONE")} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700"><Phone className="h-3.5 w-3.5" /><Plus className="h-3 w-3" />Teléfono</button>
+        </div>
+      </div>
+      <div className="mt-3 space-y-3">
+        {contacts.map((contact, index) => (
+          <div key={index} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-12">
+            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Tipo<select value={contact.channel} onChange={(event) => update(index, { channel: event.target.value as SaveSupplierContactInput["channel"], phoneKind: event.target.value === "PHONE" ? "UNKNOWN" : null, isWhatsApp: false })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal"><option value="EMAIL">Correo</option><option value="PHONE">Teléfono</option></select></label>
+            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-4">Valor<input type={contact.channel === "EMAIL" ? "email" : "tel"} value={contact.value} onChange={(event) => update(index, { value: event.target.value })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
+            {contact.channel === "PHONE" ? <label className="text-[11px] font-semibold text-slate-600 sm:col-span-2">Clase<select value={contact.phoneKind || "UNKNOWN"} onChange={(event) => update(index, { phoneKind: event.target.value as SaveSupplierContactInput["phoneKind"] })} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal"><option value="UNKNOWN">Sin definir</option><option value="LANDLINE">Fijo</option><option value="MOBILE">Celular</option></select></label> : <div className="sm:col-span-2" />}
+            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-3">Etiqueta<input value={contact.label || ""} onChange={(event) => update(index, { label: event.target.value })} placeholder="Ventas, oficina..." className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
+            <button type="button" onClick={() => remove(index)} className="self-end justify-self-end rounded-md p-2 text-rose-600 hover:bg-rose-50 sm:col-span-1" aria-label="Eliminar contacto"><Trash2 className="h-4 w-4" /></button>
+            <label className="text-[11px] font-semibold text-slate-600 sm:col-span-5">Nombre del contacto<input value={contact.contactName || ""} onChange={(event) => update(index, { contactName: event.target.value })} placeholder="Persona o departamento" className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-xs font-normal" /></label>
+            <div className="flex flex-wrap items-center gap-4 sm:col-span-7 sm:self-end sm:pb-2">
+              <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600"><input type="checkbox" checked={Boolean(contact.isPrimary)} onChange={(event) => onChange(contacts.map((entry, current) => entry.channel === contact.channel ? { ...entry, isPrimary: current === index && event.target.checked } : entry))} />Principal</label>
+              {contact.channel === "PHONE" && <label className="inline-flex items-center gap-2 text-[11px] font-medium text-emerald-700"><input type="checkbox" checked={contact.isWhatsApp} onChange={(event) => update(index, { isWhatsApp: event.target.checked })} /><MessageCircle className="h-3.5 w-3.5" />Tiene WhatsApp confirmado</label>}
+            </div>
+          </div>
+        ))}
+        {contacts.length === 0 && <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">Sin contactos. Puedes agregarlos ahora o completar el proveedor después.</p>}
+      </div>
+    </section>
+  );
+};

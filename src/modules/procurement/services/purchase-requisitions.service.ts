@@ -44,9 +44,22 @@ export interface Supplier {
   phone: string | null;
   phoneExtension: string | null;
   mobile: string | null;
+  contacts: SupplierContact[];
   notes: string | null;
   erpSyncedAt: string | null;
   isActive: boolean;
+}
+
+export interface SupplierContact {
+  id: string;
+  channel: "EMAIL" | "PHONE";
+  value: string;
+  normalizedValue: string;
+  phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
+  isWhatsApp: boolean;
+  contactName: string | null;
+  label: string | null;
+  isPrimary: boolean;
 }
 
 export interface ErpSupplierContact {
@@ -217,7 +230,18 @@ export interface SaveSupplierInput {
   contactName?: string | null;
   email?: string | null;
   phone?: string | null;
+  contacts?: SaveSupplierContactInput[];
   allowPotentialDuplicate?: boolean;
+}
+
+export interface SaveSupplierContactInput {
+  channel: "EMAIL" | "PHONE";
+  value: string;
+  phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN" | null;
+  isWhatsApp: boolean;
+  contactName?: string | null;
+  label?: string | null;
+  isPrimary?: boolean;
 }
 
 export interface SaveOfferInput {
