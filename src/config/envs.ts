@@ -32,7 +32,7 @@ export const envs = {
     import.meta.env.VITE_AI_API_URL,
     import.meta.env.VITE_QUOTE_EXTRACTOR_API_URL,
     import.meta.env.VITE_EXTRACTOR_API_URL,
-    "http://localhost:4500"
+    "http://localhost:4600"
   ),
   AI_SIMILAR_PRODUCTS_PATH: normalizePath(
     pickFirst(import.meta.env.VITE_AI_SIMILAR_PRODUCTS_PATH, "/api/ai/products/similar-v2")

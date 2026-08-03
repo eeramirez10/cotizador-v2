@@ -57,7 +57,7 @@ sucursales. El frontend no consulta Pinecone ni Proscai directamente.
 En `cotizador-v2/.env`:
 
 ```env
-VITE_AI_API_URL=http://localhost:4500
+VITE_AI_API_URL=http://localhost:4600
 VITE_AI_SIMILAR_PRODUCTS_PATH=/api/ai/products/similar-v2
 VITE_AI_SIMILAR_PRODUCTS_SEMANTIC_PATH=/api/ai/products/similar-v2/semantic
 VITE_AI_SIMILAR_PRODUCTS_FALLBACK_PATH=/api/ai/products/similar
@@ -66,8 +66,7 @@ VITE_AI_SIMILAR_PRODUCTS_FALLBACK_PATH=/api/ai/products/similar
 En `New Project/.env`:
 
 ```env
-CATALOG_V2_SEARCH_URL=http://localhost:5500/api/vector-catalog/search
-CATALOG_V2_SEMANTIC_SEARCH_URL=http://localhost:5500/api/vector-catalog/search/semantic
+AI_PLATFORM_BASE_URL=http://localhost:4700
 CATALOG_V2_SEARCH_TIMEOUT_MS=40000
 ```
 
