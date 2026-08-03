@@ -18,6 +18,7 @@ import { QuoteApprovalsPage } from "../pages/quotes/quote-approvals.page";
 import { QuoteCatalogsPage } from "../pages/quote-catalogs/quote-catalogs.page";
 import { PurchaseRequisitionsPage } from "../pages/procurement/purchase-requisitions.page";
 import { ProductProcurementPage } from "../pages/products/product-procurement.page";
+import { SuppliersPage } from "../pages/suppliers/suppliers.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -142,6 +143,12 @@ export const appRouter = createBrowserRouter([
         loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
         handle: { title: "Requisiciones de compra" },
         Component: PurchaseRequisitionsPage,
+      },
+      {
+        path: "suppliers",
+        loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
+        handle: { title: "Proveedores" },
+        Component: SuppliersPage,
       },
       {
         path: "procurement/products",

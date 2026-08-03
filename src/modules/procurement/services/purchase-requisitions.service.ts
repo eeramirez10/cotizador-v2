@@ -229,6 +229,10 @@ export interface SaveSupplierInput {
   state?: string | null;
   country?: string | null;
   contactName?: string | null;
+  contactPosition?: string | null;
+  creditTerms?: string | null;
+  currency?: Currency | null;
+  notes?: string | null;
   email?: string | null;
   phone?: string | null;
   contacts?: SaveSupplierContactInput[];
@@ -392,11 +396,11 @@ export class PurchaseRequisitionsService {
     );
   }
 
-  static listSuppliers(search?: string) {
+  static listSuppliers(search?: string, includeInactive = false) {
     return request(
       () => coreHttpClient.get<Supplier[]>("/api/purchase-requisitions/suppliers", {
         headers: headers(),
-        params: { search: search?.trim() || undefined },
+        params: { search: search?.trim() || undefined, includeInactive: includeInactive || undefined },
       }),
       "No se pudieron cargar los proveedores.",
     );
@@ -406,6 +410,28 @@ export class PurchaseRequisitionsService {
     return request(
       () => coreHttpClient.post<Supplier>("/api/purchase-requisitions/suppliers", input, { headers: headers() }),
       "No se pudo crear el proveedor.",
+    );
+  }
+
+  static updateSupplier(supplierId: string, input: SaveSupplierInput) {
+    return request(
+      () => coreHttpClient.patch<Supplier>(
+        `/api/purchase-requisitions/suppliers/${encodeURIComponent(supplierId)}`,
+        input,
+        { headers: headers() },
+      ),
+      "No se pudo actualizar el proveedor.",
+    );
+  }
+
+  static setSupplierActive(supplierId: string, isActive: boolean) {
+    return request(
+      () => coreHttpClient.patch<Supplier>(
+        `/api/purchase-requisitions/suppliers/${encodeURIComponent(supplierId)}/status`,
+        { isActive },
+        { headers: headers() },
+      ),
+      isActive ? "No se pudo activar el proveedor." : "No se pudo desactivar el proveedor.",
     );
   }
 

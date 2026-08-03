@@ -17,6 +17,10 @@ const EMPTY_SUPPLIER: SupplierForm = {
   state: "",
   country: "MÉXICO",
   contactName: "",
+  contactPosition: "",
+  creditTerms: "",
+  currency: null,
+  notes: "",
   email: "",
   phone: "",
   contacts: [],
@@ -40,7 +44,7 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
   const debouncedTerm = useDebouncedValue(term, 400);
   const erpSearch = useErpSupplierSearch(debouncedTerm, mode === "ERP");
   const mutations = usePurchaseRequisitionMutations();
-  const localSuppliers = useSuppliers(mode === "LOCAL");
+  const localSuppliers = useSuppliers(mode === "LOCAL", { includeInactive: true });
   const busy = mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending;
   const potentialDuplicates = useMemo(() => {
     const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -151,6 +155,18 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
                 <Field label="Estado" value={form.state || ""} onChange={(state) => setForm((current) => ({ ...current, state }))} />
                 <Field label="País" value={form.country || ""} onChange={(country) => setForm((state) => ({ ...state, country }))} />
                 <Field label="Contacto" value={form.contactName || ""} onChange={(contactName) => setForm((state) => ({ ...state, contactName }))} />
+                <Field label="Puesto del contacto" value={form.contactPosition || ""} onChange={(contactPosition) => setForm((state) => ({ ...state, contactPosition }))} />
+                <Field label="Condiciones de crédito" value={form.creditTerms || ""} onChange={(creditTerms) => setForm((state) => ({ ...state, creditTerms }))} />
+                <label className="text-xs font-semibold text-slate-600">Moneda
+                  <select value={form.currency || ""} onChange={(event) => setForm((state) => ({ ...state, currency: event.target.value ? event.target.value as "MXN" | "USD" : null }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100">
+                    <option value="">Sin definir</option>
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Notas
+                  <textarea value={form.notes || ""} onChange={(event) => setForm((state) => ({ ...state, notes: event.target.value }))} rows={3} maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" />
+                </label>
               </div>
               <SupplierContactsEditor contacts={form.contacts} onChange={(contacts) => setForm((state) => ({ ...state, contacts }))} />
               {potentialDuplicates.length > 0 && (
@@ -199,7 +215,7 @@ const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSuppli
   ];
 };
 
-const SupplierContactsEditor = ({ contacts, onChange }: {
+export const SupplierContactsEditor = ({ contacts, onChange }: {
   contacts: SaveSupplierContactInput[];
   onChange: (contacts: SaveSupplierContactInput[]) => void;
 }) => {
