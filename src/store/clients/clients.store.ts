@@ -23,7 +23,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
       const clients = await CustomersService.list({
         search: params?.search,
         page: 1,
-        pageSize: 10,
+        pageSize: 100,
       });
       set({ clients, loading: false });
     } catch (error) {

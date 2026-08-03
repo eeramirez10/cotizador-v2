@@ -18,6 +18,7 @@ import type { Client, ClientInput } from "../../modules/clients/types/client.typ
 import type { CustomerContactInput } from "../../modules/clients/types/customer-contact.types";
 import { emptyCustomerContact } from "../../modules/clients/utils/customer-contact-form";
 import { CustomerContactsEditor } from "../../shared/components/forms/customer-contacts.editor";
+import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
 import { notifier } from "../../shared/notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../shared/utils/contact-validation";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -123,6 +124,7 @@ export const ClientsPage = () => {
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [form, setForm] = useState<ClientInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
@@ -165,7 +167,7 @@ export const ClientsPage = () => {
     contactable: clients.filter((client) => Boolean(client.email || client.whatsappPhone || client.contacts?.some((contact) => contact.email || contact.mobile))).length,
   }), [clients]);
 
-  const openCreate = () => {
+  const openLocalCreate = () => {
     setSelectedClient({ id: "", source: "LOCAL" } as Client);
     setForm({ ...EMPTY_FORM, contacts: [emptyCustomerContact(true)] });
   };
@@ -285,7 +287,7 @@ export const ClientsPage = () => {
               <h1 className="mt-1 text-2xl font-bold">Clientes</h1>
               <p className="mt-1 text-sm text-slate-300">Directorio consolidado de clientes locales y sincronizados desde ERP.</p>
             </div>
-            <button type="button" onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300">
+            <button type="button" onClick={() => setOnboardingOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300">
               <UserPlus className="h-4 w-4" />
               Nuevo cliente
             </button>
@@ -372,6 +374,19 @@ export const ClientsPage = () => {
           saving={saving}
           onClose={closeClient}
           onSubmit={saveClient}
+        />
+      )}
+      {onboardingOpen && (
+        <ErpCustomerOnboardingModal
+          onClose={() => setOnboardingOpen(false)}
+          onCreateLocal={() => {
+            setOnboardingOpen(false);
+            openLocalCreate();
+          }}
+          onImported={(client) => {
+            setOnboardingOpen(false);
+            openClient(client);
+          }}
         />
       )}
       {deleteTarget && <DeleteClientModal client={deleteTarget} busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />}

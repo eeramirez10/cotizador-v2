@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { ClientInput, Client } from "../../../modules/clients/types/client.types";
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
+import { erpCustomerHasDeliveryChannel, erpCustomerToClientInput } from "../../../modules/clients/utils/erp-customer-mapper";
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
@@ -27,39 +28,8 @@ const EMPTY_FORM: ClientInput = {
   phone: "",
 };
 
-const splitDisplayName = (displayName: string): { name: string; lastname: string } => {
-  const safe = displayName.trim();
-  if (!safe) return { name: "", lastname: "." };
-
-  const [first, ...rest] = safe.split(/\s+/);
-  return {
-    name: first,
-    lastname: rest.join(" ") || ".",
-  };
-};
-
-const toInputFromErp = (erpCustomer: ErpCustomer): ClientInput => {
-  const split = splitDisplayName(erpCustomer.displayName);
-
-  return {
-    source: "ERP",
-    externalId: erpCustomer.externalId,
-    externalSystem: "ERP",
-    code: erpCustomer.code || null,
-    name: erpCustomer.firstName || split.name,
-    lastname: erpCustomer.lastName || split.lastname,
-    whatsappPhone: erpCustomer.whatsapp,
-    email: erpCustomer.email || "",
-    rfc: erpCustomer.taxId || "",
-    companyName: erpCustomer.companyName || erpCustomer.displayName,
-    phone: erpCustomer.phone || "",
-  };
-};
-
 const hasMissingContactData = (erpCustomer: ErpCustomer): boolean => {
-  const hasPhone = Boolean(erpCustomer.whatsapp.trim() || erpCustomer.phone.trim());
-  const hasEmail = Boolean(erpCustomer.email.trim());
-  return !hasPhone || !hasEmail;
+  return !erpCustomerHasDeliveryChannel(erpCustomer);
 };
 
 export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModalProps) => {
@@ -125,7 +95,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const handleSelectErp = async (erpCustomer: ErpCustomer) => {
     try {
       setCreating(true);
-      const created = await addClient(toInputFromErp(erpCustomer));
+      const created = await addClient(erpCustomerToClientInput(erpCustomer));
       onSelect(created);
       onClose();
     } catch (error) {
@@ -139,7 +109,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const handleOpenContactsModal = async (erpCustomer: ErpCustomer) => {
     try {
       setCreating(true);
-      const upserted = await addClient(toInputFromErp(erpCustomer));
+      const upserted = await addClient(erpCustomerToClientInput(erpCustomer));
       setContactsCustomerId(upserted.id);
       setContactsCustomerLabel(upserted.companyName || `${upserted.name} ${upserted.lastname}`.trim() || erpCustomer.displayName);
       setContactsModalOpen(true);
