@@ -4,6 +4,7 @@ import { coreHttpClient } from "../../core/services/http/core-http.client";
 export interface SystemCapabilities {
   quoteInternalApprovalEnabled: boolean;
   requisitionInternalApprovalEnabled: boolean;
+  sellerExcelImportEnabled: boolean;
 }
 
 export class SystemCapabilitiesService {

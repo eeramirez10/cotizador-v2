@@ -635,6 +635,7 @@ export const QuoteDetailPage = () => {
   const currentUser = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
+  const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -835,7 +836,10 @@ export const QuoteDetailPage = () => {
   const isArchived = Boolean(quote.archivedAt);
   const canSubmitApproval = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
   const canApproveInternally = quoteInternalApprovalEnabled && !isArchived && ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
-  const canEditQuote = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
+  const canEditQuote = !isArchived
+    && currentRole === "seller"
+    && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status)
+    && (quote.captureMethod !== "EXCEL_IMPORT" || sellerExcelImportEnabled);
   const hasRevisionInProgress = Boolean(
     quote.nextRevision && ["DRAFT", "PENDING", "PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(quote.nextRevision.status)
   );
@@ -844,6 +848,7 @@ export const QuoteDetailPage = () => {
     !isArchived &&
     ["COTIZADA", "APROBADA", "RECHAZADA"].includes(quote.status) &&
     quote.orderStatus !== "GENERADO" &&
+    (quote.captureMethod !== "EXCEL_IMPORT" || sellerExcelImportEnabled) &&
     !quote.supersededByQuoteId &&
     !hasRevisionInProgress;
   const canSendQuote =
@@ -994,7 +999,8 @@ export const QuoteDetailPage = () => {
         setShowRevisionModal(false);
         setRevisionReason("");
         setRevisionComment("");
-        navigate(`/quotes/manual?quoteId=${revision.quoteId}`);
+        const editorPath = quote.captureMethod === "EXCEL_IMPORT" ? "/cotizador/importar-excel" : "/cotizador/sistema";
+        navigate(`${editorPath}?quoteId=${revision.quoteId}`);
       },
     });
   };
@@ -1395,9 +1401,9 @@ export const QuoteDetailPage = () => {
           )}
 
           <button
-            onClick={() => navigate(`/quotes/manual?quoteId=${quote.quoteId}`)}
+            onClick={() => navigate(`${quote.captureMethod === "EXCEL_IMPORT" ? "/cotizador/importar-excel" : "/cotizador/sistema"}?quoteId=${quote.quoteId}`)}
             disabled={isActionLocked || !canEditQuote}
-            title={!canEditQuote ? "No puedes editar una cotización cancelada." : undefined}
+            title={!canEditQuote ? (quote.captureMethod === "EXCEL_IMPORT" && !sellerExcelImportEnabled ? "La edición de cotizaciones Excel está deshabilitada." : "Esta cotización no se puede editar en su estado actual.") : undefined}
             className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <Pencil className="h-4 w-4" />

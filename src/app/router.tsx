@@ -7,7 +7,8 @@ import { DashboardPage } from "../pages/dashboard/dashboard.page";
 import { NotFoundPage } from "../pages/not-found.page";
 import { QuoteDetailPage } from "../pages/quotes/quote-detail.page";
 import { QuotesPage } from "../pages/quotes/quotes.page";
-import { ManualQuotePage } from "../pages/quotes/manual-quote.page";
+import { SystemQuotePage } from "../pages/quotes/system-quote.page";
+import { ExcelImportQuotePage } from "../pages/quotes/excel-import-quote.page";
 import { UserPage } from "../pages/user/user.page";
 import { ClientsPage } from "../pages/clients/clients.page";
 import { ProductsPage } from "../pages/products/products.page";
@@ -64,20 +65,33 @@ export const appRouter = createBrowserRouter([
         path: "quotes/new",
         loader: async () => {
           await requireRolesLoader(["seller"])();
-          return redirect("/cotizador");
+          return redirect("/cotizador/sistema");
         },
       },
       {
         path: "cotizador",
+        loader: async () => {
+          await requireRolesLoader(["seller"])();
+          return redirect("/cotizador/sistema");
+        },
+      },
+      {
+        path: "cotizador/sistema",
         loader: requireRolesLoader(["seller"]),
-        handle: { title: "Cotizador" },
-        Component: ManualQuotePage,
+        handle: { title: "Cotización en sistema" },
+        Component: SystemQuotePage,
+      },
+      {
+        path: "cotizador/importar-excel",
+        loader: requireRolesLoader(["seller"]),
+        handle: { title: "Importar cotización Excel" },
+        Component: ExcelImportQuotePage,
       },
       {
         path: "quotes/manual",
         loader: requireRolesLoader(["seller"]),
         handle: { title: "Cotización Manual" },
-        Component: ManualQuotePage,
+        Component: SystemQuotePage,
       },
       {
         path: "quotes/:quoteId",

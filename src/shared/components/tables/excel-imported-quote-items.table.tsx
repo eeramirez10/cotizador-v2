@@ -21,7 +21,7 @@ export const ExcelImportedQuoteItemsTable = ({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-slate-800">Partidas importadas desde Excel</p>
-          <p className="text-xs text-slate-500">Importes capturados por el vendedor, sin conversión por tipo de cambio.</p>
+          <p className="text-xs text-slate-500">Los importes se convierten desde la moneda original de cada partida a la moneda final.</p>
         </div>
         <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
           Moneda fija: {quoteCurrency}
@@ -35,6 +35,7 @@ export const ExcelImportedQuoteItemsTable = ({
                 "Descripción",
                 "UM",
                 "Cantidad",
+                "Moneda origen",
                 `Precio unitario ${quoteCurrency}`,
                 `Importe ${quoteCurrency}`,
                 "Tiempo entrega",
@@ -48,14 +49,14 @@ export const ExcelImportedQuoteItemsTable = ({
           <tbody className="divide-y divide-slate-100">
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                   No hay partidas importadas desde Excel.
                 </td>
               </tr>
             )}
             {items.map((item) => {
               const sourceUnitPrice = item.sourceUnitPrice ?? item.unitPrice;
-              const sourceSubtotal = sourceUnitPrice * item.qty;
+              const sourceCurrency = item.sourceCurrency ?? quoteCurrency;
 
               return (
                 <tr key={item.id} className="align-top hover:bg-amber-50/30">
@@ -64,8 +65,14 @@ export const ExcelImportedQuoteItemsTable = ({
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">{item.unit || "-"}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{item.qty}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-slate-700">{money(sourceUnitPrice, quoteCurrency)}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-emerald-700">{money(sourceSubtotal, quoteCurrency)}</td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">{sourceCurrency}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-slate-700">
+                    {money(item.unitPrice, quoteCurrency)}
+                    {sourceCurrency !== quoteCurrency && <p className="mt-1 text-[10px] font-normal text-slate-500">Original: {money(sourceUnitPrice, sourceCurrency)}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-emerald-700">{money(item.subtotal, quoteCurrency)}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{item.deliveryTime || "-"}</td>
                 </tr>
               );

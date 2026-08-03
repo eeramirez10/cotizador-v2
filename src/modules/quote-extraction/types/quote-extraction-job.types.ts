@@ -17,6 +17,7 @@ export interface ExtractedQuotedExcelItem {
   unidad: string | null;
   precio_vendedor: number | null;
   subtotal: number | null;
+  moneda: "MXN" | "USD" | null;
   tiempo_entrega: string | null;
   requiere_revision: boolean;
 }

@@ -53,7 +53,7 @@ export const QuotesPage = () => {
 
         {!isAdmin && (
           <NavLink
-            to="/cotizador"
+            to="/cotizador/sistema"
             className="rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:from-sky-600 hover:to-indigo-600"
           >
             Nuevo cotizador

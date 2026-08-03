@@ -27,7 +27,7 @@ export const NewQuotePage = () => {
   const processing = fileProcessing || textProcessing;
 
   const handleManualQuote = () => {
-    navigate("/quotes/manual");
+    navigate("/cotizador/sistema");
   };
 
   const handleUploadClick = async () => {
@@ -63,7 +63,7 @@ export const NewQuotePage = () => {
       setFileJobProgress(100);
       setFileJobStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);
 
-      navigate("/quotes/manual?source=file");
+      navigate("/cotizador/sistema?source=file");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo procesar el archivo.";
       setFileErrorMessage(message);
@@ -109,7 +109,7 @@ export const NewQuotePage = () => {
       setTextJobProgress(100);
       setTextJobStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);
       setInputText("");
-      navigate("/quotes/manual?source=text");
+      navigate("/cotizador/sistema?source=text");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo procesar el texto.";
       setTextErrorMessage(message);

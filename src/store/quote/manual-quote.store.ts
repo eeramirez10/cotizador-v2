@@ -312,9 +312,9 @@ const normalizeImportedItemsToQuoteCurrency = (
   item.importedFromExcel
     ? {
         ...item,
-        sourceCurrency: currency,
-        sourceUnitPrice: item.unitPrice,
-        sourceSubtotal: item.subtotal,
+        sourceCurrency: item.sourceCurrency ?? currency,
+        sourceUnitPrice: item.sourceUnitPrice ?? item.unitPrice,
+        sourceSubtotal: item.sourceSubtotal ?? item.subtotal,
       }
     : item
 ));
@@ -353,7 +353,12 @@ const computeItem = (
     && (item.sourceUnitPrice ?? 0) >= 0;
   const hasManualPrice = Number.isFinite(item.manualUnitPrice) && (item.manualUnitPrice ?? 0) >= 0;
   const unitPrice = hasExcelSourcePrice
-    ? round(item.sourceUnitPrice ?? 0)
+    ? round(convertQuoteAmount(
+        item.sourceUnitPrice ?? 0,
+        item.sourceCurrency ?? currency,
+        currency,
+        exchangeRate
+      ))
     : hasManualPrice
     ? round(Math.max(0, item.manualUnitPrice ?? 0))
     : sellerPriceCostBase > 0
@@ -367,7 +372,12 @@ const computeItem = (
   const hasCurrentProduct = Boolean(item.localProductId?.trim() || item.erpCode.trim() || item.ean.trim());
   const hasCurrentDescription = Boolean(item.erpDescription.trim());
   const requiresReview = item.importedFromExcel
-    ? !item.customerDescription.trim() || item.qty <= 0 || !item.unit.trim() || unitPrice <= 0 || !item.deliveryTime.trim()
+    ? item.sourceRequiresReview
+      || !item.customerDescription.trim()
+      || item.qty <= 0
+      || !item.unit.trim()
+      || unitPrice <= 0
+      || !item.deliveryTime.trim()
     : !hasCurrentProduct || !hasCurrentDescription || item.qty <= 0 || !item.unit.trim();
 
   return {
@@ -495,13 +505,13 @@ const createItemsFromQuotedExcel = (
         itemComment: "",
         ...emptyProcurementPrequote(),
         costUsd: 0,
-        costCurrency: currency,
+        costCurrency: item.moneda ?? currency,
         marginPct: 0,
         manualUnitPrice: undefined,
-        sourceCurrency: currency,
+        sourceCurrency: item.moneda ?? currency,
         sourceUnitPrice: item.precio_vendedor ?? undefined,
         sourceSubtotal: item.subtotal ?? undefined,
-        sourceRequiresReview: item.requiere_revision,
+        sourceRequiresReview: item.requiere_revision || !item.moneda,
         importedFromExcel: true,
       },
       currency,
@@ -567,9 +577,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         exchangeRate,
         exchangeRateDate: nowDateOnly(),
         exchangeRateSource: "manual",
-        items: state.draft.captureMethod === "EXCEL_IMPORT"
-          ? state.draft.items
-          : recalcItems(state.draft.items, state.draft.currency, exchangeRate),
+        items: recalcItems(state.draft.items, state.draft.currency, exchangeRate),
       },
     })),
 
@@ -979,9 +987,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         erpDescription: item.erpCode ? item.erpDescription : "",
         costCurrency: item.costCurrency || "USD",
         sourceRequiresReview: item.sourceRequiresReview || false,
-        sourceCurrency: item.importedFromExcel ? quote.currency : item.sourceCurrency,
-        sourceUnitPrice: item.importedFromExcel ? item.unitPrice : item.sourceUnitPrice,
-        sourceSubtotal: item.importedFromExcel ? item.subtotal : item.sourceSubtotal,
+        sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? quote.currency : item.sourceCurrency,
+        sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
+        sourceSubtotal: item.importedFromExcel ? item.sourceSubtotal ?? item.subtotal : item.sourceSubtotal,
         manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
       }));
 
@@ -1065,9 +1073,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       erpDescription: item.erpCode ? item.erpDescription : "",
       costCurrency: item.costCurrency || "USD",
       sourceRequiresReview: item.sourceRequiresReview || false,
-      sourceCurrency: item.importedFromExcel ? stored.currency : item.sourceCurrency,
-      sourceUnitPrice: item.importedFromExcel ? item.unitPrice : item.sourceUnitPrice,
-      sourceSubtotal: item.importedFromExcel ? item.subtotal : item.sourceSubtotal,
+      sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? stored.currency : item.sourceCurrency,
+      sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
+      sourceSubtotal: item.importedFromExcel ? item.sourceSubtotal ?? item.subtotal : item.sourceSubtotal,
       manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
     }));
 

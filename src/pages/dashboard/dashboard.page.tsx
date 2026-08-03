@@ -172,9 +172,9 @@ export const DashboardPage = () => {
   }
 
   const sellerActions = [
-    { to: "/cotizador", title: "Nueva cotización", description: "Captura una cotización manual", icon: <FilePlus2 className="h-5 w-5" />, primary: true },
-    { to: "/cotizador?open=file", title: "Subir archivo", description: "Extrae partidas con IA", icon: <FileUp className="h-5 w-5" /> },
-    { to: "/cotizador?open=text", title: "Pegar texto", description: "Procesa correo o WhatsApp", icon: <MessageSquareText className="h-5 w-5" /> },
+    { to: "/cotizador/sistema", title: "Nueva cotización", description: "Captura una cotización en el sistema", icon: <FilePlus2 className="h-5 w-5" />, primary: true },
+    { to: "/cotizador/sistema?open=file", title: "Subir archivo", description: "Extrae partidas con IA", icon: <FileUp className="h-5 w-5" /> },
+    { to: "/cotizador/sistema?open=text", title: "Pegar texto", description: "Procesa correo o WhatsApp", icon: <MessageSquareText className="h-5 w-5" /> },
     { to: "/quotes", title: "Mis cotizaciones", description: "Continúa borradores y pendientes", icon: <ClipboardList className="h-5 w-5" /> },
   ];
 

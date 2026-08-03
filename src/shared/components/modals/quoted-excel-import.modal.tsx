@@ -17,6 +17,18 @@ const updateNumber = (rawValue: string): number | null => {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
 };
 
+const needsReview = (item: ExtractedQuotedExcelItem): boolean =>
+  !item.description_normalizada.trim()
+  || item.cantidad === null
+  || item.cantidad <= 0
+  || !item.unidad?.trim()
+  || item.precio_vendedor === null
+  || item.precio_vendedor <= 0
+  || item.subtotal === null
+  || item.subtotal <= 0
+  || !item.moneda
+  || !item.tiempo_entrega?.trim();
+
 export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExcelImportModalProps) => {
   const currentItemsCount = useManualQuoteStore((state) => state.draft.items.length);
   const clientDraftId = useManualQuoteStore((state) => state.draft.id);
@@ -34,6 +46,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
   const [error, setError] = useState<string | null>(null);
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const importCurrency = lockedImportCurrency || selectedCurrency;
+  const hasPendingReview = items?.some((item) => item.requiere_revision || needsReview(item)) ?? false;
 
   if (!open) return null;
 
@@ -52,7 +65,12 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
 
   const patchItem = (index: number, patch: Partial<ExtractedQuotedExcelItem>) => {
     setExtractedItems((current) => current?.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, ...patch, requiere_revision: false } : item
+      itemIndex === index
+        ? (() => {
+            const updated = { ...item, ...patch };
+            return { ...updated, requiere_revision: needsReview(updated) };
+          })()
+        : item
     )) ?? null);
   };
 
@@ -85,7 +103,10 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         },
       });
 
-      const extracted = result.result?.items ?? [];
+      const extracted = (result.result?.items ?? []).map((item) => {
+        const normalized = { ...item, moneda: item.moneda ?? null };
+        return { ...normalized, requiere_revision: item.requiere_revision || needsReview(normalized) };
+      });
       if (extracted.length === 0) {
         throw new Error("No se encontraron partidas en el archivo Excel.");
       }
@@ -122,7 +143,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
               <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
               <h3 className="text-base font-semibold text-gray-800">Importar cotización elaborada en Excel</h3>
             </div>
-            <p className="mt-1 text-sm text-gray-500">Se extraerán únicamente descripción, unidad, cantidad, precio y tiempo de entrega.</p>
+            <p className="mt-1 text-sm text-gray-500">Se extraerán descripción, unidad, cantidad, moneda, precio y tiempo de entrega por partida.</p>
           </div>
           <button onClick={() => close()} disabled={processing} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50" aria-label="Cerrar">
             <X className="h-5 w-5" />
@@ -153,7 +174,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                 <p className="mt-2 text-xs text-amber-800">
                   {lockedImportCurrency
                     ? `Esta cotización ya fue importada en ${lockedImportCurrency}; las partidas adicionales usarán la misma moneda.`
-                    : "Los precios y totales se tomarán tal como están en el Excel. El tipo de cambio será únicamente informativo."}
+                    : "Elige la moneda final. Las partidas en otra moneda se convertirán usando el tipo de cambio de la cotización."}
                 </p>
               </div>
 
@@ -190,6 +211,12 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
           )}
 
           {items && (
+            <>
+            {hasPendingReview && (
+              <div className="mt-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                <AlertCircle className="h-4 w-4" /> Completa y revisa las partidas marcadas antes de cargarlas.
+              </div>
+            )}
             <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200">
               <table className="min-w-[980px] divide-y divide-gray-200 text-xs">
                 <thead className="bg-gray-50 text-left font-semibold uppercase text-gray-500">
@@ -197,6 +224,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                     <th className="px-3 py-2">Descripción</th>
                     <th className="px-3 py-2">UM</th>
                     <th className="px-3 py-2">Cantidad</th>
+                    <th className="px-3 py-2">Moneda</th>
                     <th className="px-3 py-2">Precio unitario</th>
                     <th className="px-3 py-2">Total</th>
                     <th className="px-3 py-2">Entrega</th>
@@ -211,6 +239,13 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                       </td>
                       <td className="px-3 py-2"><input value={item.unidad ?? ""} onChange={(event) => patchItem(index, { unidad: event.target.value.toUpperCase() })} className="w-20 rounded border border-gray-300 px-2 py-1" /></td>
                       <td className="px-3 py-2"><input type="number" min="0" value={item.cantidad ?? ""} onChange={(event) => patchItem(index, { cantidad: updateNumber(event.target.value) })} className="w-24 rounded border border-gray-300 px-2 py-1" /></td>
+                      <td className="px-3 py-2">
+                        <select value={item.moneda ?? ""} onChange={(event) => patchItem(index, { moneda: (event.target.value || null) as QuoteCurrency | null })} className="w-24 rounded border border-gray-300 px-2 py-1">
+                          <option value="">Revisar</option>
+                          <option value="MXN">MXN</option>
+                          <option value="USD">USD</option>
+                        </select>
+                      </td>
                       <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.precio_vendedor ?? ""} onChange={(event) => patchItem(index, { precio_vendedor: updateNumber(event.target.value) })} className="w-28 rounded border border-gray-300 px-2 py-1" /></td>
                       <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.subtotal ?? ""} onChange={(event) => patchItem(index, { subtotal: updateNumber(event.target.value) })} className="w-28 rounded border border-gray-300 px-2 py-1" /></td>
                       <td className="px-3 py-2"><input value={item.tiempo_entrega ?? ""} onChange={(event) => patchItem(index, { tiempo_entrega: event.target.value })} className="w-36 rounded border border-gray-300 px-2 py-1" /></td>
@@ -224,6 +259,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
 
@@ -236,11 +272,11 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
             </button>
           ) : currentItemsCount > 0 ? (
             <>
-              <button onClick={() => apply("replace")} className="rounded-md border border-amber-400 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">Sustituir partidas</button>
-              <button onClick={() => apply("append")} className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Agregar partidas</button>
+              <button onClick={() => apply("replace")} disabled={hasPendingReview} className="rounded-md border border-amber-400 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">Sustituir partidas</button>
+              <button onClick={() => apply("append")} disabled={hasPendingReview} className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">Agregar partidas</button>
             </>
           ) : (
-            <button onClick={() => apply("replace")} className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Cargar partidas</button>
+            <button onClick={() => apply("replace")} disabled={hasPendingReview} className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">Cargar partidas</button>
           )}
         </footer>
       </div>

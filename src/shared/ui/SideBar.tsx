@@ -1,5 +1,6 @@
-import { ArrowLeft, BarChart3, Building2, ContactRound, DollarSign, FileUp, LucideLayoutDashboard, Package, Power, Settings2, ShieldCheck, ShoppingCart, UserRound, Users } from "lucide-react";
-import { Form, NavLink } from "react-router";
+import { ArrowLeft, BarChart3, Building2, ChevronDown, ContactRound, DollarSign, FilePlus2, FileSpreadsheet, FileUp, LucideLayoutDashboard, Package, Power, Settings2, ShieldCheck, ShoppingCart, UserRound, Users } from "lucide-react";
+import { useState } from "react";
+import { Form, NavLink, useLocation } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
@@ -10,8 +11,13 @@ export const SideBar = () => {
 
   const user = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
+  const location = useLocation();
   const role = (user?.role || "").trim().toLowerCase();
   const canGenerateQuotes = role === "seller";
+  const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
+  const isQuotePath = location.pathname.startsWith("/cotizador");
+  const [quoteMenuState, setQuoteMenuState] = useState<{ path: string; open: boolean } | null>(null);
+  const quoteMenuOpen = quoteMenuState?.path === location.pathname ? quoteMenuState.open : isQuotePath;
   const canAccessUsers = role === "admin" || role === "manager";
   const canAccessCatalogs = canAccessUsers || role === "purchasing";
   const canAccessBranches = role === "admin";
@@ -27,8 +33,6 @@ export const SideBar = () => {
   const navClass = ({ isActive }: { isActive: boolean }) => `${navBase} ${isActive ? active : inactive}`;
 
   const nav = [
-    { name: "Dashboard", to: "/home", icon: <LucideLayoutDashboard /> },
-    ...(canGenerateQuotes ? [{ name: "Cotizador", to: "/cotizador", icon: <FileUp /> }] : []),
     ...(canAccessCommercial ? [{ name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> }] : []),
     ...(canApproveQuotes ? [{ name: "Aprobar cotizaciones", to: "/quote-approvals", icon: <ShieldCheck /> }] : []),
     ...(canAccessCommercial ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
@@ -68,6 +72,31 @@ export const SideBar = () => {
 
       <div className="flex h-[calc(100%-64px)] flex-col overflow-y-auto bg-white">
         <ul className="space-y-3 px-3 py-4">
+          <li>
+            <NavLink onClick={handleNavClick} className={navClass} to="/home">
+              <div className="h-5 w-5 shrink-0 text-gray-900"><LucideLayoutDashboard /></div>
+              Dashboard
+            </NavLink>
+          </li>
+          {canGenerateQuotes && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setQuoteMenuState({ path: location.pathname, open: !quoteMenuOpen })}
+                aria-expanded={quoteMenuOpen}
+                className={`${navBase} w-full justify-between ${isQuotePath ? active : inactive}`}
+              >
+                <span className="flex items-center gap-2"><span className="h-5 w-5 shrink-0 text-gray-900"><FileUp /></span>Cotizador</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${quoteMenuOpen ? "rotate-180" : ""}`} />
+              </button>
+              {quoteMenuOpen && (
+                <ul className="mt-2 space-y-1 border-l border-amber-300 pl-3 ml-4">
+                  <li><NavLink onClick={handleNavClick} to="/cotizador/sistema" className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${isActive ? "bg-amber-100 text-amber-900" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}><FilePlus2 className="h-4 w-4" />Cotización en sistema</NavLink></li>
+                  {sellerExcelImportEnabled && <li><NavLink onClick={handleNavClick} to="/cotizador/importar-excel" className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${isActive ? "bg-teal-100 text-teal-900" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}`}><FileSpreadsheet className="h-4 w-4" /><span className="flex-1">Importar formato</span><span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] uppercase text-slate-600">Temporal</span></NavLink></li>}
+                </ul>
+              )}
+            </li>
+          )}
           {nav.map((item) => (
             <li key={item.name}>
               <NavLink onClick={handleNavClick} className={navClass} to={item.to}>

@@ -120,7 +120,7 @@ const hasCompleteProcurementPrequote = (item: ManualQuoteItem): boolean => {
   );
 };
 
-export const ManualQuotePage = () => {
+export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM" | "EXCEL_IMPORT" }) => {
   const [openModal, setOpenModal] = useState(false);
   const [openClientModal, setOpenClientModal] = useState(false);
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
@@ -140,6 +140,8 @@ export const ManualQuotePage = () => {
   const [extractionModal, setExtractionModal] = useState<"file" | "text" | null>(null);
   const [openQuotedExcelImport, setOpenQuotedExcelImport] = useState(false);
   const [showCancelEditConfirmation, setShowCancelEditConfirmation] = useState(false);
+  const [showClearExcelConfirmation, setShowClearExcelConfirmation] = useState(false);
+  const [clearingExcelDraft, setClearingExcelDraft] = useState(false);
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
   const [openQuoteProviderModal, setOpenQuoteProviderModal] = useState(false);
   const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
@@ -161,7 +163,7 @@ export const ManualQuotePage = () => {
   useEffect(() => {
     if (openExtractionParam !== "file" && openExtractionParam !== "text") return;
     setExtractionModal(openExtractionParam);
-    navigate("/cotizador", { replace: true });
+    navigate("/cotizador/sistema", { replace: true });
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
@@ -199,6 +201,16 @@ export const ManualQuotePage = () => {
   const commercialCatalog = useQuoteCatalogs("COMMERCIAL_CONDITIONS");
   const deliveryCatalog = useQuoteCatalogs("DELIVERY_TIME");
   const hasActiveDraft = draft.items.length > 0 || draft.client !== null || draft.savedQuoteId !== null;
+  useEffect(() => {
+    if (quoteIdFromQuery) return;
+    if (hasActiveDraft && draft.captureMethod !== entryMode) {
+      const target = draft.captureMethod === "EXCEL_IMPORT" ? "/cotizador/importar-excel" : "/cotizador/sistema";
+      notifier.info("Tienes una cotización en proceso. Termínala o cancélala antes de cambiar de modalidad.");
+      navigate(target, { replace: true });
+      return;
+    }
+    if (entryMode === "EXCEL_IMPORT" && !hasActiveDraft) setOpenQuotedExcelImport(true);
+  }, [draft.captureMethod, entryMode, hasActiveDraft, navigate, quoteIdFromQuery]);
   const isProviderAttributionLocked = ["PENDIENTE_APROBACION", "COTIZADA", "APROBADA", "RECHAZADA", "CANCELADA", "REEMPLAZADA"].includes(draft.status);
   const attachmentItemLabels = useMemo(
     () => Object.fromEntries(draft.items.map((item, index) => [item.id, `#${index + 1} ${item.erpCode || "LOCAL"}`])),
@@ -302,6 +314,7 @@ export const ManualQuotePage = () => {
 
   const quoteCurrency = draft.currency;
   const isExcelImportedQuote = draft.captureMethod === "EXCEL_IMPORT";
+  const isExcelFlow = entryMode === "EXCEL_IMPORT" || isExcelImportedQuote;
   useEffect(() => {
     if (!isExcelImportedQuote) return;
     setExtractionModal(null);
@@ -621,6 +634,31 @@ export const ManualQuotePage = () => {
     }
   };
 
+  const handleClearExcelDraft = async () => {
+    if (clearingExcelDraft || draft.savedQuoteId) return;
+
+    try {
+      setClearingExcelDraft(true);
+      const attachmentsResult = await draftAttachments.refetch();
+      const attachments = attachmentsResult.data ?? draftAttachments.data ?? [];
+      await Promise.all(attachments.map((attachment) => AttachmentsService.delete(attachment.id)));
+
+      clearDraft();
+      setExchangeRateDraft(null);
+      setQtyDrafts({});
+      setPriceDrafts({});
+      setMarginDrafts({});
+      setShowClearExcelConfirmation(false);
+      setOpenQuotedExcelImport(true);
+      navigate("/cotizador/importar-excel", { replace: true });
+      notifier.success("Cotización limpiada. Ya puedes seleccionar otro archivo Excel.");
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo limpiar la cotización importada.");
+    } finally {
+      setClearingExcelDraft(false);
+    }
+  };
+
   const handleGenerateQuote = async () => {
     if (!validateBeforeSave({
       enforcePriceFloor: true,
@@ -653,9 +691,11 @@ export const ManualQuotePage = () => {
     <section aria-busy={saving}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">{draft.savedQuoteId ? "Editar cotización" : "Cotización manual"}</h2>
+          <h2 className="text-lg font-semibold text-gray-800">{draft.savedQuoteId ? "Editar cotización" : isExcelFlow ? "Importar cotización del vendedor" : "Cotización en sistema"}</h2>
           <p className="text-sm text-gray-500">
-            Completa partidas, ajusta margen y precio con tipo de cambio. Costos ERP base en USD.
+            {isExcelFlow
+              ? "Registra una cotización elaborada externamente. Sus partidas permanecerán bloqueadas y no se vincularán al ERP."
+              : "Completa partidas, ajusta margen y precio con tipo de cambio. Costos ERP base en USD."}
           </p>
         </div>
 
@@ -671,17 +711,31 @@ export const ManualQuotePage = () => {
             </button>
           )}
 
-          {!isExcelImportedQuote && (
-            <>
-              <button
-                onClick={() => setOpenQuotedExcelImport(true)}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Importar cotización Excel
-              </button>
+          {entryMode === "EXCEL_IMPORT" && (
+            <button
+              onClick={() => setOpenQuotedExcelImport(true)}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {draft.items.length > 0 ? "Importar otro Excel" : "Seleccionar archivo Excel"}
+            </button>
+          )}
 
+          {entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && hasActiveDraft && (
+            <button
+              type="button"
+              onClick={() => setShowClearExcelConfirmation(true)}
+              disabled={saving || clearingExcelDraft}
+              className="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {clearingExcelDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {clearingExcelDraft ? "Limpiando..." : "Limpiar cotización"}
+            </button>
+          )}
+
+          {entryMode === "SYSTEM" && !isExcelImportedQuote && (
+            <>
               <button
                 onClick={() => setExtractionModal("file")}
                 disabled={saving}
@@ -733,7 +787,7 @@ export const ManualQuotePage = () => {
             {savingAction === "quote" ? "Procesando..." : "Generar cotización"}
           </button>
 
-          {!isExcelImportedQuote && (
+          {entryMode === "SYSTEM" && !isExcelImportedQuote && (
             <button
               onClick={() => {
                 setErpTargetItemId(null);
@@ -749,7 +803,7 @@ export const ManualQuotePage = () => {
         </div>
       </div>
 
-      {draft.captureMethod === "EXCEL_IMPORT" && (
+      {isExcelFlow && (
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase text-teal-800">Cotización Excel para seguimiento</p>
@@ -904,7 +958,7 @@ export const ManualQuotePage = () => {
           />
           <p className="mt-1 text-xs text-gray-500">
             Fecha TC: {draft.exchangeRateDate}
-            {isExcelImportedQuote ? " · Solo informativo; no modifica los importes." : ""}
+            {isExcelImportedQuote ? " · Convierte las partidas cuya moneda sea diferente a la moneda final." : ""}
           </p>
         </div>
 
@@ -1006,7 +1060,7 @@ export const ManualQuotePage = () => {
         </div>
       )}
 
-      {draft.captureMethod === "EXCEL_IMPORT" ? (
+      {isExcelFlow ? (
         <ExcelImportedQuoteItemsTable
           items={draft.items}
           quoteCurrency={quoteCurrency}
@@ -1615,7 +1669,7 @@ export const ManualQuotePage = () => {
           setOpenClientModal(false);
         }}
       />
-      {extractionModal && !isExcelImportedQuote && (
+      {extractionModal && entryMode === "SYSTEM" && !isExcelImportedQuote && (
         <QuoteExtractionModal
           mode={extractionModal}
           open
@@ -1623,7 +1677,7 @@ export const ManualQuotePage = () => {
           onCompleted={(source) => {
             setExtractionModal(null);
             void draftAttachments.refetch();
-            navigate(`/cotizador?source=${source}`, { replace: true });
+            navigate(`/cotizador/sistema?source=${source}`, { replace: true });
           }}
         />
       )}
@@ -1698,6 +1752,35 @@ export const ManualQuotePage = () => {
                 className="rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
               >
                 Descartar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showClearExcelConfirmation && entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && (
+        <div className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-labelledby="clear-excel-title">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <h3 id="clear-excel-title" className="text-base font-semibold text-gray-800">Limpiar cotización importada</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Se eliminarán las partidas, los datos capturados y los archivos adjuntos de este borrador. Esta acción no se puede deshacer.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearExcelConfirmation(false)}
+                disabled={clearingExcelDraft}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Conservar cotización
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleClearExcelDraft()}
+                disabled={clearingExcelDraft}
+                className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {clearingExcelDraft && <Loader2 className="h-4 w-4 animate-spin" />}
+                {clearingExcelDraft ? "Limpiando..." : "Sí, limpiar"}
               </button>
             </div>
           </div>
