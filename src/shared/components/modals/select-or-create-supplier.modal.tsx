@@ -230,10 +230,9 @@ const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSuppli
     name: initialValues?.contactName || "",
     position: initialValues?.contactPosition || "",
     email: initialValues?.email || "",
-    phone: initialValues?.phone || "",
-    phoneKind: "UNKNOWN",
-    extension: "",
-    isWhatsApp: false,
+    landlinePhone: initialValues?.phone || "",
+    landlineExtension: "",
+    whatsAppPhone: "",
     label: "",
     isPrimary: true,
   });
@@ -244,10 +243,9 @@ interface SupplierContactPersonForm {
   name: string;
   position: string;
   email: string;
-  phone: string;
-  phoneKind: "LANDLINE" | "MOBILE" | "UNKNOWN";
-  extension: string;
-  isWhatsApp: boolean;
+  landlinePhone: string;
+  landlineExtension: string;
+  whatsAppPhone: string;
   label: string;
   isPrimary: boolean;
 }
@@ -260,10 +258,9 @@ const emptyContactPerson = (isPrimary: boolean): SupplierContactPersonForm => ({
   name: "",
   position: "",
   email: "",
-  phone: "",
-  phoneKind: "UNKNOWN",
-  extension: "",
-  isWhatsApp: false,
+  landlinePhone: "",
+  landlineExtension: "",
+  whatsAppPhone: "",
   label: "",
   isPrimary,
 });
@@ -284,10 +281,22 @@ const personToContacts = (person: SupplierContactPersonForm): SaveSupplierContac
   {
     contactKey: person.key,
     channel: "PHONE",
-    value: person.phone,
-    phoneKind: person.phoneKind,
-    extension: person.extension || null,
-    isWhatsApp: person.isWhatsApp,
+    value: person.landlinePhone,
+    phoneKind: "LANDLINE",
+    extension: person.landlineExtension || null,
+    isWhatsApp: false,
+    contactName: person.name || null,
+    contactPosition: person.position || null,
+    label: person.label || null,
+    isPrimary: person.isPrimary,
+  },
+  {
+    contactKey: person.key,
+    channel: "PHONE",
+    value: person.whatsAppPhone,
+    phoneKind: "MOBILE",
+    extension: null,
+    isWhatsApp: true,
     contactName: person.name || null,
     contactPosition: person.position || null,
     label: person.label || null,
@@ -299,8 +308,13 @@ export const groupSupplierContacts = (contacts: SaveSupplierContactInput[]): Sup
   const people: SupplierContactPersonForm[] = [];
   contacts.forEach((contact, index) => {
     const baseKey = contact.contactKey || `legacy-${index + 1}`;
+    const isWhatsAppPhone = contact.channel === "PHONE" && (contact.isWhatsApp);
     let person = people.find((candidate) => candidate.key === baseKey);
-    if (person && ((contact.channel === "EMAIL" && person.email) || (contact.channel === "PHONE" && person.phone))) {
+    if (person && (
+      (contact.channel === "EMAIL" && person.email)
+      || (contact.channel === "PHONE" && isWhatsAppPhone && person.whatsAppPhone)
+      || (contact.channel === "PHONE" && !isWhatsAppPhone && person.landlinePhone)
+    )) {
       person = undefined;
     }
     if (!person) {
@@ -320,10 +334,12 @@ export const groupSupplierContacts = (contacts: SaveSupplierContactInput[]): Sup
     person.isPrimary ||= Boolean(contact.isPrimary);
     if (contact.channel === "EMAIL") person.email = contact.value;
     if (contact.channel === "PHONE") {
-      person.phone = contact.value;
-      person.phoneKind = contact.phoneKind || "UNKNOWN";
-      person.extension = contact.extension || "";
-      person.isWhatsApp = contact.isWhatsApp;
+      if (isWhatsAppPhone) {
+        person.whatsAppPhone = contact.value;
+      } else {
+        person.landlinePhone = contact.value;
+        person.landlineExtension = contact.extension || "";
+      }
     }
   });
   return people.length > 0 ? people : [emptyContactPerson(true)];
@@ -346,7 +362,7 @@ export const SupplierContactsEditor = ({ contacts, onChange }: {
   return (
     <section className="mt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contactos del proveedor</p><p className="mt-1 text-[11px] text-slate-500">Registra a cada persona con su correo y teléfono. El primer contacto aparece por defecto.</p></div>
+        <div><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contactos del proveedor</p><p className="mt-1 text-[11px] text-slate-500">Registra correo, teléfono fijo y WhatsApp por separado. El primer contacto aparece por defecto.</p></div>
         <button type="button" onClick={() => commit([...people, emptyContactPerson(false)])} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100"><Plus className="h-3.5 w-3.5" />Agregar otro contacto</button>
       </div>
       <div className="mt-3 space-y-3">
@@ -360,14 +376,13 @@ export const SupplierContactsEditor = ({ contacts, onChange }: {
               <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Nombre<input value={person.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="Nombre de la persona" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
               <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Puesto<input value={person.position} onChange={(event) => update(index, { position: event.target.value })} placeholder="Compras, ventas, dirección..." className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
               <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Área o etiqueta<input value={person.label} onChange={(event) => update(index, { label: event.target.value })} placeholder="Oficina, cotizaciones..." className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
-              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-5">Correo<input type="email" value={person.email} onChange={(event) => update(index, { email: event.target.value })} placeholder="correo@proveedor.com" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
-              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-3">Teléfono<input type="tel" value={person.phone} onChange={(event) => update(index, { phone: event.target.value })} placeholder="+52 55 1234 5678" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
-              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-2">Tipo<select value={person.phoneKind} onChange={(event) => update(index, { phoneKind: event.target.value as SupplierContactPersonForm["phoneKind"] })} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-normal"><option value="UNKNOWN">Sin definir</option><option value="LANDLINE">Fijo / local</option><option value="MOBILE">Celular</option></select></label>
-              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-2">Extensión<input inputMode="numeric" value={person.extension} onChange={(event) => update(index, { extension: event.target.value.replace(/\D/g, "").slice(0, 10) })} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-4">Correo<input type="email" value={person.email} onChange={(event) => update(index, { email: event.target.value })} placeholder="correo@proveedor.com" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-3">Teléfono fijo<input type="tel" value={person.landlinePhone} onChange={(event) => update(index, { landlinePhone: event.target.value })} placeholder="+52 55 1234 5678" className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-slate-600 lg:col-span-2">Extensión<input inputMode="numeric" value={person.landlineExtension} onChange={(event) => update(index, { landlineExtension: event.target.value.replace(/\D/g, "").slice(0, 10) })} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-normal" /></label>
+              <label className="text-[11px] font-semibold text-emerald-700 lg:col-span-3">Teléfono WhatsApp<div className="relative mt-1"><MessageCircle className="absolute left-2.5 top-2 h-3.5 w-3.5 text-emerald-600" /><input type="tel" value={person.whatsAppPhone} onChange={(event) => update(index, { whatsAppPhone: event.target.value })} placeholder="+52 81 9876 5432" className="w-full rounded-md border border-emerald-300 bg-white py-2 pl-8 pr-2.5 text-xs font-normal text-slate-900" /></div></label>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-5 border-t border-slate-200 pt-3">
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700"><input type="radio" name="supplier-primary-contact" checked={person.isPrimary} onChange={() => setPrimary(index)} />Contacto principal</label>
-              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-emerald-700"><input type="checkbox" checked={person.isWhatsApp} disabled={!person.phone.trim()} onChange={(event) => update(index, { isWhatsApp: event.target.checked })} /><MessageCircle className="h-3.5 w-3.5" />Este teléfono tiene WhatsApp</label>
             </div>
           </div>
         ))}

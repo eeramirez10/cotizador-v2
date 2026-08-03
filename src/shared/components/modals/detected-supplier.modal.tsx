@@ -12,7 +12,6 @@ interface Props {
 }
 
 export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched, onCreate, onChooseOther, onClose }: Props) => {
-  const detectedContactKey = `detected-${canonicalContactKey(detected.contactName || detected.name || "supplier")}`;
   const initialValues: Partial<SaveSupplierInput> = {
     name: detected.name || "",
     taxId: detected.taxId || "",
@@ -21,14 +20,14 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
     email: detected.email || "",
     phone: detected.phone || "",
     contacts: detectedContacts(detected).map((contact, index, contacts) => ({
-      contactKey: detectedContactKey,
+      contactKey: `detected-${canonicalContactKey(`${contact.contactName || detected.contactName || detected.name || "supplier"}-${contact.contactPosition || contact.label || "contact"}`)}`,
       channel: contact.channel,
       value: contact.value,
       phoneKind: contact.phoneKind,
       extension: contact.extension,
       isWhatsApp: contact.isWhatsApp,
       contactName: contact.contactName,
-      contactPosition: null,
+      contactPosition: contact.contactPosition,
       label: contact.label,
       isPrimary: contacts.findIndex((entry) => entry.channel === contact.channel) === index,
     })),
@@ -58,7 +57,7 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
                       {contact.value}
                       {contact.isWhatsApp && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><MessageCircle className="h-3 w-3" />WhatsApp</span>}
                     </p>
-                    <p className="mt-1 text-[10px] text-slate-500">{[contact.contactName, contact.label, contact.phoneKind === "MOBILE" ? "Celular" : contact.phoneKind === "LANDLINE" ? "Teléfono fijo" : null, contact.extension ? `Ext. ${contact.extension}` : null].filter(Boolean).join(" · ") || "Sin etiqueta"}</p>
+                    <p className="mt-1 text-[10px] text-slate-500">{[contact.contactName, contact.contactPosition, contact.label, contact.phoneKind === "MOBILE" ? "Celular" : contact.phoneKind === "LANDLINE" ? "Teléfono fijo" : null, contact.extension ? `Ext. ${contact.extension}` : null].filter(Boolean).join(" · ") || "Sin etiqueta"}</p>
                   </div>
                 ))}
                 {detectedContacts(detected).length === 0 && <p className="text-xs text-slate-500">No se identificaron correos ni teléfonos.</p>}
@@ -112,7 +111,7 @@ export const findDetectedSupplierMatch = (detected: ExtractedSupplierData, suppl
 const detectedContacts = (detected: ExtractedSupplierData) => {
   if (detected.contacts?.length) return detected.contacts;
   return [
-    ...(detected.email ? [{ channel: "EMAIL" as const, value: detected.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: detected.contactName, label: null, confidence: detected.confidence, evidence: null }] : []),
-    ...(detected.phone ? [{ channel: "PHONE" as const, value: detected.phone, phoneKind: "UNKNOWN" as const, extension: null, isWhatsApp: false, contactName: detected.contactName, label: null, confidence: detected.confidence, evidence: null }] : []),
+    ...(detected.email ? [{ channel: "EMAIL" as const, value: detected.email, phoneKind: null, extension: null, isWhatsApp: false, contactName: detected.contactName, contactPosition: null, label: null, confidence: detected.confidence, evidence: null }] : []),
+    ...(detected.phone ? [{ channel: "PHONE" as const, value: detected.phone, phoneKind: "UNKNOWN" as const, extension: null, isWhatsApp: false, contactName: detected.contactName, contactPosition: null, label: null, confidence: detected.confidence, evidence: null }] : []),
   ];
 };
