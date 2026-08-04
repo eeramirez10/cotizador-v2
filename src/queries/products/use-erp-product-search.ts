@@ -11,7 +11,7 @@ export const useErpProductSearch = (
     queryKey: ["erp-products", scope, branchId, term],
     queryFn: ({ signal }) => scope === "branch"
       ? ErpProductsService.searchByTerm(term, branchId, signal)
-      : ErpProductsService.searchByTermInAllBranches(term, branchId, signal),
+      : ErpProductsService.searchAuthorized(term, signal),
     enabled,
     staleTime: 20_000,
     refetchOnWindowFocus: false,

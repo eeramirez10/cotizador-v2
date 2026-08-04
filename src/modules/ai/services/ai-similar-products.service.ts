@@ -21,6 +21,7 @@ interface ApiBranchProduct {
   currency?: unknown;
   averageCost?: unknown;
   lastCost?: unknown;
+  authorized?: unknown;
 }
 
 interface ApiSimilarItem {
@@ -57,6 +58,7 @@ interface ApiSimilarItem {
   resolved_branch_code?: unknown;
   branchProduct?: unknown;
   branch_product?: unknown;
+  authorized?: unknown;
   registeredInBranch?: unknown;
   stockAvailableInBranch?: unknown;
   stockAvailableInAnyBranch?: unknown;
@@ -136,10 +138,13 @@ const mapBranchProduct = (input: unknown): ErpProduct | null => {
     description,
     branchCode: asText(row.branchCode),
     branchName: asText(row.branchName),
+    warehouseCode: asText(row.branchCode),
+    warehouseName: asText(row.branchName),
     unit: normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ"),
     stock: Math.max(0, asNumber(row.stock)),
     costCurrency: toCurrency(row.currency),
     costUsd: resolveCost(row),
+    authorized: asBooleanOrNull(row.authorized) ?? undefined,
   };
 };
 
@@ -184,6 +189,7 @@ const mapItem = (input: unknown, responseSource: string): AiSimilarProductSugges
     codeTotalStock: asNumberOrNull(row.codeTotalStock),
     eanTotalStock: asNumberOrNull(row.eanTotalStock),
     branchProduct,
+    authorized: asBooleanOrNull(row.authorized),
   };
 };
 

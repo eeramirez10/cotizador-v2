@@ -89,6 +89,20 @@ export class ErpProductsService {
     return this.sortByUserBranch(items, normalizedUserBranch);
   }
 
+  static async searchAuthorized(term: string, signal?: AbortSignal): Promise<ErpProduct[]> {
+    const normalizedTerm = term.trim().toUpperCase();
+    if (!normalizedTerm) return [];
+
+    const key = this.getCacheKey(normalizedTerm, "AUTHORIZED");
+    const cached = this.searchCache.get(key);
+    if (cached && this.hasFreshCache(cached.loadedAt)) return cached.items;
+
+    const payload = await ErpProductsApi.searchAuthorized(normalizedTerm, signal);
+    const items = mapByEanPayload(payload);
+    this.searchCache.set(key, { loadedAt: Date.now(), items });
+    return items;
+  }
+
   private static sortByUserBranch(items: ErpProduct[], userBranchCode: string): ErpProduct[] {
     return [...items].sort((a, b) => {
       const aSameBranch = a.branchCode === userBranchCode ? 1 : 0;

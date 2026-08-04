@@ -98,7 +98,7 @@ export const AddErpProductsModal = ({
   }, [didInitializeOpenState, erpOnly, hasCustomerContext, initialMode, normalizedCustomerDescription, open]);
 
   const branchId = fixedErpBranchCode || resolveBranchCode(user?.erpBranchCode, user?.branch?.code, user?.branch?.name);
-  const enabledErpSearch = open && mode === "erp" && !!branchId && debouncedTerm.trim().length > 0;
+  const enabledErpSearch = open && mode === "erp" && (fixedErpBranchCode ? Boolean(branchId) : true) && debouncedTerm.trim().length > 0;
   const aiCooldownRemainingMs = Math.max(0, aiNextAllowedAtMs - nowMs);
   const aiSearchTerm = aiSearchOnEnter ? submittedAiTerm : debouncedTerm;
   const enabledAiSearch =
@@ -148,7 +148,12 @@ export const AddErpProductsModal = ({
   const erpData = erpSearch.data ?? [];
   const aiData = aiSearch.data ?? [];
   const sortedErpData = useMemo(
-    () => [...erpData].sort((a, b) => compareByEan(a.ean, b.ean) || compareByText(a.code, b.code)),
+    () => [...erpData].sort((a, b) =>
+      Number(b.authorized === true) - Number(a.authorized === true)
+      || compareByEan(a.ean, b.ean)
+      || compareByText(a.code, b.code)
+      || compareByText(a.warehouseCode || "", b.warehouseCode || "")
+    ),
     [erpData],
   );
   const sortedAiData = useMemo(
@@ -172,7 +177,7 @@ export const AddErpProductsModal = ({
     if (mode === "erp") {
       return fixedErpBranchCode
         ? `Búsqueda directa por EAN, código o descripción en ${getBranchNameByCode(fixedErpBranchCode)}.`
-        : "Búsqueda directa por EAN, código o descripción del ERP (todas las sucursales).";
+        : "Búsqueda directa en los almacenes ERP autorizados para tu usuario.";
     }
 
     return "Búsqueda semántica con IA usando descripción del cliente y similitud.";
@@ -208,31 +213,46 @@ export const AddErpProductsModal = ({
     try {
       if (suggestion.branchProduct) {
         const resolvedCode = suggestion.resolvedBranchCode || suggestion.branchProduct.branchCode || "";
-        if (branchId && resolvedCode && resolvedCode !== branchId) {
+        if (fixedErpBranchCode && branchId && resolvedCode && resolvedCode !== branchId) {
           notifier.warning(`No puedes agregar productos de ${getBranchNameByCode(resolvedCode)} en esta cotización.`);
+          return;
+        }
+        if (!fixedErpBranchCode && suggestion.authorized !== true && suggestion.branchProduct.authorized !== true) {
+          notifier.warning("No tienes acceso al almacén de este producto.");
           return;
         }
         onSelect(suggestion.branchProduct);
         return;
       }
 
-      if (!branchId) {
+      if (fixedErpBranchCode && !branchId) {
         notifier.warning("No se pudo validar ERP porque la sucursal no está definida.");
         return;
       }
 
-      const byEan = await ErpProductsService.searchByTerm(suggestion.ean, branchId);
+      const byEan = fixedErpBranchCode
+        ? await ErpProductsService.searchByTerm(suggestion.ean, branchId)
+        : await ErpProductsService.searchAuthorized(suggestion.ean);
       const normalizedSuggestionEan = suggestion.ean.trim().toUpperCase();
-      const exact = byEan.find((product) => product.ean.trim().toUpperCase() === normalizedSuggestionEan);
-      const resolved = exact ?? byEan[0] ?? null;
+      const exactMatches = byEan.filter((product) => product.ean.trim().toUpperCase() === normalizedSuggestionEan);
+      const resolved = fixedErpBranchCode
+        ? exactMatches[0] ?? byEan[0] ?? null
+        : exactMatches.find((product) => product.authorized === true)
+          ?? byEan.find((product) => product.authorized === true)
+          ?? null;
 
       if (!resolved) {
         notifier.warning(`No existe en ERP ${getBranchNameByCode(branchId)} para EAN ${suggestion.ean}.`);
         return;
       }
 
-      if (branchId && resolved.branchCode && resolved.branchCode !== branchId) {
+      if (fixedErpBranchCode && branchId && resolved.branchCode && resolved.branchCode !== branchId) {
         notifier.warning(`No puedes agregar productos de ${getBranchNameByCode(resolved.branchCode)} en esta cotización.`);
+        return;
+      }
+
+      if (!fixedErpBranchCode && resolved.authorized !== true) {
+        notifier.warning("No tienes acceso al almacén de este producto.");
         return;
       }
 
@@ -322,7 +342,7 @@ export const AddErpProductsModal = ({
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
-              {fixedErpBranchCode ? "Sucursal de consulta" : "Sucursal usuario"}: {branchId ? currentBranchName : "No definida"}
+              {fixedErpBranchCode ? "Sucursal de consulta" : "Acceso ERP"}: {fixedErpBranchCode ? (branchId ? currentBranchName : "No definida") : "Almacenes asignados"}
             </p>
             {mode === "ai" && (
               <div className="flex items-center gap-2">
@@ -397,7 +417,7 @@ export const AddErpProductsModal = ({
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Moneda</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Sucursal</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">{fixedErpBranchCode ? "Sucursal" : "Almacén"}</th>
                   {mode === "ai" && (
                     <>
                       <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Similitud</th>
@@ -455,7 +475,9 @@ export const AddErpProductsModal = ({
                   sortedErpData.map((product) => {
                     const productBranchCode = product.branchCode ?? "";
                     const productBranchName = product.branchName || getBranchNameByCode(productBranchCode);
-                    const isSelectableInUserBranch = !!branchId && productBranchCode === branchId;
+                    const isSelectableInUserBranch = fixedErpBranchCode
+                      ? !!branchId && productBranchCode === branchId
+                      : product.authorized !== false;
 
                     return (
                       <tr key={`${product.branchCode}-${product.code}-${product.ean}`} className="hover:bg-gray-50">
@@ -467,8 +489,12 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-xs text-gray-700">${product.costUsd.toFixed(2)}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.stock}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">
-                          <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-semibold text-blue-700">
-                            {productBranchName}
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                            isSelectableInUserBranch
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {product.warehouseCode ? `${product.warehouseCode} · ` : ""}{product.warehouseName || productBranchName}
                           </span>
                         </td>
                         <td className="px-4 py-2 text-right">
@@ -486,7 +512,7 @@ export const AddErpProductsModal = ({
                                 : `No puedes agregar productos de ${productBranchName}`
                             }
                           >
-                            {selectionDisabled ? "Vinculando..." : isSelectableInUserBranch ? actionLabel : "Otra sucursal"}
+                            {selectionDisabled ? "Vinculando..." : isSelectableInUserBranch ? actionLabel : "Sin acceso"}
                           </button>
                         </td>
                       </tr>
@@ -498,8 +524,10 @@ export const AddErpProductsModal = ({
                   sortedAiData.map((suggestion) => {
                     const product = suggestion.branchProduct;
                     const suggestionBranchCode = suggestion.resolvedBranchCode || product?.branchCode || "";
-                    const suggestionBranchName = getBranchNameByCode(suggestionBranchCode);
-                    const isSameUserBranch = !!branchId && !!suggestionBranchCode && suggestionBranchCode === branchId;
+                    const suggestionBranchName = product?.warehouseName || product?.branchName || getBranchNameByCode(suggestionBranchCode);
+                    const isSameUserBranch = fixedErpBranchCode
+                      ? !!branchId && !!suggestionBranchCode && suggestionBranchCode === branchId
+                      : suggestion.authorized === true || product?.authorized === true;
                     const rowKey = `${suggestion.ean}-${suggestion.branchProductCode}-${suggestion.productId}`;
                     const isVerifying = verifyingSuggestionKey === rowKey;
                     const canSelect = !isVerifying && (!product || isSameUserBranch);
@@ -570,7 +598,7 @@ export const AddErpProductsModal = ({
                                 : "cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-500"
                             }`}
                           >
-                            {isVerifying ? "Validando..." : product ? (isSameUserBranch ? actionLabel : "Otra sucursal") : "Validar ERP"}
+                            {isVerifying ? "Validando..." : product ? (isSameUserBranch ? actionLabel : "Sin acceso") : "Validar ERP"}
                           </button>
                         </td>
                       </tr>

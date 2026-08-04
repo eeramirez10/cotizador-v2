@@ -12,6 +12,9 @@ interface ErpByEanRow {
   cost?: number | string;
   averageCost?: number | string;
   lastCost?: number | string;
+  warehouseId?: string | number;
+  warehouseName?: string;
+  authorized?: boolean;
   [key: string]: unknown;
 }
 
@@ -46,8 +49,12 @@ const resolveCost = (row: ErpByEanRow): number => {
 };
 
 const asByEanRows = (payload: unknown): ErpByEanRow[] => {
-  if (!Array.isArray(payload)) return [];
-  return payload as ErpByEanRow[];
+  if (Array.isArray(payload)) return payload as ErpByEanRow[];
+  if (payload && typeof payload === "object") {
+    const items = (payload as { items?: unknown }).items;
+    if (Array.isArray(items)) return items as ErpByEanRow[];
+  }
+  return [];
 };
 
 interface MapByEanOptions {
@@ -68,6 +75,8 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
       const unit = normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ");
       const stock = Math.max(0, toNumber(row.stock));
       const costCurrency = toCurrency(row.currency);
+      const warehouseCode = toText(row.warehouseId) || options?.branchCode;
+      const warehouseName = toText(row.warehouseName) || options?.branchName;
 
       const mapped: ErpProduct = {
         code,
@@ -77,8 +86,11 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
         costUsd: resolveCost(row),
         costCurrency,
         stock,
-        branchCode: options?.branchCode,
-        branchName: options?.branchName,
+        branchCode: warehouseCode,
+        branchName: warehouseName,
+        warehouseCode,
+        warehouseName,
+        authorized: typeof row.authorized === "boolean" ? row.authorized : Boolean(toText(row.warehouseId)),
       };
       return mapped;
     })

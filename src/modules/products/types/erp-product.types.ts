@@ -10,4 +10,7 @@ export interface ErpProduct {
   stock: number;
   branchCode?: string;
   branchName?: string;
+  warehouseCode?: string;
+  warehouseName?: string;
+  authorized?: boolean;
 }

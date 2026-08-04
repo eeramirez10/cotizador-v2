@@ -19,6 +19,7 @@ import { QuoteCatalogsPage } from "../pages/quote-catalogs/quote-catalogs.page";
 import { PurchaseRequisitionsPage } from "../pages/procurement/purchase-requisitions.page";
 import { ProductProcurementPage } from "../pages/products/product-procurement.page";
 import { SuppliersPage } from "../pages/suppliers/suppliers.page";
+import { ErpWarehousesPage } from "../pages/erp-warehouses/erp-warehouses.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -125,6 +126,12 @@ export const appRouter = createBrowserRouter([
         loader: requireRolesLoader(["admin"]),
         handle: { title: "Sucursales" },
         Component: BranchesPage,
+      },
+      {
+        path: "erp-warehouses",
+        loader: requireRolesLoader(["admin"]),
+        handle: { title: "Almacenes ERP" },
+        Component: ErpWarehousesPage,
       },
       {
         path: "users",

@@ -1,5 +1,6 @@
-import { Building2, Loader2, Pencil, Power, Search, X } from "lucide-react";
+import { Building2, Loader2, Pencil, Power, Search, Warehouse, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import type { ManagedBranch } from "../../modules/branches/services/branches.service";
 import {
   useBranchesList,
@@ -259,6 +260,14 @@ export const BranchesPage = () => {
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex gap-1">
+                      <Link
+                        to={`/erp-warehouses?tab=branches&branchId=${encodeURIComponent(branch.id)}`}
+                        className="rounded-md border border-amber-300 p-1 text-amber-700 hover:bg-amber-50"
+                        aria-label="Configurar almacenes ERP"
+                        title="Configurar almacenes ERP"
+                      >
+                        <Warehouse className="h-4 w-4" />
+                      </Link>
                       <button
                         type="button"
                         onClick={() => openEditModal(branch)}

@@ -29,4 +29,5 @@ export interface AiSimilarProductSuggestion {
   codeTotalStock: number | null;
   eanTotalStock: number | null;
   branchProduct: ErpProduct | null;
+  authorized: boolean | null;
 }

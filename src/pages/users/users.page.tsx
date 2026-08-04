@@ -1,5 +1,6 @@
-import { Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, Warehouse, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import type { ErpUserSummary } from "../../modules/users/services/erp-users.service";
 import type { ManagedUser, UserRole } from "../../modules/users/services/users.service";
@@ -409,6 +410,16 @@ export const UsersPage = () => {
                   <td className="px-3 py-2 text-xs text-gray-700">{lastChangedBy[user.id] || "-"}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex gap-1">
+                      {isAdmin && user.role === "SELLER" && (
+                        <Link
+                          to={`/erp-warehouses?tab=users&userId=${encodeURIComponent(user.id)}`}
+                          className="rounded-md border border-amber-300 p-1 text-amber-700 hover:bg-amber-50"
+                          aria-label="Configurar almacenes ERP del vendedor"
+                          title="Configurar almacenes ERP"
+                        >
+                          <Warehouse className="h-4 w-4" />
+                        </Link>
+                      )}
                       <button
                         type="button"
                         onClick={() => openEditModal(user)}

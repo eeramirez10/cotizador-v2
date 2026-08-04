@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Building2, ChevronDown, ContactRound, DollarSign, FilePlus2, FileSpreadsheet, FileUp, LucideLayoutDashboard, Package, Power, Settings2, ShieldCheck, ShoppingCart, Truck, UserRound, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, ChevronDown, ContactRound, DollarSign, FilePlus2, FileSpreadsheet, FileUp, LucideLayoutDashboard, Package, Power, Settings2, ShieldCheck, ShoppingCart, Truck, UserRound, Users, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { Form, NavLink, useLocation } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
@@ -41,6 +41,7 @@ export const SideBar = () => {
     ...(canAccessProcurement ? [{ name: "Proveedores", to: "/suppliers", icon: <Truck /> }] : []),
     ...(canAccessProcurement ? [{ name: "Requisiciones", to: "/procurement", icon: <ShoppingCart /> }] : []),
     ...(canAccessBranches ? [{ name: "Sucursales", to: "/branches", icon: <Building2 /> }] : []),
+    ...(canAccessBranches ? [{ name: "Almacenes ERP", to: "/erp-warehouses", icon: <Warehouse /> }] : []),
     ...(canAccessUsers ? [{ name: "Usuarios", to: "/users", icon: <Users /> }] : []),
     ...(canAccessCatalogs ? [{ name: "Catálogos", to: "/quote-catalogs", icon: <Settings2 /> }] : []),
     { name: "Perfil", to: "/user", icon: <UserRound /> },
