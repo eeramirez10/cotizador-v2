@@ -5,6 +5,7 @@ import type {
   SupplierQuoteExtractionResult,
 } from "../../../modules/procurement/services/supplier-quote-extraction.service";
 import type { ManualQuoteItem } from "../../../store/quote/manual-quote.store";
+import { normalizeMeasurementUnit } from "../../../modules/products/constants/measurement-units";
 
 export interface SupplierQuoteBulkMapping {
   systemItemId: string;
@@ -41,7 +42,9 @@ const score = (systemItem: ManualQuoteItem, extractedItem: ExtractedSupplierQuot
   const union = new Set([...systemTokens, ...extractedTokens]).size || 1;
   let value = intersection / union;
   if (extractedItem.quantity !== null && Math.abs(extractedItem.quantity - systemItem.qty) < 0.0001) value += 0.18;
-  if (extractedItem.unit && canonical(extractedItem.unit) === canonical(systemItem.unit || systemItem.customerUnit)) value += 0.12;
+  const extractedUnit = normalizeMeasurementUnit(extractedItem.unit ?? extractedItem.unitOriginal);
+  const systemUnit = normalizeMeasurementUnit(systemItem.unit || systemItem.customerUnit);
+  if (extractedUnit && extractedUnit === systemUnit) value += 0.12;
   return value;
 };
 
@@ -138,7 +141,7 @@ export const SupplierQuoteBulkExtractionReviewModal = ({ result, items, onApply,
                         {duplicated && <p className="mt-1 text-[10px] font-semibold text-rose-700">Esta partida del proveedor está asignada más de una vez.</p>}
                         {extracted?.evidence && <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">Fuente: {extracted.evidence}</p>}
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-700">{extracted?.quantity ?? "—"} {extracted?.unit || ""}</td>
+                      <td className="px-3 py-3 text-right text-slate-700">{extracted?.quantity ?? "—"} {extracted?.unit || extracted?.unitOriginal || ""}</td>
                       <td className="px-3 py-3 text-right font-bold text-slate-900">{money(extracted?.netUnitPrice ?? null, result.header.currency)}</td>
                       <td className="px-3 py-3">{extracted ? <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 font-semibold ${extracted.requiresReview ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>{extracted.requiresReview ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}{Math.round(extracted.confidence * 100)}%</span> : "—"}</td>
                     </tr>

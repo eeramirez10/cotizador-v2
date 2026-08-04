@@ -1,5 +1,6 @@
 import axios from "axios";
 import { aiHttpClient } from "../../ai/services/http/ai-http.client";
+import type { MeasurementUnit } from "../../products/constants/measurement-units";
 
 export interface ExtractedSupplierQuoteItem {
   lineNumber: string | null;
@@ -7,7 +8,8 @@ export interface ExtractedSupplierQuoteItem {
   alternateCodes: string[];
   description: string;
   quantity: number | null;
-  unit: string | null;
+  unitOriginal?: string | null;
+  unit: MeasurementUnit | null;
   listUnitPrice: number | null;
   discountPct: number | null;
   netUnitPrice: number | null;

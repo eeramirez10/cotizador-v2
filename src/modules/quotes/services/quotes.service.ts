@@ -9,6 +9,7 @@ import type {
   QuoteSourceChannel,
 } from "../../../store/quote/manual-quote.store";
 import type { ErpProduct } from "../../products/types/erp-product.types";
+import { normalizeMeasurementUnit } from "../../products/constants/measurement-units";
 
 export type SavedQuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA" | "REEMPLAZADA";
 export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
@@ -500,7 +501,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       customerDescriptionEditedByUser: item.customerDescriptionEditedByUser,
       customerUnit: item.customerUnit || "",
       erpDescription: item.erpDescription || item.product?.description || "",
-      unit: item.unit || item.product?.unit || "",
+      unit: normalizeMeasurementUnit(item.unit || item.product?.unit) ?? (item.unit || item.product?.unit || ""),
       qty: item.qty,
       stock: item.stock ?? 0,
       deliveryTime: item.deliveryTime || "Por definir",
@@ -618,7 +619,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
     customerUnit: item.customerUnit?.trim() ? item.customerUnit.trim() : null,
     erpDescription: erpDescriptionForPayload,
-    unit: item.unit?.trim() ? item.unit.trim() : "PZA",
+    unit: normalizeMeasurementUnit(item.unit) ?? "N/A",
     qty: safeQty,
     stock: Number.isFinite(item.stock) ? item.stock : null,
     deliveryTime: item.deliveryTime?.trim() ? item.deliveryTime.trim() : null,

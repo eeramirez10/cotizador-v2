@@ -9,6 +9,7 @@ import type {
 } from "../../modules/quote-extraction/types/quote-extraction-job.types";
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
+import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
@@ -450,8 +451,9 @@ const createItemsFromExtraction = (
   currency: QuoteCurrency,
   exchangeRate: number
 ): ManualQuoteItem[] =>
-  items.map((item) =>
-    computeItem(
+  items.map((item) => {
+    const normalizedUnit = normalizeMeasurementUnit(item.unidad_normalizada ?? item.unidad_original);
+    return computeItem(
       {
         id: `itm_${Math.random().toString(36).slice(2, 10)}`,
         localProductId: null,
@@ -463,7 +465,7 @@ const createItemsFromExtraction = (
         customerDescriptionEditedByUser: null,
         customerUnit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
         erpDescription: "",
-        unit: (item.unidad_original || item.unidad_normalizada || "").toString().trim(),
+        unit: normalizedUnit ?? "",
         qty: item.cantidad ?? 0,
         stock: 0,
         deliveryTime: "Por definir",
@@ -473,20 +475,21 @@ const createItemsFromExtraction = (
         costCurrency: "USD",
         marginPct: 0,
         manualUnitPrice: undefined,
-        sourceRequiresReview: item.requiere_revision,
+        sourceRequiresReview: item.requiere_revision || normalizedUnit === null,
       },
       currency,
       exchangeRate
-    )
-  );
+    );
+  });
 
 const createItemsFromQuotedExcel = (
   items: ExtractedQuotedExcelItem[],
   currency: QuoteCurrency,
   exchangeRate: number
 ): ManualQuoteItem[] =>
-  items.map((item) =>
-    computeItem(
+  items.map((item) => {
+    const normalizedUnit = normalizeMeasurementUnit(item.unidad);
+    return computeItem(
       {
         id: `itm_${Math.random().toString(36).slice(2, 10)}`,
         localProductId: null,
@@ -498,7 +501,7 @@ const createItemsFromQuotedExcel = (
         customerDescriptionEditedByUser: null,
         customerUnit: (item.unidad || "").trim(),
         erpDescription: "",
-        unit: (item.unidad || "").trim(),
+        unit: normalizedUnit ?? (item.unidad || "").trim(),
         qty: item.cantidad ?? 0,
         stock: 0,
         deliveryTime: (item.tiempo_entrega || "").trim(),
@@ -516,8 +519,8 @@ const createItemsFromQuotedExcel = (
       },
       currency,
       exchangeRate
-    )
-  );
+    );
+  });
 
 const readStoredQuotes = (): StoredQuote[] => {
   if (typeof window === "undefined") return [];
@@ -955,6 +958,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => {
       const normalizedItems = quote.items.map((item) => ({
         ...item,
+        unit: normalizeMeasurementUnit(item.unit) ?? item.unit,
         localProductId: item.localProductId || null,
         ean: item.ean || item.erpCode,
         customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
@@ -1041,6 +1045,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 
     const normalizedItems = stored.items.map((item) => ({
       ...item,
+      unit: normalizeMeasurementUnit(item.unit) ?? item.unit,
       localProductId: item.localProductId || null,
       ean: item.ean || item.erpCode,
       customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),

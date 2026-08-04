@@ -1,7 +1,7 @@
 import { Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { MEASUREMENT_UNIT_OPTIONS, MEASUREMENT_UNIT_VALUES } from "../../modules/products/constants/measurement-units";
+import { MEASUREMENT_UNIT_OPTIONS, MEASUREMENT_UNIT_VALUES, normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 import { type LocalProduct, type UpdateLocalProductInput } from "../../modules/products/services/local-products.service";
 import { useDeleteLocalProduct, useLocalProducts, useUpdateLocalProduct } from "../../queries/products/use-local-products";
 import { notifier } from "../../shared/notifications/notifier";
@@ -46,7 +46,7 @@ const mapProductToForm = (product: LocalProduct): ProductFormState => ({
   code: product.code || "",
   ean: product.ean || "",
   description: product.description,
-  unit: product.unit,
+  unit: normalizeMeasurementUnit(product.unit) ?? product.unit,
   currency: product.currency,
   averageCost:
     typeof product.averageCost === "number" && Number.isFinite(product.averageCost)

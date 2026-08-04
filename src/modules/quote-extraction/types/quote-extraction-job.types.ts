@@ -1,4 +1,5 @@
 import type { ExtractedPartyData } from "../../ai/types/party-data.types";
+import type { MeasurementUnit } from "../../products/constants/measurement-units";
 
 export type ExtractionJobStatus = "queued" | "processing" | "completed" | "failed";
 
@@ -7,7 +8,7 @@ export interface ExtractedQuoteItem {
   description_normalizada: string;
   cantidad: number | null;
   unidad_original: string | null;
-  unidad_normalizada: string | null;
+  unidad_normalizada: MeasurementUnit | null;
   idioma: string;
   requiere_revision: boolean;
 }

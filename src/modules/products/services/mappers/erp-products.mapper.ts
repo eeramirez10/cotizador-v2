@@ -1,4 +1,5 @@
 import type { ErpProduct, ErpProductCurrency } from "../../types/erp-product.types";
+import { normalizeMeasurementUnit } from "../../constants/measurement-units";
 
 interface ErpByEanRow {
   id?: string | number;
@@ -63,7 +64,8 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
 
       if (!code || !ean || !description) return null;
 
-      const unit = toText(row.unit) || "PZA";
+      const rawUnit = toText(row.unit);
+      const unit = normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ");
       const stock = Math.max(0, toNumber(row.stock));
       const costCurrency = toCurrency(row.currency);
 

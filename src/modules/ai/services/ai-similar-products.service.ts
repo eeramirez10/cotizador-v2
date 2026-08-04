@@ -7,6 +7,7 @@ import type {
   AiSimilarProductSuggestion,
   AiSimilarProductsEngine,
 } from "../types/ai-similar-product.types";
+import { normalizeMeasurementUnit } from "../../products/constants/measurement-units";
 
 interface ApiBranchProduct {
   branchCode?: unknown;
@@ -128,13 +129,14 @@ const mapBranchProduct = (input: unknown): ErpProduct | null => {
 
   if (!code || !ean || !description) return null;
 
+  const rawUnit = asText(row.unit);
   return {
     code,
     ean,
     description,
     branchCode: asText(row.branchCode),
     branchName: asText(row.branchName),
-    unit: asText(row.unit) || "PZA",
+    unit: normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ"),
     stock: Math.max(0, asNumber(row.stock)),
     costCurrency: toCurrency(row.currency),
     costUsd: resolveCost(row),

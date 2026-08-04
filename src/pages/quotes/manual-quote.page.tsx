@@ -29,13 +29,12 @@ import { erpCustomerToClientInput } from "../../modules/clients/utils/erp-custom
 import { useClientsStore } from "../../store/clients/clients.store";
 import { DetectedCustomerModal } from "../../shared/components/modals/detected-customer.modal";
 import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
+import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 type OriginFilter = "ALL" | "UNLINKED";
 
-const LOCAL_PRODUCT_UNITS = new Set(["PZA", "M", "FT", "KG", "TR", "SE", "MPZ", "LB", "CM", "MM", "IN", "GAL", "L"]);
 const getLocalProductUnit = (value: string): string => {
-  const normalized = value.trim().toUpperCase();
-  return LOCAL_PRODUCT_UNITS.has(normalized) ? normalized : "PZA";
+  return normalizeMeasurementUnit(value) ?? "PZ";
 };
 
 const SOURCE_CHANNEL_OPTIONS: Array<{ value: QuoteSourceChannel; label: string }> = [
