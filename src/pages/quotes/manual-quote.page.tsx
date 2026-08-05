@@ -1,5 +1,5 @@
-import { FileCheck2, FileSpreadsheet, FileText, FileUp, Loader2, MessageSquare, MessageSquareText, Paperclip, Pencil, Plus, RotateCcw, ShoppingCart, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, FileCheck2, FileSpreadsheet, FileText, FileUp, LayoutList, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
@@ -32,6 +32,9 @@ import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-c
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 type OriginFilter = "ALL" | "UNLINKED";
+type QuoteEditorView = "classic" | "compact";
+
+const QUOTE_EDITOR_VIEW_STORAGE_KEY = "tuvansa.quote-editor-view";
 
 const getLocalProductUnit = (value: string): string => {
   return normalizeMeasurementUnit(value) ?? "PZ";
@@ -127,6 +130,10 @@ const hasCompleteProcurementPrequote = (item: ManualQuoteItem): boolean => {
 };
 
 export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM" | "EXCEL_IMPORT" }) => {
+  const [editorView, setEditorView] = useState<QuoteEditorView>(() => {
+    const storedView = window.localStorage.getItem(QUOTE_EDITOR_VIEW_STORAGE_KEY);
+    return storedView === "classic" ? "classic" : "compact";
+  });
   const [openModal, setOpenModal] = useState(false);
   const [openClientModal, setOpenClientModal] = useState(false);
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
@@ -158,6 +165,13 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [detectedCustomer, setDetectedCustomer] = useState<ExtractedPartyData | null>(null);
   const [customerOnboardingInitial, setCustomerOnboardingInitial] = useState<ClientInput | null>(null);
   const [syncingDetectedCustomer, setSyncingDetectedCustomer] = useState(false);
+  const [showCompactQuoteDetails, setShowCompactQuoteDetails] = useState(false);
+  const [showCompactClientDetails, setShowCompactClientDetails] = useState(false);
+  const [showCompactSecondaryColumns, setShowCompactSecondaryColumns] = useState(false);
+  const [openCompactActionsItemId, setOpenCompactActionsItemId] = useState<string | null>(null);
+  const [showCompactAddItemsMenu, setShowCompactAddItemsMenu] = useState(false);
+  const [showCompactHeaderMoreMenu, setShowCompactHeaderMoreMenu] = useState(false);
+  const compactHeaderActionsRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const quoteIdFromQuery = searchParams.get("quoteId");
@@ -168,6 +182,35 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const user = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
+
+  const isCompactView = editorView === "compact";
+
+  useEffect(() => {
+    window.localStorage.setItem(QUOTE_EDITOR_VIEW_STORAGE_KEY, editorView);
+    if (editorView === "classic") {
+      setOpenCompactActionsItemId(null);
+      setShowCompactAddItemsMenu(false);
+      setShowCompactHeaderMoreMenu(false);
+    }
+  }, [editorView]);
+
+  useEffect(() => {
+    if (!showCompactAddItemsMenu && !showCompactHeaderMoreMenu) return;
+
+    const closeMenus = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof PointerEvent && compactHeaderActionsRef.current?.contains(event.target as Node)) return;
+      setShowCompactAddItemsMenu(false);
+      setShowCompactHeaderMoreMenu(false);
+    };
+
+    document.addEventListener("pointerdown", closeMenus);
+    document.addEventListener("keydown", closeMenus);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenus);
+      document.removeEventListener("keydown", closeMenus);
+    };
+  }, [showCompactAddItemsMenu, showCompactHeaderMoreMenu]);
 
   useEffect(() => {
     if (openExtractionParam !== "file" && openExtractionParam !== "text") return;
@@ -390,7 +433,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
   const shouldShowCustomerColumns = showCustomerExtractionColumns && showCustomerOrderColumns;
-  const tableColSpan = shouldShowCustomerColumns ? 16 : 14;
+  const shouldShowSecondaryColumns = !isCompactView || showCompactSecondaryColumns;
+  const tableColSpan = 12 + (shouldShowSecondaryColumns ? 2 : 0) + (shouldShowCustomerColumns ? 2 : 0);
 
   const quoteOrigin = useMemo<"MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT">(() => {
     if (sourceParam === "file") return "FILE_UPLOAD";
@@ -699,6 +743,91 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
     }
   };
 
+  const renderItemActions = (item: ManualQuoteItem, compactDrawer = false) => (
+    <>
+      {requiresProcurementPrequote(item) && (
+        <button
+          type="button"
+          onClick={() => setProcurementItemId(item.id)}
+          className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
+          title="Capturar proveedor, costo y datos para la requisición"
+        >
+          <span className="inline-flex items-center gap-1">
+            <ShoppingCart className="h-3.5 w-3.5" />
+            {hasCompleteProcurementPrequote(item) ? "Datos compra" : "Completar compra"}
+          </span>
+        </button>
+      )}
+      {draft.captureMethod === "SYSTEM" && Boolean(item.customerDescriptionOriginal?.trim()) && (
+        <button
+          type="button"
+          onClick={() => openCustomerDescriptionModal(item.id)}
+          className="rounded-md border border-cyan-300 px-2 py-1 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50"
+          title="Editar la descripción que verá el cliente"
+        >
+          <span className="inline-flex items-center gap-1">
+            <Pencil className="h-3.5 w-3.5" />
+            Descripción cliente
+          </span>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => openCommentModal(item.id)}
+        className="rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+        title={item.itemComment?.trim() ? "Editar comentario" : "Agregar comentario"}
+      >
+        <span className="inline-flex items-center gap-1">
+          <MessageSquare className="h-3.5 w-3.5" />
+          {item.itemComment?.trim() ? "Comentario" : "Comentar"}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setErpTargetItemId(item.id);
+          setOpenModal(true);
+        }}
+        className="rounded-md border border-blue-300 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
+      >
+        {item.erpCode ? "Cambiar ERP" : "Buscar ERP"}
+      </button>
+      {!item.erpCode.trim() && !(item.localProductId || "").trim() && (
+        <button
+          type="button"
+          onClick={() => setLocalProductConfirmationItemId(item.id)}
+          disabled={Boolean(creatingLocalItems[item.id])}
+          className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {creatingLocalItems[item.id] ? (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Creando...
+            </span>
+          ) : (
+            "Agregar local"
+          )}
+        </button>
+      )}
+      {!item.erpCode.trim() && (item.localProductId || "").trim() && (
+        <span className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">
+          Local agregado
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => removeItem(item.id)}
+        className={compactDrawer
+          ? "inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
+          : "rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"}
+        aria-label="Eliminar partida"
+      >
+        <Trash2 className={compactDrawer ? "h-3.5 w-3.5" : "h-4 w-4"} />
+        {compactDrawer && "Eliminar"}
+      </button>
+    </>
+  );
+
   return (
     <section aria-busy={saving}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -709,9 +838,188 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               ? "Registra una cotización elaborada externamente. Sus partidas permanecerán bloqueadas y no se vincularán al ERP."
               : "Completa partidas, ajusta margen y precio con tipo de cambio. Costos ERP base en USD."}
           </p>
+          <div className="mt-2 inline-flex items-center rounded-lg border border-gray-200 bg-gray-100 p-0.5" aria-label="Diseño del cotizador">
+            <button
+              type="button"
+              onClick={() => setEditorView("classic")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${editorView === "classic" ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+              aria-pressed={editorView === "classic"}
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+              Vista clásica
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditorView("compact")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${editorView === "compact" ? "bg-gray-800 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+              aria-pressed={editorView === "compact"}
+            >
+              <Rows3 className="h-3.5 w-3.5" />
+              Vista compacta
+              <span className={`rounded px-1 py-0.5 text-[8px] uppercase ${editorView === "compact" ? "bg-amber-300 text-amber-950" : "bg-gray-200 text-gray-500"}`}>Nueva</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div ref={compactHeaderActionsRef} className="relative flex flex-wrap items-center justify-end gap-2">
+          {isCompactView ? (
+            <>
+              {entryMode === "SYSTEM" && !isExcelImportedQuote ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCompactAddItemsMenu((current) => !current);
+                      setShowCompactHeaderMoreMenu(false);
+                    }}
+                    disabled={saving}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-expanded={showCompactAddItemsMenu}
+                    aria-haspopup="menu"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Agregar partidas
+                    <ChevronDown className={`h-3 w-3 transition-transform ${showCompactAddItemsMenu ? "rotate-180" : ""}`} />
+                  </button>
+                  {showCompactAddItemsMenu && (
+                    <div className="absolute left-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white p-1.5 shadow-[0_16px_32px_-16px_rgba(15,23,42,0.35)]" role="menu">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCompactAddItemsMenu(false);
+                          setErpTargetItemId(null);
+                          setOpenModal(true);
+                        }}
+                        className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left hover:bg-blue-50"
+                        role="menuitem"
+                      >
+                        <Search className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                        <span><span className="block text-xs font-semibold text-gray-800">Buscar en ERP o IA</span><span className="block text-[10px] text-gray-500">Selecciona productos del catálogo.</span></span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCompactAddItemsMenu(false);
+                          setExtractionModal("file");
+                        }}
+                        className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left hover:bg-emerald-50"
+                        role="menuitem"
+                      >
+                        <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                        <span><span className="block text-xs font-semibold text-gray-800">Extraer desde archivo</span><span className="block text-[10px] text-gray-500">Procesa PDF o Excel con IA.</span></span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCompactAddItemsMenu(false);
+                          setExtractionModal("text");
+                        }}
+                        className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left hover:bg-indigo-50"
+                        role="menuitem"
+                      >
+                        <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                        <span><span className="block text-xs font-semibold text-gray-800">Pegar texto</span><span className="block text-[10px] text-gray-500">Agrega partidas desde correo o WhatsApp.</span></span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : entryMode === "EXCEL_IMPORT" ? (
+                <button
+                  type="button"
+                  onClick={() => setOpenQuotedExcelImport(true)}
+                  disabled={saving}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  {draft.items.length > 0 ? "Cambiar Excel" : "Importar Excel"}
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setShowAttachmentsModal(true)}
+                disabled={saving}
+                className="relative inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                title="Ver archivos adjuntos"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                Adjuntos
+                <span className="rounded-full bg-amber-200/70 px-1.5 py-0.5 text-[9px] leading-none">{draftAttachments.data?.length || 0}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { void handleSaveDraft(); }}
+                disabled={saving}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingAction === "draft" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                {savingAction === "draft" ? "Guardando..." : "Guardar"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { void handleGenerateQuote(); }}
+                disabled={saving}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 text-[11px] font-semibold text-white hover:from-emerald-600 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingAction === "quote" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+                {savingAction === "quote" ? "Procesando..." : "Generar cotización"}
+              </button>
+
+              {(Boolean(draft.savedQuoteId) || (entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && hasActiveDraft)) && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCompactHeaderMoreMenu((current) => !current);
+                      setShowCompactAddItemsMenu(false);
+                    }}
+                    disabled={saving || clearingExcelDraft}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Más acciones de la cotización"
+                    aria-expanded={showCompactHeaderMoreMenu}
+                    aria-haspopup="menu"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                  {showCompactHeaderMoreMenu && (
+                    <div className="absolute right-0 top-full z-30 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-1.5 shadow-[0_16px_32px_-16px_rgba(15,23,42,0.35)]" role="menu">
+                      {draft.savedQuoteId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCompactHeaderMoreMenu(false);
+                            setShowCancelEditConfirmation(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          role="menuitem"
+                        >
+                          <X className="h-4 w-4" />
+                          Cancelar edición
+                        </button>
+                      )}
+                      {entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && hasActiveDraft && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCompactHeaderMoreMenu(false);
+                            setShowClearExcelConfirmation(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          role="menuitem"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Limpiar cotización
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
           {draft.savedQuoteId && (
             <button
               onClick={() => setShowCancelEditConfirmation(true)}
@@ -812,6 +1120,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               Agregar productos
             </button>
           )}
+            </>
+          )}
         </div>
       </div>
 
@@ -834,33 +1144,52 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         </div>
       )}
 
-      <div className="mb-4 grid gap-3 rounded-md border shadow-sm border-gray-200 bg-white p-4 lg:grid-cols-6">
-        <div>
-          <p className="text-xs font-semibold uppercase text-gray-500">Vendedor</p>
-          <p className="text-sm text-gray-700">{draft.createdByName || `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim()}</p>
+      <div className={`grid border border-gray-200 bg-white ${isCompactView ? "mb-3 gap-x-2 gap-y-2 rounded-lg p-3 lg:grid-cols-[repeat(16,minmax(0,1fr))]" : "mb-4 gap-3 rounded-md p-4 shadow-sm lg:grid-cols-6"}`}>
+        {isCompactView && (
+          <div className="col-span-full mb-0.5 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
+            <div>
+              <p className="text-xs font-semibold text-gray-800">Datos de la cotización</p>
+              <p className="text-[10px] text-gray-500">Información principal y condiciones comerciales.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCompactQuoteDetails((current) => !current)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold ${!draft.commercialConditions.trim() ? "border-amber-300 bg-amber-50 text-amber-800" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+              aria-expanded={showCompactQuoteDetails}
+            >
+              {!draft.commercialConditions.trim() && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+              Condiciones y entrega
+              {showCompactQuoteDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+          </div>
+        )}
+
+        <div className={isCompactView ? "lg:col-span-2" : undefined}>
+          <p className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`}>Vendedor</p>
+          <p className={`${isCompactView ? "mt-1 flex h-7 items-center truncate rounded-md border border-gray-200 bg-gray-50 px-2 text-xs font-medium" : "text-sm"} text-gray-700`}>{draft.createdByName || `${user?.name ?? ""} ${user?.lastname ?? ""}`.trim()}</p>
         </div>
 
-        <div>
-          <p className="text-xs font-semibold uppercase text-gray-500">Sucursal</p>
-          <p className="text-sm text-gray-700">{draft.branchName || user?.branch?.name || "-"}</p>
+        <div className={isCompactView ? "lg:col-span-1" : undefined}>
+          <p className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`}>Sucursal</p>
+          <p className={`${isCompactView ? "mt-1 flex h-7 items-center truncate rounded-md border border-gray-200 bg-gray-50 px-2 text-xs font-medium" : "text-sm"} text-gray-700`}>{draft.branchName || user?.branch?.name || "-"}</p>
         </div>
 
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold uppercase text-gray-500">
+        <div className={isCompactView ? "lg:col-span-5" : "lg:col-span-2"}>
+          <div className={`flex items-center justify-between ${isCompactView ? "h-4" : ""}`}>
+            <label className={`${isCompactView ? "text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`}>
               Cliente
             </label>
             <button
               onClick={() => setOpenClientModal(true)}
-              className="rounded-md border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+              className={`rounded-md border border-blue-300 font-semibold text-blue-700 hover:bg-blue-50 ${isCompactView ? "h-4 px-1.5 text-[9px] leading-none" : "px-2 py-1 text-xs"}`}
             >
               Buscar / Crear cliente
             </button>
           </div>
 
-          <div className="mt-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700">
+          <div className={`mt-1 truncate rounded-md border border-gray-300 bg-white text-gray-700 ${isCompactView ? "min-h-7 px-2 py-1 text-xs" : "px-2 py-2 text-sm"}`}>
             {draft.client ? (
-              <p>
+              <p className="truncate">
                 {draft.client.name} {draft.client.lastname} - {draft.client.companyName || "Sin empresa"}
               </p>
             ) : (
@@ -869,19 +1198,19 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </div>
         </div>
 
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold uppercase text-gray-500">Proporcionada por</label>
+        <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-6" : "lg:col-span-2"}`}>
+          <div className={`flex items-center justify-between ${isCompactView ? "h-4" : ""}`}>
+            <label className={`${isCompactView ? "text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`}>Proporcionada por</label>
             {!isProviderAttributionLocked && (
               <button
                 onClick={() => setOpenQuoteProviderModal(true)}
-                className="rounded-md border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                className={`rounded-md border border-indigo-300 font-semibold text-indigo-700 hover:bg-indigo-50 ${isCompactView ? "h-4 px-1.5 text-[9px] leading-none" : "px-2 py-1 text-xs"}`}
               >
                 Buscar usuario
               </button>
             )}
           </div>
-          <div className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700">
+          <div className={`mt-1 flex items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-2 text-gray-700 ${isCompactView ? "min-h-7 py-1 text-xs" : "min-h-10 py-2 text-sm"}`}>
             {draft.providedBy ? (
               <span>{draft.providedBy.fullName} · {draft.providedBy.branchName}</span>
             ) : (
@@ -899,8 +1228,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           {isProviderAttributionLocked && <p className="mt-1 text-xs text-gray-500">Atribución bloqueada al quedar cotizada.</p>}
         </div>
 
-        <div>
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="currency">
+        <div className={isCompactView ? "lg:col-span-2" : undefined}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="currency">
             Moneda cotización
           </label>
           <select
@@ -908,7 +1237,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             value={draft.currency}
             disabled={isExcelImportedQuote}
             onChange={(event) => setCurrency(event.target.value as "MXN" | "USD")}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           >
             <option value="MXN">MXN</option>
             <option value="USD">USD</option>
@@ -918,15 +1247,15 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           )}
         </div>
 
-        <div>
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="sourceChannel">
+        <div className={isCompactView ? "lg:col-span-3" : undefined}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="sourceChannel">
             Origen de la cotización
           </label>
           <select
             id="sourceChannel"
             value={draft.sourceChannel}
             onChange={(event) => setSourceChannel(event.target.value as QuoteSourceChannel)}
-            className={`mt-1 w-full rounded-md border px-2 py-1.5 text-sm text-gray-700 ${
+            className={`mt-1 w-full rounded-md border px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"} ${
               draft.sourceChannel === "UNSPECIFIED"
                 ? "border-amber-300 bg-amber-50"
                 : "border-gray-300 bg-white"
@@ -940,8 +1269,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </select>
         </div>
 
-        <div>
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="exchangeRate">
+        <div className={isCompactView ? "lg:col-span-3" : undefined}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="exchangeRate">
             Tipo de cambio ({draft.exchangeRateSource})
           </label>
           <input
@@ -966,23 +1295,23 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                 event.currentTarget.blur();
               }
             }}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           />
-          <p className="mt-1 text-xs text-gray-500">
+          <p className={`mt-1 text-gray-500 ${isCompactView ? "text-[9px]" : "text-xs"}`}>
             Fecha TC: {draft.exchangeRateDate}
             {isExcelImportedQuote ? " · Convierte las partidas cuya moneda sea diferente a la moneda final." : ""}
           </p>
         </div>
 
-        <div>
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="validityDays">
+        <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-2" : ""}`}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="validityDays">
             Vigencia
           </label>
           <select
             id="validityDays"
             value={draft.validityDays}
             onChange={(event) => setValidityDays(Number(event.target.value))}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           >
             {validityDaysOptions.map((option) => (
               <option key={option.id} value={option.numericValue || 0}>
@@ -992,15 +1321,15 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </select>
         </div>
 
-        <div className="lg:col-span-2">
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="paymentTerms">
+        <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-3" : "lg:col-span-2"}`}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="paymentTerms">
             Condiciones de pago
           </label>
           <select
             id="paymentTerms"
             value={draft.paymentTerms}
             onChange={(event) => setPaymentTerms(event.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           >
             {paymentTermsOptions.map((option) => (
               <option key={option.id} value={option.value || option.label}>
@@ -1010,9 +1339,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </select>
         </div>
 
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="commercialConditions">
+        <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-3" : "lg:col-span-2"}`}>
+          <div className={`flex items-center justify-between gap-3 ${isCompactView ? "h-4" : ""}`}>
+            <label className={`${isCompactView ? "text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="commercialConditions">
               Condiciones comerciales *
             </label>
             {(draft.commercialConditions || "").trim() && (
@@ -1025,14 +1354,14 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               </button>
             )}
           </div>
-          <select id="commercialConditions" value={draft.commercialConditions} onChange={(event) => setCommercialConditions(event.target.value)} required className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+          <select id="commercialConditions" value={draft.commercialConditions} onChange={(event) => setCommercialConditions(event.target.value)} required className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}>
             <option value="">Selecciona condiciones...</option>
             {commercialConditionsOptions.map((option) => <option key={option.id} value={option.value || ""}>{option.label}</option>)}
           </select>
         </div>
 
-        <div className="lg:col-span-2">
-          <label className="text-xs font-semibold uppercase text-gray-500" htmlFor="deliveryPlace">
+        <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-2" : "lg:col-span-2"}`}>
+          <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="deliveryPlace">
             Lugar de entrega
           </label>
           <input
@@ -1041,15 +1370,30 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             value={draft.deliveryPlace}
             onChange={(event) => setDeliveryPlace(event.target.value)}
             placeholder="Ej. L.A.B. OBRA / CEDIS MONTERREY"
-            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           />
         </div>
       </div>
 
       {draft.client && (
-        <div className="mb-4 rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-700">
-          <p className="text-xs font-semibold uppercase text-gray-500">Datos del cliente</p>
-          <div className="mt-2 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        <div className={`border border-gray-200 bg-white text-gray-700 ${isCompactView ? "mb-3 rounded-lg px-3 py-2 text-xs" : "mb-4 rounded-md p-4 text-sm"}`}>
+          {isCompactView ? (
+            <button
+              type="button"
+              onClick={() => setShowCompactClientDetails((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+              aria-expanded={showCompactClientDetails}
+            >
+              <span>
+                <span className="font-semibold text-gray-800">Datos del cliente</span>
+                <span className="ml-2 text-[10px] text-gray-500">{draft.client.companyName || `${draft.client.name} ${draft.client.lastname}`}</span>
+              </span>
+              {showCompactClientDetails ? <ChevronUp className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
+            </button>
+          ) : (
+            <p className="text-xs font-semibold uppercase text-gray-500">Datos del cliente</p>
+          )}
+          <div className={`${isCompactView && !showCompactClientDetails ? "hidden" : "grid"} mt-2 gap-2 md:grid-cols-2 lg:grid-cols-3`}>
             <p>
               <span className="font-semibold">Nombre:</span> {draft.client.name} {draft.client.lastname}
             </p>
@@ -1076,6 +1420,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         <ExcelImportedQuoteItemsTable
           items={draft.items}
           quoteCurrency={quoteCurrency}
+          compact={isCompactView}
         />
       ) : (
         <>
@@ -1100,7 +1445,16 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             Sin vincular ({totalUnlinked})
           </button>
 	        </div>
-	        <div className="flex items-center gap-2">
+	        <div className="flex flex-wrap items-center gap-2">
+	          {isCompactView && (
+	            <button
+	              type="button"
+	              onClick={() => setShowCompactSecondaryColumns((current) => !current)}
+	              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-[10px] font-semibold text-gray-600 hover:bg-gray-50"
+	            >
+	              {showCompactSecondaryColumns ? "Ocultar columnas extra" : "Mostrar EAN y origen"}
+	            </button>
+	          )}
 	          {procurementItems.length > 0 && (
 	            <button
 	              type="button"
@@ -1128,13 +1482,13 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         </div>
       </div>
 
-      <div className="overflow-auto max-h-100 rounded-md border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50 sticky top-0">
+      <div className={`overflow-auto rounded-md border border-gray-200 bg-white shadow-sm ${isCompactView ? "max-h-[calc(100dvh-30rem)] min-h-72" : "max-h-100"}`}>
+        <table className={`min-w-full divide-y divide-gray-200 ${isCompactView ? "[&_td]:px-2 [&_td]:py-1.5 [&_td]:text-[11px] [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[9px]" : ""}`}>
+          <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_#e5e7eb]">
             <tr>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Origen</th>
+              {shouldShowSecondaryColumns && <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>}
+              {shouldShowSecondaryColumns && <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Origen</th>}
               {shouldShowCustomerColumns && (
                 <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción cliente</th>
               )}
@@ -1177,26 +1531,31 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               const marginVisual = getMarginVisual(item.marginPct);
 
               return (
-                <tr key={item.id}>
+                <Fragment key={item.id}>
+                <tr className={isCompactView ? "align-middle hover:bg-amber-50/30" : undefined}>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>
-                  <td className="px-4 py-2">
+                  {shouldShowSecondaryColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>}
+                  {shouldShowSecondaryColumns && <td className="px-4 py-2">
                     {item.erpCode ? (
                       <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700">ERP</span>
                     ) : item.localProductId ? (
-                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">LOCAL_TEMP</span>
+                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">{isCompactView ? "LOCAL" : "LOCAL_TEMP"}</span>
                     ) : item.importedFromExcel ? (
-                      <span className="rounded-full bg-teal-100 px-2 py-1 text-[9px] font-semibold text-teal-700">EXCEL · SIN VINCULAR</span>
+                      <span className="rounded-full bg-teal-100 px-2 py-1 text-[9px] font-semibold text-teal-700">{isCompactView ? "EXCEL" : "EXCEL · SIN VINCULAR"}</span>
                     ) : (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-semibold text-amber-700">EXTRACCIÓN · VINCULAR</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-semibold text-amber-700">{isCompactView ? "VINCULAR" : "EXTRACCIÓN · VINCULAR"}</span>
                     )}
-                  </td>
+                  </td>}
                   {shouldShowCustomerColumns && (
-                    <td className="px-4 py-2 text-xs text-gray-700">{item.customerDescription || "-"}</td>
+                    <td className={`px-4 py-2 text-xs text-gray-700 ${isCompactView ? "min-w-56 max-w-72" : ""}`} title={item.customerDescription || undefined}>
+                      <span className={isCompactView ? "line-clamp-2 leading-4" : undefined}>{item.customerDescription || "-"}</span>
+                    </td>
                   )}
                   {shouldShowCustomerColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.customerUnit || "-"}</td>}
-                  <td className="px-4 py-2 text-xs text-gray-700">
-                    {item.erpDescription || (item.importedFromExcel ? item.customerDescription : "-")}
+                  <td className={`px-4 py-2 text-xs text-gray-700 ${isCompactView ? "min-w-56 max-w-72" : ""}`} title={item.erpDescription || item.customerDescription || undefined}>
+                    <span className={isCompactView ? "line-clamp-2 leading-4" : undefined}>
+                      {item.erpDescription || (item.importedFromExcel ? item.customerDescription : "-")}
+                    </span>
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.stock}</td>
@@ -1206,7 +1565,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                         value={item.deliveryTime}
                         onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
                         placeholder="Ej. 3-5 días"
-                        className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
+                        className={`${isCompactView ? "h-7 w-24" : "w-32"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                       />
                     ) : item.stock > 0 ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
@@ -1216,7 +1575,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                       <select
                         value={item.deliveryTime}
                         onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
-                        className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
+                        className={`${isCompactView ? "h-7 w-24" : "w-28"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                       >
                         {!deliveryTimeOptions.some((option) => (option.value || option.label) === item.deliveryTime) && <option value={item.deliveryTime}>{item.deliveryTime}</option>}
                         {deliveryTimeOptions.map((option) => <option key={option.id} value={option.value || option.label}>{option.label}</option>)}
@@ -1241,7 +1600,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                           event.currentTarget.blur();
                         }
                       }}
-                      className="w-20 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
+                      className={`${isCompactView ? "h-7 w-16" : "w-20"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                     />
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-700">
@@ -1277,9 +1636,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                           event.currentTarget.blur();
                         }
                       }}
-                      className={`w-24 rounded-md border px-2 py-1 text-xs font-semibold ${marginVisual.inputClass}`}
+                      aria-label={`Margen: ${marginVisual.label}`}
+                      title={marginVisual.label}
+                      className={`${isCompactView ? "h-7 w-20" : "w-24"} rounded-md border px-2 py-1 text-xs font-semibold ${marginVisual.inputClass}`}
                     />
-                    <span className={` inline-block  text-[9px] font-semibold ${marginVisual.badgeClass}`}>
+                    <span className={`${isCompactView ? "sr-only" : "inline-block"} text-[9px] font-semibold ${marginVisual.badgeClass}`}>
                       {marginVisual.label}
                     </span>
 
@@ -1310,7 +1671,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                           event.currentTarget.blur();
                         }
                       }}
-                      className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700"
+                      className={`${isCompactView ? "h-7 w-24" : "w-28"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                     />
                   </td>
                   <td className="px-4 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quoteCurrency)}</td>
@@ -1322,83 +1683,59 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      {requiresProcurementPrequote(item) && (
-                        <button
-                          type="button"
-                          onClick={() => setProcurementItemId(item.id)}
-                          className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
-                          title="Capturar proveedor, costo y datos para la requisición"
-                        >
-                          <span className="inline-flex items-center gap-1">
+                    {isCompactView ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {requiresProcurementPrequote(item) ? (
+                          <button
+                            type="button"
+                            onClick={() => setProcurementItemId(item.id)}
+                            className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-800"}`}
+                            title={hasCompleteProcurementPrequote(item) ? "Ver datos de compra" : "Completar compra"}
+                            aria-label={hasCompleteProcurementPrequote(item) ? "Ver datos de compra" : "Completar compra"}
+                          >
                             <ShoppingCart className="h-3.5 w-3.5" />
-                            {hasCompleteProcurementPrequote(item) ? "Datos compra" : "Completar compra"}
-                          </span>
-                        </button>
-                      )}
-                      {draft.captureMethod === "SYSTEM" && Boolean(item.customerDescriptionOriginal?.trim()) && (
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setErpTargetItemId(item.id);
+                              setOpenModal(true);
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            title={item.erpCode ? "Cambiar producto ERP" : "Buscar producto ERP"}
+                            aria-label={item.erpCode ? "Cambiar producto ERP" : "Buscar producto ERP"}
+                          >
+                            <Search className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => openCustomerDescriptionModal(item.id)}
-                          className="rounded-md border border-cyan-300 px-2 py-1 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50"
-                          title="Editar la descripción que verá el cliente"
+                          onClick={() => setOpenCompactActionsItemId((current) => current === item.id ? null : item.id)}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${openCompactActionsItemId === item.id ? "border-gray-800 bg-gray-800 text-white" : "border-gray-300 bg-white text-gray-600 hover:bg-gray-100"}`}
+                          title="Más acciones"
+                          aria-label="Mostrar acciones de la partida"
+                          aria-expanded={openCompactActionsItemId === item.id}
                         >
-                          <span className="inline-flex items-center gap-1">
-                            <Pencil className="h-3.5 w-3.5" />
-                            Descripción cliente
-                          </span>
+                          <MoreHorizontal className="h-4 w-4" />
                         </button>
-                      )}
-                      <button
-                        onClick={() => openCommentModal(item.id)}
-                        className="rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
-                        title={item.itemComment?.trim() ? "Editar comentario" : "Agregar comentario"}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          {item.itemComment?.trim() ? "Comentario" : "Comentar"}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setErpTargetItemId(item.id);
-                          setOpenModal(true);
-                        }}
-                        className="rounded-md border border-blue-300 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
-                      >
-                        {item.erpCode ? "Cambiar ERP" : "Buscar ERP"}
-                      </button>
-                      {!item.erpCode.trim() && !(item.localProductId || "").trim() && (
-                        <button
-                          onClick={() => setLocalProductConfirmationItemId(item.id)}
-                          disabled={Boolean(creatingLocalItems[item.id])}
-                          className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {creatingLocalItems[item.id] ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Creando...
-                            </span>
-                          ) : (
-                            "Agregar local"
-                          )}
-                        </button>
-                      )}
-                      {!item.erpCode.trim() && (item.localProductId || "").trim() && (
-                        <span className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">
-                          Local agregado
-                        </span>
-                      )}
-                      <button
-                        onClick={() => removeItem(item.id)}
-                        className="rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"
-                        aria-label="Eliminar partida"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-2">{renderItemActions(item)}</div>
+                    )}
                   </td>
                 </tr>
+                {isCompactView && openCompactActionsItemId === item.id && (
+                  <tr className="bg-gray-50/90">
+                    <td colSpan={tableColSpan} className="border-t border-gray-100 px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className="mr-auto text-[10px] font-semibold uppercase tracking-wide text-gray-500">Acciones de la partida</span>
+                        {renderItemActions(item, true)}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -1407,26 +1744,56 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         </>
       )}
 
-      <div className="mt-4 flex justify-end">
-        <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-4">
-          <p className="mb-2 text-xs text-gray-500">Partidas con revisión requerida: {totalRequiresReview}</p>
+      {isCompactView ? (
+        <div className="mt-2 flex justify-end">
+          <aside className="w-full rounded-xl border border-gray-200 border-t-4 border-t-amber-400 bg-white shadow-sm sm:w-80" aria-label="Resumen de la cotización" aria-live="polite">
+            <div className="flex items-center justify-between gap-3 px-3 py-2">
+              <span>
+                <span className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500">Total de la cotización</span>
+                <span className="block text-lg font-bold tracking-tight text-gray-900">{formatCurrency(total(), quoteCurrency)}</span>
+              </span>
+              <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600">{draft.items.length} partidas</span>
+            </div>
+            <div className="border-t border-gray-100 px-3 pb-3 pt-2">
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>Subtotal</span>
+                <span className="font-semibold text-gray-800">{formatCurrency(subtotal(), quoteCurrency)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-xs text-gray-600">
+                <span>IVA ({(draft.taxRate * 100).toFixed(0)}%)</span>
+                <span className="font-semibold text-gray-800">{formatCurrency(tax(), quoteCurrency)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2 text-[10px]">
+                <span className={totalRequiresReview > 0 ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>
+                  {totalRequiresReview > 0 ? `${totalRequiresReview} pendientes de revisión` : "Sin revisiones pendientes"}
+                </span>
+                <span className="font-bold text-gray-700">{quoteCurrency}</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : (
+        <div className="mt-4 flex justify-end">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-4">
+            <p className="mb-2 text-xs text-gray-500">Partidas con revisión requerida: {totalRequiresReview}</p>
 
-          <div className="flex items-center justify-between text-sm text-gray-700">
-            <span>Subtotal</span>
-            <span>{formatCurrency(subtotal(), quoteCurrency)}</span>
-          </div>
+            <div className="flex items-center justify-between text-sm text-gray-700">
+              <span>Subtotal</span>
+              <span>{formatCurrency(subtotal(), quoteCurrency)}</span>
+            </div>
 
-          <div className="mt-1 flex items-center justify-between text-sm text-gray-700">
-            <span>IVA ({(draft.taxRate * 100).toFixed(0)}%)</span>
-            <span>{formatCurrency(tax(), quoteCurrency)}</span>
-          </div>
+            <div className="mt-1 flex items-center justify-between text-sm text-gray-700">
+              <span>IVA ({(draft.taxRate * 100).toFixed(0)}%)</span>
+              <span>{formatCurrency(tax(), quoteCurrency)}</span>
+            </div>
 
-          <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-base font-semibold text-gray-900">
-            <span>Total</span>
-            <span>{formatCurrency(total(), quoteCurrency)}</span>
+            <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-base font-semibold text-gray-900">
+              <span>Total</span>
+              <span>{formatCurrency(total(), quoteCurrency)}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {showAttachmentsModal && (
         <AttachmentsModal
