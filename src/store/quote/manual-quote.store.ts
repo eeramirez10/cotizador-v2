@@ -9,6 +9,7 @@ import type {
 } from "../../modules/quote-extraction/types/quote-extraction-job.types";
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
+import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../modules/quotes/utils/quote-fulfillment";
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 export type QuoteCurrency = "MXN" | "USD";
@@ -69,6 +70,12 @@ export interface ManualQuoteItem {
   costUsd: number;
   costCurrency: ErpProductCurrency;
   marginPct: number;
+  effectiveCostAtQuote?: number;
+  isBelowEffectiveCost?: boolean;
+  effectiveCostVariance?: number;
+  effectiveCostVariancePct?: number;
+  effectiveCostEvaluatedAt?: string | null;
+  effectiveCostEvaluatedByUser?: { id: string; firstName: string; lastName: string } | null;
   manualUnitPrice?: number;
   sourceCurrency?: QuoteCurrency;
   sourceUnitPrice?: number;
@@ -320,20 +327,21 @@ const normalizeImportedItemsToQuoteCurrency = (
     : item
 ));
 
-const getCostInQuoteCurrency = (
-  item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">,
-  currency: QuoteCurrency,
-  exchangeRate: number
-): number => {
-  return convertQuoteAmount(item.costUsd, item.costCurrency, currency, exchangeRate);
-};
-
 const getSellerPriceCostBase = (
-  item: Pick<ManualQuoteItem, "costUsd" | "costCurrency">,
+  item: Pick<ManualQuoteItem,
+    | "costUsd"
+    | "costCurrency"
+    | "qty"
+    | "stock"
+    | "erpCode"
+    | "sellerQuotedUnitCost"
+    | "sellerQuotedCurrency"
+    | "sellerQuotedExchangeRate"
+  >,
   currency: QuoteCurrency,
   exchangeRate: number
 ): number => {
-  return getCostInQuoteCurrency(item, currency, exchangeRate);
+  return getQuoteItemEffectiveCost(item, currency, exchangeRate).effectiveUnitCost;
 };
 
 const calculateMarginPct = (unitPrice: number, sellerPriceCostBase: number): number => {
@@ -408,7 +416,11 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         unit: item.unit,
         qty: item.qty,
         stock: item.stock,
-        deliveryTime: item.stock > 0 && !item.importedFromExcel ? "Inmediato" : item.deliveryTime,
+        deliveryTime: !item.importedFromExcel
+          && Boolean(item.erpCode.trim())
+          && !getQuoteItemFulfillment(item).requiresPurchase
+          ? "Inmediato"
+          : item.deliveryTime,
         itemComment: item.itemComment,
         sellerSupplierId: item.sellerSupplierId,
         sellerSupplierName: item.sellerSupplierName,
@@ -865,7 +877,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         items: recalcItems(
           state.draft.items.map((item) => {
             if (item.id !== itemId) return item;
-            if (item.stock > 0) return { ...item, deliveryTime: "Inmediato" };
+            if (item.erpCode.trim() && !getQuoteItemFulfillment(item).requiresPurchase) {
+              return { ...item, deliveryTime: "Inmediato" };
+            }
             return { ...item, deliveryTime };
           }),
           state.draft.currency,
@@ -899,12 +913,30 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     })),
 
   setItemProcurementPrequote: (itemId, data) =>
-    set((state) => ({
-      draft: {
-        ...state.draft,
-        items: state.draft.items.map((item) => (item.id === itemId ? { ...item, ...data } : item)),
-      },
-    })),
+    set((state) => {
+      const items = state.draft.items.map((item) => {
+        if (item.id !== itemId) return item;
+        const updatedItem = { ...item, ...data };
+        const effectiveCost = getQuoteItemEffectiveCost(
+          updatedItem,
+          state.draft.currency,
+          state.draft.exchangeRate
+        ).effectiveUnitCost;
+
+        return {
+          ...updatedItem,
+          manualUnitPrice: round(effectiveCost),
+          marginPct: 0,
+        };
+      });
+
+      return {
+        draft: {
+          ...state.draft,
+          items: recalcItems(items, state.draft.currency, state.draft.exchangeRate),
+        },
+      };
+    }),
 
   setItemsProcurementPrequote: (updates) =>
     set((state) => {
@@ -913,28 +945,17 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         const data = updatesByItemId.get(item.id);
         if (!data) return item;
 
-        const quotedCost = data.sellerQuotedUnitCost;
-        if (quotedCost === null || !Number.isFinite(quotedCost)) {
-          return { ...item, ...data };
-        }
-
-        const unitPrice = round(convertQuoteAmount(
-          quotedCost,
-          data.sellerQuotedCurrency,
-          state.draft.currency,
-          data.sellerQuotedExchangeRate || state.draft.exchangeRate
-        ));
-        const sellerPriceCostBase = getSellerPriceCostBase(
-          item,
+        const updatedItem = { ...item, ...data };
+        const unitPrice = round(getQuoteItemEffectiveCost(
+          updatedItem,
           state.draft.currency,
           state.draft.exchangeRate
-        );
+        ).effectiveUnitCost);
 
         return {
-          ...item,
-          ...data,
+          ...updatedItem,
           manualUnitPrice: unitPrice,
-          marginPct: calculateMarginPct(unitPrice, sellerPriceCostBase),
+          marginPct: 0,
         };
       });
 

@@ -19,7 +19,8 @@ import { useDraftAttachments } from "../../queries/attachments/use-attachments";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manual-quote.store";
-import { convertQuoteAmount, getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
+import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
+import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../modules/quotes/utils/quote-fulfillment";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 import type { ExtractedPartyData } from "../../modules/ai/types/party-data.types";
@@ -75,12 +76,11 @@ const getDisplayCostCurrency = (
 };
 
 const getSellerPriceCostBase = (
-  cost: number,
-  productCurrency: "MXN" | "USD",
+  item: ManualQuoteItem,
   quoteCurrency: "MXN" | "USD",
   exchangeRate: number
 ): number => {
-  return convertQuoteAmount(cost, productCurrency, quoteCurrency, exchangeRate);
+  return getQuoteItemEffectiveCost(item, quoteCurrency, exchangeRate).effectiveUnitCost;
 };
 
 const getMarginVisual = (marginPct: number) => {
@@ -108,8 +108,7 @@ const getMarginVisual = (marginPct: number) => {
 };
 
 const isErpWithoutEnoughStock = (item: ManualQuoteItem): boolean => {
-  const hasErpCode = Boolean(item.erpCode.trim());
-  return hasErpCode && Math.max(0, item.stock) < item.qty;
+  return Boolean(item.erpCode.trim()) && getQuoteItemFulfillment(item).requiresPurchase;
 };
 
 const requiresProcurementPrequote = (item: ManualQuoteItem): boolean => {
@@ -652,19 +651,18 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
     if (options?.enforcePriceFloor) {
       const belowCostItems = draft.items.filter((item) => {
-        if (isErpWithoutEnoughStock(item)) return false;
-
         const baseCost = Number(
-          getSellerPriceCostBase(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate).toFixed(2)
+          getSellerPriceCostBase(item, draft.currency, draft.exchangeRate).toFixed(2)
         );
         return item.unitPrice + 0.000001 < baseCost;
       });
 
       if (belowCostItems.length > 0) {
-        notifier.error(
-          `No puedes generar la cotización. Hay ${belowCostItems.length} partida(s) con precio vendedor menor al costo ERP.`
+        notifier.warning(
+          quoteInternalApprovalEnabled
+            ? `Hay ${belowCostItems.length} partida(s) por debajo del costo efectivo. La cotización se enviará a aprobación interna con esta marca.`
+            : `Hay ${belowCostItems.length} partida(s) por debajo del costo efectivo. La cotización se generará y conservará esta marca para auditoría.`
         );
-        return false;
       }
     }
 
@@ -1529,6 +1527,13 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
             {visibleItems.map((item) => {
               const marginVisual = getMarginVisual(item.marginPct);
+              const fulfillment = getQuoteItemFulfillment(item);
+              const effectiveCost = getQuoteItemEffectiveCost(item, draft.currency, draft.exchangeRate);
+              const isBelowEffectiveCost = effectiveCost.effectiveUnitCost > 0
+                && item.unitPrice + 0.0001 < effectiveCost.effectiveUnitCost;
+              const effectiveCostVariancePct = effectiveCost.effectiveUnitCost > 0
+                ? ((item.unitPrice - effectiveCost.effectiveUnitCost) / effectiveCost.effectiveUnitCost) * 100
+                : 0;
 
               return (
                 <Fragment key={item.id}>
@@ -1558,7 +1563,14 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                     </span>
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-700">{item.unit || "-"}</td>
-                  <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.stock}</td>
+                  <td className="px-4 py-2 text-xs font-semibold text-gray-700">
+                    <span>{fulfillment.stockQty}</span>
+                    {fulfillment.requiresPurchase && (
+                      <span className="mt-0.5 block whitespace-nowrap text-[9px] font-bold text-amber-700">
+                        Faltan {fulfillment.purchaseQty}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2">
                     {item.importedFromExcel ? (
                       <input
@@ -1567,19 +1579,26 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                         placeholder="Ej. 3-5 días"
                         className={`${isCompactView ? "h-7 w-24" : "w-32"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                       />
-                    ) : item.stock > 0 ? (
+                    ) : item.erpCode.trim() && !fulfillment.requiresPurchase ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
                         Inmediato
                       </span>
                     ) : (
-                      <select
-                        value={item.deliveryTime}
-                        onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
-                        className={`${isCompactView ? "h-7 w-24" : "w-28"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
-                      >
-                        {!deliveryTimeOptions.some((option) => (option.value || option.label) === item.deliveryTime) && <option value={item.deliveryTime}>{item.deliveryTime}</option>}
-                        {deliveryTimeOptions.map((option) => <option key={option.id} value={option.value || option.label}>{option.label}</option>)}
-                      </select>
+                      <div>
+                        {fulfillment.availableQty > 0 && (
+                          <p className="mb-1 whitespace-nowrap text-[9px] font-semibold text-emerald-700">
+                            {fulfillment.availableQty} inmediato
+                          </p>
+                        )}
+                        <select
+                          value={item.deliveryTime}
+                          onChange={(event) => setItemDeliveryTime(item.id, event.target.value)}
+                          className={`${isCompactView ? "h-7 w-24" : "w-28"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
+                        >
+                          {!deliveryTimeOptions.some((option) => (option.value || option.label) === item.deliveryTime) && <option value={item.deliveryTime}>{item.deliveryTime}</option>}
+                          {deliveryTimeOptions.map((option) => <option key={option.id} value={option.value || option.label}>{option.label}</option>)}
+                        </select>
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-2">
@@ -1604,9 +1623,16 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                     />
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-700">
-                    {formatCurrency(
-                      getDisplayCost(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate),
-                      getDisplayCostCurrency(item.costCurrency, draft.currency)
+                    <span className="whitespace-nowrap">
+                      {formatCurrency(
+                        getDisplayCost(item.costUsd, item.costCurrency, draft.currency, draft.exchangeRate),
+                        getDisplayCostCurrency(item.costCurrency, draft.currency)
+                      )}
+                    </span>
+                    {fulfillment.requiresPurchase && effectiveCost.supplierUnitCost !== null && (
+                      <span className="mt-0.5 block whitespace-nowrap text-[9px] font-semibold text-slate-500">
+                        Efectivo: {formatCurrency(effectiveCost.effectiveUnitCost, draft.currency)}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-2">
@@ -1643,6 +1669,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                     <span className={`${isCompactView ? "sr-only" : "inline-block"} text-[9px] font-semibold ${marginVisual.badgeClass}`}>
                       {marginVisual.label}
                     </span>
+                    {isBelowEffectiveCost && (
+                      <span className="mt-0.5 block whitespace-nowrap text-[9px] font-bold text-rose-700">
+                        Debajo costo efectivo ({effectiveCostVariancePct.toFixed(2)}%)
+                      </span>
+                    )}
 
 
                   </td>
@@ -1940,20 +1971,12 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           key={procurementItem.id}
           item={procurementItem}
           clientDraftId={draft.id}
+          quoteCurrency={draft.currency}
           quoteExchangeRate={draft.exchangeRate}
           onClose={() => setProcurementItemId(null)}
           onSave={(data) => {
             if (!procurementItemId) return;
             setItemProcurementPrequote(procurementItemId, data);
-            if (data.sellerQuotedUnitCost !== null) {
-              const sellerPrice = convertQuoteAmount(
-                data.sellerQuotedUnitCost,
-                data.sellerQuotedCurrency,
-                draft.currency,
-                data.sellerQuotedExchangeRate || draft.exchangeRate
-              );
-              setItemUnitPrice(procurementItemId, sellerPrice);
-            }
             setProcurementItemId(null);
             void draftAttachments.refetch();
             notifier.success("Datos de compra guardados y precio vendedor actualizado.");

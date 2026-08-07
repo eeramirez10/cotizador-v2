@@ -6,6 +6,8 @@ import { useDraftAttachments } from "../../../queries/attachments/use-attachment
 import { usePurchaseRequisitionMutations, useSuppliers } from "../../../queries/procurement/use-purchase-requisitions";
 import { useQuoteCatalogs } from "../../../queries/quote-catalogs/use-quote-catalogs";
 import type { ManualQuoteItem, ProcurementPrequoteData } from "../../../store/quote/manual-quote.store";
+import type { QuoteCurrency } from "../../../store/quote/manual-quote.store";
+import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../../modules/quotes/utils/quote-fulfillment";
 import { AttachmentsPanel } from "../attachments/attachments-panel";
 import { PdfAttachmentViewerModal } from "../attachments/pdf-attachment-viewer.modal";
 import { notifier } from "../../notifications/notifier";
@@ -16,6 +18,7 @@ import { TechnicalDataEditor, type TechnicalDataFormValue } from "../procurement
 interface SellerProcurementPrequoteModalProps {
   item: ManualQuoteItem;
   clientDraftId: string;
+  quoteCurrency: QuoteCurrency;
   quoteExchangeRate: number;
   onClose: () => void;
   onSave: (data: ProcurementPrequoteData) => void;
@@ -23,7 +26,7 @@ interface SellerProcurementPrequoteModalProps {
 
 const optionValue = (option: { value: string | null; label: string }) => option.value || option.label;
 
-export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteExchangeRate, onClose, onSave }: SellerProcurementPrequoteModalProps) => {
+export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurrency, quoteExchangeRate, onClose, onSave }: SellerProcurementPrequoteModalProps) => {
   const suppliers = useSuppliers(true);
   const supplierMutations = usePurchaseRequisitionMutations();
   const brands = useQuoteCatalogs("PURCHASE_BRAND");
@@ -31,11 +34,12 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteExcha
   const deliveryStates = useQuoteCatalogs("DELIVERY_STATE");
   const deliveryTimes = useQuoteCatalogs("DELIVERY_TIME");
   const attachments = useDraftAttachments(clientDraftId);
+  const fulfillment = getQuoteItemFulfillment(item);
   const [offer, setOffer] = useState<SupplierOfferFormValue>({
     supplierId: item.sellerSupplierId || "",
     supplierName: item.sellerSupplierName || "",
     supplierDescription: item.sellerSupplierDescription || item.erpDescription || item.customerDescription || "",
-    qty: String(item.qty),
+    qty: String(fulfillment.purchaseQty),
     unitCost: item.sellerQuotedUnitCost === null ? "" : String(item.sellerQuotedUnitCost),
     currency: item.sellerQuotedCurrency || "MXN",
     exchangeRate: String(item.sellerQuotedExchangeRate || quoteExchangeRate),
@@ -83,6 +87,15 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteExcha
     technicalFamily,
     technicalAttributes,
   };
+  const quotedUnitCost = Number(offer.unitCost);
+  const effectiveCostPreview = Number.isFinite(quotedUnitCost) && quotedUnitCost > 0
+    ? getQuoteItemEffectiveCost({
+        ...item,
+        sellerQuotedUnitCost: quotedUnitCost,
+        sellerQuotedCurrency: offer.currency,
+        sellerQuotedExchangeRate: Number(offer.exchangeRate) || quoteExchangeRate,
+      }, quoteCurrency, quoteExchangeRate)
+    : null;
   const updateTechnicalValue = (value: TechnicalDataFormValue) => {
     setStandard(value.standard);
     setDiameter(value.diameter);
@@ -225,6 +238,16 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteExcha
           />
         }
       >
+        <section className="mb-5 grid grid-cols-3 gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+          <div><p className="text-[10px] font-bold uppercase text-slate-500">Solicitado</p><p className="mt-1 text-sm font-bold text-slate-900">{fulfillment.requestedQty} {item.unit}</p></div>
+          <div><p className="text-[10px] font-bold uppercase text-slate-500">Stock ERP</p><p className="mt-1 text-sm font-bold text-emerald-700">{fulfillment.stockQty} {item.unit}</p></div>
+          <div><p className="text-[10px] font-bold uppercase text-slate-500">Por comprar</p><p className="mt-1 text-sm font-bold text-amber-700">{fulfillment.purchaseQty} {item.unit}</p></div>
+          {effectiveCostPreview && (
+            <p className="col-span-3 border-t border-amber-200 pt-2 text-xs text-slate-600">
+              Costo efectivo ponderado: <strong>{quoteCurrency} {effectiveCostPreview.effectiveUnitCost.toFixed(2)}</strong> por {item.unit}
+            </p>
+          )}
+        </section>
         <section className="mt-6 border-t border-slate-200 pt-5">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Datos de la requisición</p>
           <label className={labelClass}>Estado de entrega *

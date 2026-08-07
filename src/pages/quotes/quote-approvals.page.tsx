@@ -111,19 +111,31 @@ export const QuoteApprovalsPage = () => {
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Vendedor</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Sucursal</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Fecha</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Costo efectivo</th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {isFetching && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">Cargando cotizaciones...</td></tr>}
-            {!isFetching && quotes.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">No hay cotizaciones pendientes de aprobación.</td></tr>}
-            {!isFetching && quotes.map((quote) => (
-              <tr key={quote.id} className="hover:bg-gray-50">
+            {isFetching && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Cargando cotizaciones...</td></tr>}
+            {!isFetching && quotes.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">No hay cotizaciones pendientes de aprobación.</td></tr>}
+            {!isFetching && quotes.map((quote) => {
+              const belowEffectiveCostCount = quote.items.filter((item) => item.isBelowEffectiveCost).length;
+              return (
+              <tr key={quote.id} className={belowEffectiveCostCount > 0 ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-gray-50"}>
                 <td className="px-4 py-3 text-sm font-semibold text-gray-900">{quote.quoteNumber}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{quote.customer?.company || `${quote.customer?.name || ""} ${quote.customer?.lastname || ""}`.trim() || "-"}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{quote.createdByName || "-"}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{quote.branch || "-"}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{quote.createdAt}</td>
+                <td className="px-4 py-3 text-sm">
+                  {belowEffectiveCostCount > 0 ? (
+                    <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
+                      {belowEffectiveCostCount} debajo del costo
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-emerald-700">Sin alertas</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
                     <NavLink to={`/quotes/${quote.id}`} className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"><Eye className="h-3.5 w-3.5" /> Revisar</NavLink>
@@ -132,7 +144,8 @@ export const QuoteApprovalsPage = () => {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

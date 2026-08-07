@@ -25,6 +25,7 @@ export interface QuoteLine {
   currency: Currency;
   price: number | null;
   margin: number | null;
+  isBelowEffectiveCost?: boolean;
   source?: QuoteLineSource;
 }
 

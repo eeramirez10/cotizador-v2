@@ -150,6 +150,12 @@ export interface SavedQuoteRecord {
     costUsd: number;
     costCurrency?: "MXN" | "USD";
     marginPct: number;
+    effectiveCostAtQuote?: number;
+    isBelowEffectiveCost?: boolean;
+    effectiveCostVariance?: number;
+    effectiveCostVariancePct?: number;
+    effectiveCostEvaluatedAt?: string | null;
+    effectiveCostEvaluatedByUser?: { id: string; firstName: string; lastName: string } | null;
     sourceCurrency?: "MXN" | "USD" | null;
     sourceUnitPrice?: number | null;
     sourceSubtotal?: number | null;
@@ -202,6 +208,12 @@ interface ApiQuoteItem {
   cost: number;
   costCurrency: "MXN" | "USD";
   marginPct: number;
+  effectiveCostAtQuote: number;
+  isBelowEffectiveCost: boolean;
+  effectiveCostVariance: number;
+  effectiveCostVariancePct: number;
+  effectiveCostEvaluatedAt: string | null;
+  effectiveCostEvaluatedByUser: { id: string; firstName: string; lastName: string } | null;
   sourceCurrency: "MXN" | "USD" | null;
   sourceUnitPrice: number | null;
   sourceSubtotal: number | null;
@@ -529,6 +541,12 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       costUsd: item.cost,
       costCurrency: item.costCurrency,
       marginPct: item.marginPct,
+      effectiveCostAtQuote: item.effectiveCostAtQuote,
+      isBelowEffectiveCost: item.isBelowEffectiveCost,
+      effectiveCostVariance: item.effectiveCostVariance,
+      effectiveCostVariancePct: item.effectiveCostVariancePct,
+      effectiveCostEvaluatedAt: item.effectiveCostEvaluatedAt,
+      effectiveCostEvaluatedByUser: item.effectiveCostEvaluatedByUser,
       sourceCurrency: item.sourceCurrency,
       sourceUnitPrice: item.sourceUnitPrice,
       sourceSubtotal: item.sourceSubtotal,
@@ -580,6 +598,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
     currency: item.costCurrency || "USD",
     price: item.unitPrice,
     margin: item.marginPct,
+    isBelowEffectiveCost: item.isBelowEffectiveCost,
   })),
   createdAt: formatDate(stored.createdAt),
   updatedAt: stored.updatedAt,

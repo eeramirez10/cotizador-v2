@@ -1917,9 +1917,28 @@ export const QuoteDetailPage = () => {
                     getDisplayCost(item.costUsd, item.costCurrency || "USD", quote.currency, quote.exchangeRate),
                     getDisplayCostCurrency(item.costCurrency || "USD", quote.currency)
                   )}
+                  {(item.effectiveCostAtQuote ?? 0) > 0 && (
+                    <p className="mt-1 whitespace-nowrap text-[10px] font-semibold text-slate-500">
+                      Efectivo: {formatCurrency(item.effectiveCostAtQuote ?? 0, quote.currency)}
+                    </p>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-700">{item.marginPct}%</td>
-                <td className="px-3 py-2 text-xs text-gray-700">{formatCurrency(item.unitPrice, quote.currency)}</td>
+                <td className="px-3 py-2 text-xs text-gray-700">
+                  <span>{item.marginPct}%</span>
+                  {item.isBelowEffectiveCost && (
+                    <div className="mt-1 max-w-48 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold leading-4 text-rose-700">
+                      <p>Debajo del costo efectivo ({(item.effectiveCostVariancePct ?? 0).toFixed(2)}%)</p>
+                      <p>Diferencia: {formatCurrency(item.effectiveCostVariance ?? 0, quote.currency)}</p>
+                      {item.effectiveCostEvaluatedByUser && (
+                        <p>
+                          Registrado por {item.effectiveCostEvaluatedByUser.firstName} {item.effectiveCostEvaluatedByUser.lastName}
+                          {item.effectiveCostEvaluatedAt ? ` · ${formatDate(item.effectiveCostEvaluatedAt)}` : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </td>
+                <td className={`px-3 py-2 text-xs ${item.isBelowEffectiveCost ? "font-semibold text-rose-700" : "text-gray-700"}`}>{formatCurrency(item.unitPrice, quote.currency)}</td>
                 <td className="px-3 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quote.currency)}</td>
               </tr>
             ))}

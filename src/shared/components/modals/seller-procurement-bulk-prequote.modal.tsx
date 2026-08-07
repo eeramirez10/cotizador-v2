@@ -30,6 +30,7 @@ import {
   type BulkProcurementItemForm,
 } from "./bulk-procurement-item-editor.modal";
 import { DetectedSupplierModal, findDetectedSupplierMatch } from "./detected-supplier.modal";
+import { getQuoteItemFulfillment } from "../../../modules/quotes/utils/quote-fulfillment";
 
 interface SellerProcurementBulkPrequoteModalProps {
   items: ManualQuoteItem[];
@@ -536,6 +537,7 @@ export const SellerProcurementBulkPrequoteModal = ({
                   {items.map((item) => {
                     const selected = selectedIds.has(item.id);
                     const form = itemForms[item.id];
+                    const fulfillment = getQuoteItemFulfillment(item);
                     return (
                       <tr key={item.id} className={selected ? "bg-amber-50/40" : "opacity-60"}>
                         <td className="px-3 py-3 text-center">
@@ -543,10 +545,16 @@ export const SellerProcurementBulkPrequoteModal = ({
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-slate-700">
                           {item.erpCode || "LOCAL"}
-                          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">{item.erpCode ? "SIN STOCK" : "LOCAL"}</span>
+                          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
+                            {item.erpCode ? (fulfillment.availableQty > 0 ? "STOCK PARCIAL" : "SIN STOCK") : "LOCAL"}
+                          </span>
                         </td>
                         <td className="max-w-xs px-3 py-3 text-xs text-slate-600">{item.erpDescription || item.customerDescription}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">{item.qty} {item.unit}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-[11px] text-slate-600">
+                          <p>Solicitado: <strong>{fulfillment.requestedQty} {item.unit}</strong></p>
+                          {fulfillment.stockQty > 0 && <p className="text-emerald-700">Stock ERP: {fulfillment.stockQty}</p>}
+                          <p className="font-semibold text-amber-700">Comprar: {fulfillment.purchaseQty}</p>
+                        </td>
                         <td className="px-3 py-2">
                           <input type="number" min="0" step="0.01" value={form.unitCost} disabled={!selected} onChange={(event) => updateItemForm(item.id, { unitCost: event.target.value })} className={tableInputClass} placeholder="0.00" />
                         </td>
@@ -579,7 +587,7 @@ export const SellerProcurementBulkPrequoteModal = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
-          <p className="inline-flex items-center gap-2 text-xs text-slate-500"><PackageSearch className="h-4 w-4" />El precio vendedor se actualizará con el costo cotizado de cada partida.</p>
+          <p className="inline-flex items-center gap-2 text-xs text-slate-500"><PackageSearch className="h-4 w-4" />El precio vendedor se actualizará con el costo efectivo ponderado de cada partida.</p>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
             <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}Aplicar a {selectedIds.size} partida(s)</button>
