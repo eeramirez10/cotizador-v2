@@ -152,6 +152,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [extractionModal, setExtractionModal] = useState<"file" | "text" | null>(null);
   const [openQuotedExcelImport, setOpenQuotedExcelImport] = useState(false);
   const [showCancelEditConfirmation, setShowCancelEditConfirmation] = useState(false);
+  const [showDiscardDraftConfirmation, setShowDiscardDraftConfirmation] = useState(false);
+  const [discardingDraft, setDiscardingDraft] = useState(false);
   const [showClearExcelConfirmation, setShowClearExcelConfirmation] = useState(false);
   const [clearingExcelDraft, setClearingExcelDraft] = useState(false);
   const [localProductConfirmationItemId, setLocalProductConfirmationItemId] = useState<string | null>(null);
@@ -384,6 +386,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [draft.paymentTerms, paymentCatalog.data]);
   const validityDaysOptions = useMemo(() => {
     const options = validityCatalog.data || [];
+    if (!draft.validityDays) return options;
     if (options.some((option) => option.numericValue === draft.validityDays)) return options;
     return [{ id: "current-validity", label: `${draft.validityDays} días`, numericValue: draft.validityDays } as (typeof options)[number], ...options];
   }, [draft.validityDays, validityCatalog.data]);
@@ -596,6 +599,16 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       return false;
     }
 
+    if (!Number.isFinite(draft.validityDays) || draft.validityDays <= 0) {
+      notifier.warning("Selecciona la vigencia antes de guardar la cotización.");
+      return false;
+    }
+
+    if (!draft.paymentTerms.trim()) {
+      notifier.warning("Selecciona las condiciones de pago antes de guardar la cotización.");
+      return false;
+    }
+
     if (options?.requireSourceChannel && draft.sourceChannel === "UNSPECIFIED") {
       notifier.warning("Selecciona el origen de la cotización antes de generarla.");
       return false;
@@ -710,6 +723,38 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       notifier.error(error instanceof Error ? error.message : "No se pudo limpiar la cotización importada.");
     } finally {
       setClearingExcelDraft(false);
+    }
+  };
+
+  const handleDiscardDraft = async () => {
+    if (discardingDraft || draft.savedQuoteId || quoteIdFromQuery) return;
+
+    const toast = notifier.loading("Descartando cotización...");
+    try {
+      setDiscardingDraft(true);
+      const attachmentsResult = await draftAttachments.refetch();
+      const attachments = attachmentsResult.data ?? draftAttachments.data ?? [];
+      await Promise.all(attachments.map((attachment) => AttachmentsService.delete(attachment.id)));
+
+      clearDraft();
+      setExchangeRateDraft(null);
+      setQtyDrafts({});
+      setPriceDrafts({});
+      setMarginDrafts({});
+      setOriginFilter("ALL");
+      setShowDiscardDraftConfirmation(false);
+      setShowCompactAddItemsMenu(false);
+      setShowCompactHeaderMoreMenu(false);
+
+      if (toast !== undefined) notifier.update(toast, "success", "Cotización descartada.");
+      else notifier.success("Cotización descartada.");
+      navigate("/quotes", { replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo descartar la cotización.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    } finally {
+      setDiscardingDraft(false);
     }
   };
 
@@ -965,7 +1010,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                 {savingAction === "quote" ? "Procesando..." : "Generar cotización"}
               </button>
 
-              {(Boolean(draft.savedQuoteId) || (entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && hasActiveDraft)) && (
+              {(Boolean(draft.savedQuoteId) || !quoteIdFromQuery) && (
                 <div className="relative">
                   <button
                     type="button"
@@ -997,6 +1042,20 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                           Cancelar edición
                         </button>
                       )}
+                      {!draft.savedQuoteId && !quoteIdFromQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCompactHeaderMoreMenu(false);
+                            setShowDiscardDraftConfirmation(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          role="menuitem"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Descartar cotización
+                        </button>
+                      )}
                       {entryMode === "EXCEL_IMPORT" && !draft.savedQuoteId && hasActiveDraft && (
                         <button
                           type="button"
@@ -1026,6 +1085,18 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             >
               <X className="h-4 w-4" />
               Cancelar edición
+            </button>
+          )}
+
+          {!draft.savedQuoteId && !quoteIdFromQuery && (
+            <button
+              type="button"
+              onClick={() => setShowDiscardDraftConfirmation(true)}
+              disabled={saving || discardingDraft}
+              className="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {discardingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {discardingDraft ? "Descartando..." : "Descartar cotización"}
             </button>
           )}
 
@@ -1303,14 +1374,15 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
         <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-2" : ""}`}>
           <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="validityDays">
-            Vigencia
+            Vigencia *
           </label>
           <select
             id="validityDays"
             value={draft.validityDays}
             onChange={(event) => setValidityDays(Number(event.target.value))}
-            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
+            className={`mt-1 w-full rounded-md border px-2 text-gray-700 ${draft.validityDays > 0 ? "border-gray-300" : "border-amber-400 bg-amber-50"} ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           >
+            <option value={0}>Selecciona vigencia</option>
             {validityDaysOptions.map((option) => (
               <option key={option.id} value={option.numericValue || 0}>
                 {option.label}
@@ -1321,14 +1393,15 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
         <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-3" : "lg:col-span-2"}`}>
           <label className={`${isCompactView ? "flex h-4 items-center text-[9px]" : "text-xs"} font-semibold uppercase text-gray-500`} htmlFor="paymentTerms">
-            Condiciones de pago
+            Condiciones de pago *
           </label>
           <select
             id="paymentTerms"
             value={draft.paymentTerms}
             onChange={(event) => setPaymentTerms(event.target.value)}
-            className={`mt-1 w-full rounded-md border border-gray-300 px-2 text-gray-700 ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
+            className={`mt-1 w-full rounded-md border px-2 text-gray-700 ${draft.paymentTerms.trim() ? "border-gray-300" : "border-amber-400 bg-amber-50"} ${isCompactView ? "h-7 py-1 text-xs" : "py-1.5 text-sm"}`}
           >
+            <option value="">Selecciona condiciones de pago</option>
             {paymentTermsOptions.map((option) => (
               <option key={option.id} value={option.value || option.label}>
                 {option.label}
@@ -2203,6 +2276,40 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                 className="rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
               >
                 Descartar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDiscardDraftConfirmation && !draft.savedQuoteId && !quoteIdFromQuery && (
+        <div className="fixed inset-0 z-[88] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="discard-draft-title">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="rounded-lg bg-rose-100 p-2 text-rose-700"><Trash2 className="h-5 w-5" /></span>
+              <div>
+                <h3 id="discard-draft-title" className="text-base font-semibold text-gray-800">Descartar cotización</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  Se eliminarán todas las partidas, el cliente seleccionado, los datos capturados y los archivos adjuntos temporales. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDiscardDraftConfirmation(false)}
+                disabled={discardingDraft}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Conservar cotización
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleDiscardDraft(); }}
+                disabled={discardingDraft}
+                className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {discardingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {discardingDraft ? "Descartando..." : "Sí, eliminar todo"}
               </button>
             </div>
           </div>

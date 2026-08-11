@@ -21,6 +21,7 @@ interface ErpCustomerOnboardingModalProps {
   onImported: (client: Client) => void;
   initialValues?: Partial<ClientInput>;
   initialMode?: "ERP" | "LOCAL";
+  allowErpSearch?: boolean;
 }
 
 const EMPTY_LOCAL_FORM: ClientInput = {
@@ -49,10 +50,11 @@ export const ErpCustomerOnboardingModal = ({
   onImported,
   initialValues,
   initialMode = "ERP",
+  allowErpSearch = true,
 }: ErpCustomerOnboardingModalProps) => {
   const clients = useClientsStore((state) => state.clients);
   const addClient = useClientsStore((state) => state.addClient);
-  const [mode, setMode] = useState<"ERP" | "LOCAL">(initialMode);
+  const [mode, setMode] = useState<"ERP" | "LOCAL">(allowErpSearch ? initialMode : "LOCAL");
   const [term, setTerm] = useState("");
   const [form, setForm] = useState<ClientInput>(() => ({
     ...EMPTY_LOCAL_FORM,
@@ -180,18 +182,24 @@ export const ErpCustomerOnboardingModal = ({
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Cliente de cotización</p>
-            <h2 id="customer-selector-title" className="mt-1 text-lg font-bold text-slate-950">Seleccionar o crear cliente</h2>
-            <p className="mt-1 text-xs text-slate-500">Busca el cliente oficial en ERP o registra uno local.</p>
+            <h2 id="customer-selector-title" className="mt-1 text-lg font-bold text-slate-950">
+              {allowErpSearch ? "Seleccionar o crear cliente" : "Agregar cliente local"}
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {allowErpSearch ? "Busca el cliente oficial en ERP o registra uno local." : "Registra los datos completos del cliente para esta cotización."}
+            </p>
           </div>
           <button type="button" disabled={saving} onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50" aria-label="Cerrar"><X className="h-5 w-5" /></button>
         </header>
 
-        <div className="border-b border-slate-200 px-5 pt-4">
-          <div className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1">
-            <button type="button" disabled={saving} onClick={() => { setMode("ERP"); setPendingCustomer(null); }} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === "ERP" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>Buscar en ERP</button>
-            <button type="button" disabled={saving} onClick={() => { setMode("LOCAL"); setPendingCustomer(null); }} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === "LOCAL" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>Crear local</button>
+        {allowErpSearch && (
+          <div className="border-b border-slate-200 px-5 pt-4">
+            <div className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1">
+              <button type="button" disabled={saving} onClick={() => { setMode("ERP"); setPendingCustomer(null); }} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === "ERP" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>Buscar en ERP</button>
+              <button type="button" disabled={saving} onClick={() => { setMode("LOCAL"); setPendingCustomer(null); }} className={`rounded-md px-4 py-2 text-xs font-semibold ${mode === "LOCAL" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"}`}>Crear local</button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="overflow-y-auto p-5">
           {mode === "ERP" ? (

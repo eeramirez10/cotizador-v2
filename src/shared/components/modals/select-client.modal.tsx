@@ -1,16 +1,14 @@
-import { Loader2, Search, Sparkles, UserPlus, X } from "lucide-react";
+import { Loader2, Search, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
-import type { ClientInput, Client } from "../../../modules/clients/types/client.types";
+import type { Client } from "../../../modules/clients/types/client.types";
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
 import { erpCustomerHasDeliveryChannel, erpCustomerToClientInput } from "../../../modules/clients/utils/erp-customer-mapper";
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
-import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
 import { useClientsStore } from "../../../store/clients/clients.store";
 import { CustomerContactsModal } from "./customer-contacts.modal";
-import { PartyTextCompletionModal } from "./party-text-completion.modal";
-import { mergePartyIntoCustomer } from "../../../modules/ai/utils/party-data-form.mapper";
+import { ErpCustomerOnboardingModal } from "./erp-customer-onboarding.modal";
 
 interface SelectClientModalProps {
   open: boolean;
@@ -19,16 +17,6 @@ interface SelectClientModalProps {
 }
 
 type SearchMode = "core" | "erp";
-
-const EMPTY_FORM: ClientInput = {
-  name: "",
-  lastname: "",
-  whatsappPhone: "",
-  email: "",
-  rfc: "",
-  companyName: "",
-  phone: "",
-};
 
 const hasMissingContactData = (erpCustomer: ErpCustomer): boolean => {
   return !erpCustomerHasDeliveryChannel(erpCustomer);
@@ -43,11 +31,10 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const [mode, setMode] = useState<SearchMode>("core");
   const [term, setTerm] = useState("");
   const [creating, setCreating] = useState(false);
-  const [createForm, setCreateForm] = useState<ClientInput>(EMPTY_FORM);
+  const [localCustomerModalOpen, setLocalCustomerModalOpen] = useState(false);
   const [contactsModalOpen, setContactsModalOpen] = useState(false);
   const [contactsCustomerId, setContactsCustomerId] = useState<string | null>(null);
   const [contactsCustomerLabel, setContactsCustomerLabel] = useState("");
-  const [textCompletionOpen, setTextCompletionOpen] = useState(false);
 
   const debouncedTerm = useDebouncedValue(term, 300);
   const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
@@ -67,6 +54,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     setContactsModalOpen(false);
     setContactsCustomerId(null);
     setContactsCustomerLabel("");
+    setLocalCustomerModalOpen(false);
   }, [open]);
 
   const filteredLocalClients = useMemo(() => {
@@ -124,55 +112,15 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     }
   };
 
-  const handleCreateLocal = async () => {
-    if (!createForm.name.trim()) {
-      notifier.warning("El nombre es obligatorio.");
-      return;
-    }
-    if (!createForm.lastname.trim()) {
-      notifier.warning("El apellido es obligatorio.");
-      return;
-    }
-    if (!createForm.whatsappPhone.trim() && !createForm.email.trim()) {
-      notifier.warning("Captura al menos un correo o WhatsApp.");
-      return;
-    }
-    if (createForm.whatsappPhone.trim() && !isValidPhoneNumber(createForm.whatsappPhone)) {
-      notifier.warning("El WhatsApp debe ser un número válido de 10 a 15 dígitos.");
-      return;
-    }
-    if (createForm.email.trim() && !isValidEmail(createForm.email)) {
-      notifier.warning("El correo no tiene un formato válido.");
-      return;
-    }
-    if (createForm.phone?.trim() && !isValidPhoneNumber(createForm.phone)) {
-      notifier.warning("El teléfono debe ser un número válido de 10 a 15 dígitos.");
-      return;
-    }
-
-    try {
-      setCreating(true);
-      const created = await addClient(createForm);
-      setCreateForm(EMPTY_FORM);
-      onSelect(created);
-      onClose();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el cliente.";
-      notifier.error(message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      <div className="relative w-full max-w-6xl rounded-xl bg-white shadow-xl">
+      <div className="relative w-full max-w-5xl rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold text-gray-700">Seleccionar cliente</h3>
-            <p className="text-xs text-gray-500">Busca en clientes guardados, consulta ERP o crea cliente rápido.</p>
+            <p className="text-xs text-gray-500">Busca en clientes guardados, consulta ERP o agrega un cliente local.</p>
           </div>
 
           <button onClick={onClose} className="rounded-md p-1 text-gray-500 hover:bg-gray-100" aria-label="Cerrar">
@@ -180,7 +128,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
           </button>
         </div>
 
-        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
+        <div className="p-4">
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="inline-flex rounded-md border border-gray-300 bg-gray-50 p-1">
@@ -198,7 +146,17 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                 </button>
               </div>
 
-              <p className="text-xs text-gray-500">Consulta ERP global</p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-gray-500">Consulta ERP global</p>
+                <button
+                  type="button"
+                  onClick={() => setLocalCustomerModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Agregar cliente local
+                </button>
+              </div>
             </div>
 
             <div className="relative mb-3">
@@ -284,7 +242,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                       <td className="px-3 py-8 text-center text-sm text-gray-500" colSpan={5}>
                         {debouncedTerm.trim().length < 2
                           ? "Captura al menos 2 caracteres para buscar en ERP."
-                          : "Sin resultados en ERP. Puedes crear cliente rápido."}
+                          : "Sin resultados en ERP. Puedes agregar un cliente local."}
                       </td>
                     </tr>
                   )}
@@ -329,7 +287,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                   {mode === "erp" && erpError && !loadingErp && (
                     <tr>
                       <td className="px-3 py-6 text-center text-sm text-amber-700" colSpan={5}>
-                        Endpoint ERP de clientes no disponible aún. El flujo de crear cliente rápido sigue activo.
+                        Endpoint ERP de clientes no disponible. Todavía puedes agregar un cliente local.
                       </td>
                     </tr>
                   )}
@@ -338,63 +296,6 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
             </div>
           </div>
 
-          <aside className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <h4 className="text-xs font-semibold uppercase text-gray-600">Crear cliente rápido</h4>
-            <p className="mb-3 text-xs text-gray-500">Los campos marcados con * son obligatorios.</p>
-
-            <button type="button" onClick={() => setTextCompletionOpen(true)} className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"><Sparkles className="h-4 w-4" />Completar con texto</button>
-
-            <div className="space-y-2">
-              <Input
-                label="Nombre"
-                required
-                value={createForm.name}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, name: value }))}
-              />
-              <Input
-                label="Apellido"
-                required
-                value={createForm.lastname}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, lastname: value }))}
-              />
-              <Input
-                label="WhatsApp"
-                type="tel"
-                value={createForm.whatsappPhone}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, whatsappPhone: value }))}
-              />
-              <Input
-                label="Correo"
-                type="email"
-                value={createForm.email}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, email: value }))}
-              />
-              <Input label="RFC" value={createForm.rfc} onChange={(value) => setCreateForm((prev) => ({ ...prev, rfc: value }))} />
-              <Input
-                label="Empresa"
-                value={createForm.companyName}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, companyName: value }))}
-              />
-              <Input
-                label="Teléfono"
-                type="tel"
-                value={createForm.phone ?? ""}
-                onChange={(value) => setCreateForm((prev) => ({ ...prev, phone: value }))}
-              />
-
-              <button
-                onClick={() => {
-                  void handleCreateLocal();
-                }}
-                disabled={creating}
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:from-sky-600 hover:to-indigo-600 disabled:opacity-60"
-              >
-                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                {creating ? "Guardando..." : "Crear y seleccionar"}
-              </button>
-            </div>
-
-          </aside>
         </div>
       </div>
       <CustomerContactsModal
@@ -403,41 +304,18 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
         customerId={contactsCustomerId}
         customerLabel={contactsCustomerLabel}
       />
-      {textCompletionOpen && <PartyTextCompletionModal
-        partyType="CUSTOMER"
-        onClose={() => setTextCompletionOpen(false)}
-        onApply={(party) => {
-          setCreateForm((current) => mergePartyIntoCustomer(current, party));
-          setTextCompletionOpen(false);
-          notifier.success("Datos del cliente aplicados. Revísalos antes de crear.");
-        }}
-      />}
-    </div>
-  );
-};
-
-interface InputProps {
-  label: string;
-  type?: string;
-  required?: boolean;
-  value: string;
-  onChange: (value: string) => void;
-}
-
-const Input = ({ label, type = "text", required = false, value, onChange }: InputProps) => {
-  return (
-    <div>
-      <label className="mb-1 block text-[11px] font-semibold uppercase text-gray-500">
-        {label}
-        {required && <span className="ml-1 text-rose-500">*</span>}
-      </label>
-      <input
-        type={type}
-        value={value}
-        required={required}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      {localCustomerModalOpen && (
+        <ErpCustomerOnboardingModal
+          initialMode="LOCAL"
+          allowErpSearch={false}
+          onClose={() => setLocalCustomerModalOpen(false)}
+          onImported={(client) => {
+            setLocalCustomerModalOpen(false);
+            onSelect(client);
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 };
