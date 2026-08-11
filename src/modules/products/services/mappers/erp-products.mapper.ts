@@ -9,9 +9,13 @@ interface ErpByEanRow {
   stock?: number | string;
   unit?: string;
   currency?: string;
+  saleCurrency?: string;
+  costCurrency?: string;
   cost?: number | string;
   averageCost?: number | string;
   lastCost?: number | string;
+  averageCostMxn?: number | string;
+  lastCostMxn?: number | string;
   warehouseId?: string | number;
   warehouseName?: string;
   authorized?: boolean;
@@ -42,8 +46,8 @@ const toCurrency = (value: unknown): ErpProductCurrency => {
 
 const resolveCost = (row: ErpByEanRow): number => {
   const directCost = toNumber(row.cost);
-  const lastCost = toNumber(row.lastCost);
-  const averageCost = toNumber(row.averageCost);
+  const lastCost = toNumber(row.lastCostMxn ?? row.lastCost);
+  const averageCost = toNumber(row.averageCostMxn ?? row.averageCost);
 
   return Math.max(0, directCost, lastCost, averageCost);
 };
@@ -74,7 +78,7 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
       const rawUnit = toText(row.unit);
       const unit = normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ");
       const stock = Math.max(0, toNumber(row.stock));
-      const costCurrency = toCurrency(row.currency);
+      const saleCurrency = toCurrency(row.saleCurrency ?? row.currency);
       const warehouseCode = toText(row.warehouseId) || options?.branchCode;
       const warehouseName = toText(row.warehouseName) || options?.branchName;
 
@@ -84,7 +88,8 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
         description,
         unit,
         costUsd: resolveCost(row),
-        costCurrency,
+        costCurrency: "MXN",
+        saleCurrency,
         stock,
         branchCode: warehouseCode,
         branchName: warehouseName,

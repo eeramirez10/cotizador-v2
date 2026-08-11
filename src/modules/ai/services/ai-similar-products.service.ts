@@ -19,8 +19,12 @@ interface ApiBranchProduct {
   stock?: unknown;
   unit?: unknown;
   currency?: unknown;
+  saleCurrency?: unknown;
+  costCurrency?: unknown;
   averageCost?: unknown;
   lastCost?: unknown;
+  averageCostMxn?: unknown;
+  lastCostMxn?: unknown;
   authorized?: unknown;
 }
 
@@ -109,8 +113,8 @@ const toCurrency = (value: unknown): ErpProductCurrency => {
 };
 
 const resolveCost = (row: ApiBranchProduct): number => {
-  const average = asNumber(row.averageCost);
-  const last = asNumber(row.lastCost);
+  const average = asNumber(row.averageCostMxn ?? row.averageCost);
+  const last = asNumber(row.lastCostMxn ?? row.lastCost);
   return Math.max(0, average, last);
 };
 
@@ -142,7 +146,8 @@ const mapBranchProduct = (input: unknown): ErpProduct | null => {
     warehouseName: asText(row.branchName),
     unit: normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ"),
     stock: Math.max(0, asNumber(row.stock)),
-    costCurrency: toCurrency(row.currency),
+    costCurrency: "MXN",
+    saleCurrency: toCurrency(row.saleCurrency ?? row.currency),
     costUsd: resolveCost(row),
     authorized: asBooleanOrNull(row.authorized) ?? undefined,
   };

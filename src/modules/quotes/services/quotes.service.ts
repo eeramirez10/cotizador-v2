@@ -149,6 +149,7 @@ export interface SavedQuoteRecord {
     technicalAttributes?: Record<string, string>;
     costUsd: number;
     costCurrency?: "MXN" | "USD";
+    erpSaleCurrency?: "MXN" | "USD" | null;
     marginPct: number;
     effectiveCostAtQuote?: number;
     isBelowEffectiveCost?: boolean;
@@ -207,6 +208,7 @@ interface ApiQuoteItem {
   technicalAttributes: Record<string, string>;
   cost: number;
   costCurrency: "MXN" | "USD";
+  erpSaleCurrency: "MXN" | "USD" | null;
   marginPct: number;
   effectiveCostAtQuote: number;
   isBelowEffectiveCost: boolean;
@@ -540,6 +542,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       technicalAttributes: item.technicalAttributes || {},
       costUsd: item.cost,
       costCurrency: item.costCurrency,
+      erpSaleCurrency: item.erpSaleCurrency,
       marginPct: item.marginPct,
       effectiveCostAtQuote: item.effectiveCostAtQuote,
       isBelowEffectiveCost: item.isBelowEffectiveCost,
@@ -595,7 +598,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
     um: item.unit,
     qty: item.qty,
     cost: item.costUsd,
-    currency: item.costCurrency || "USD",
+    currency: item.costCurrency || "MXN",
     price: item.unitPrice,
     margin: item.marginPct,
     isBelowEffectiveCost: item.isBelowEffectiveCost,
@@ -664,7 +667,8 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     technicalFamily: item.technicalFamily?.trim() || null,
     technicalAttributes: item.technicalAttributes || {},
     cost: safeCost,
-    costCurrency: item.costCurrency || "USD",
+    costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
+    erpSaleCurrency: item.erpCode ? item.erpSaleCurrency || "MXN" : null,
     marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,
     sourceCurrency: item.sourceCurrency || null,
     sourceUnitPrice: Number.isFinite(item.sourceUnitPrice) ? item.sourceUnitPrice : null,
@@ -756,7 +760,8 @@ export class QuotesService {
         unit: product.unit,
         stock: product.stock,
         cost: product.costUsd,
-        costCurrency: product.costCurrency,
+        costCurrency: "MXN",
+        erpSaleCurrency: product.saleCurrency,
         deliveryTime: null,
       },
       { headers: requireAuthHeaders() },

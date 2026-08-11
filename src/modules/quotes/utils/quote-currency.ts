@@ -15,15 +15,12 @@ export const convertQuoteAmount = (
 
 export const getErpCostDisplayAmount = (
   cost: number,
-  productCurrency: QuoteMoneyCurrency,
+  costCurrency: QuoteMoneyCurrency,
   quoteCurrency: QuoteMoneyCurrency,
   exchangeRate: number
-): number => {
-  if (productCurrency === "USD") return cost;
-  return quoteCurrency === "USD" ? convertQuoteAmount(cost, "MXN", "USD", exchangeRate) : cost;
-};
+): number => convertQuoteAmount(cost, costCurrency, quoteCurrency, exchangeRate);
 
 export const getErpCostDisplayCurrency = (
-  productCurrency: QuoteMoneyCurrency,
+  _costCurrency: QuoteMoneyCurrency,
   quoteCurrency: QuoteMoneyCurrency
-): QuoteMoneyCurrency => productCurrency === "USD" || quoteCurrency === "USD" ? "USD" : "MXN";
+): QuoteMoneyCurrency => quoteCurrency;

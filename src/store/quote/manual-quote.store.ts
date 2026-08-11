@@ -69,6 +69,7 @@ export interface ManualQuoteItem {
   technicalAttributes: Record<string, string>;
   costUsd: number;
   costCurrency: ErpProductCurrency;
+  erpSaleCurrency: ErpProductCurrency | null;
   marginPct: number;
   effectiveCostAtQuote?: number;
   isBelowEffectiveCost?: boolean;
@@ -444,6 +445,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         technicalAttributes: item.technicalAttributes,
         costUsd: item.costUsd,
         costCurrency: item.costCurrency,
+        erpSaleCurrency: item.erpSaleCurrency,
         marginPct: item.marginPct,
         manualUnitPrice: item.manualUnitPrice,
         sourceCurrency: item.sourceCurrency,
@@ -484,7 +486,8 @@ const createItemsFromExtraction = (
         itemComment: "",
         ...emptyProcurementPrequote(),
         costUsd: 0,
-        costCurrency: "USD",
+        costCurrency: "MXN" as const,
+        erpSaleCurrency: null,
         marginPct: 0,
         manualUnitPrice: undefined,
         sourceRequiresReview: item.requiere_revision || normalizedUnit === null,
@@ -521,6 +524,7 @@ const createItemsFromQuotedExcel = (
         ...emptyProcurementPrequote(),
         costUsd: 0,
         costCurrency: item.moneda ?? currency,
+        erpSaleCurrency: null,
         marginPct: 0,
         manualUnitPrice: undefined,
         sourceCurrency: item.moneda ?? currency,
@@ -664,7 +668,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         itemComment: "",
         ...emptyProcurementPrequote(),
         costUsd: product.costUsd,
-        costCurrency: product.costCurrency,
+        costCurrency: "MXN" as const,
+        erpSaleCurrency: product.saleCurrency,
         marginPct: 15,
         sourceRequiresReview: false,
       };
@@ -697,7 +702,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
             ? item.deliveryTime
             : deliverySuggestion(product.stock, product.costUsd),
           costUsd: product.costUsd,
-          costCurrency: product.costCurrency,
+          costCurrency: "MXN" as const,
+          erpSaleCurrency: product.saleCurrency,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
           manualUnitPrice: item.importedFromExcel ? item.manualUnitPrice : undefined,
@@ -1010,7 +1016,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         technicalFamily: item.technicalFamily || "",
         technicalAttributes: item.technicalAttributes || {},
         erpDescription: item.erpCode ? item.erpDescription : "",
-        costCurrency: item.costCurrency || "USD",
+        costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
+        erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode ? item.costCurrency || "MXN" : null),
         sourceRequiresReview: item.sourceRequiresReview || false,
         sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? quote.currency : item.sourceCurrency,
         sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
@@ -1097,7 +1104,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       technicalFamily: item.technicalFamily || "",
       technicalAttributes: item.technicalAttributes || {},
       erpDescription: item.erpCode ? item.erpDescription : "",
-      costCurrency: item.costCurrency || "USD",
+      costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
+      erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode ? item.costCurrency || "MXN" : null),
       sourceRequiresReview: item.sourceRequiresReview || false,
       sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? stored.currency : item.sourceCurrency,
       sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
@@ -1206,15 +1214,26 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     const persisted = persistedState as Partial<ManualQuoteState>;
     if (!persisted.draft) return currentState;
 
-    const draft = persisted.draft.captureMethod === "EXCEL_IMPORT"
+    const migratedDraft = {
+      ...persisted.draft,
+      items: persisted.draft.items.map((item) => {
+        const hasErpProduct = Boolean(item.erpCode?.trim());
+        return {
+          ...item,
+          costCurrency: hasErpProduct ? "MXN" as const : item.costCurrency || "MXN",
+          erpSaleCurrency: item.erpSaleCurrency ?? (hasErpProduct ? item.costCurrency || "MXN" : null),
+        };
+      }),
+    };
+    const draft = migratedDraft.captureMethod === "EXCEL_IMPORT"
       ? {
-          ...persisted.draft,
+          ...migratedDraft,
           items: normalizeImportedItemsToQuoteCurrency(
-            persisted.draft.items,
-            persisted.draft.currency
+            migratedDraft.items,
+            migratedDraft.currency
           ),
         }
-      : persisted.draft;
+      : migratedDraft;
 
     return {
       ...currentState,

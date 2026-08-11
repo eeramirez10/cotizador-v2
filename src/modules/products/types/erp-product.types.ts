@@ -7,6 +7,7 @@ export interface ErpProduct {
   unit: string;
   costUsd: number;
   costCurrency: ErpProductCurrency;
+  saleCurrency: ErpProductCurrency;
   stock: number;
   branchCode?: string;
   branchName?: string;

@@ -1914,8 +1914,13 @@ export const QuoteDetailPage = () => {
                 <td className="px-3 py-2 text-xs text-gray-700">{item.qty}</td>
                 <td className="px-3 py-2 text-xs text-gray-700">
                   {formatCurrency(
-                    getDisplayCost(item.costUsd, item.costCurrency || "USD", quote.currency, quote.exchangeRate),
-                    getDisplayCostCurrency(item.costCurrency || "USD", quote.currency)
+                    getDisplayCost(item.costUsd, item.costCurrency || "MXN", quote.currency, quote.exchangeRate),
+                    getDisplayCostCurrency(item.costCurrency || "MXN", quote.currency)
+                  )}
+                  {item.erpSaleCurrency && (
+                    <p className="mt-1 whitespace-nowrap text-[10px] font-semibold text-blue-600">
+                      Venta ERP: {item.erpSaleCurrency}
+                    </p>
                   )}
                   {(item.effectiveCostAtQuote ?? 0) > 0 && (
                     <p className="mt-1 whitespace-nowrap text-[10px] font-semibold text-slate-500">

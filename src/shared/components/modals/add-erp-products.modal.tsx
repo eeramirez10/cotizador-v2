@@ -414,8 +414,8 @@ export const AddErpProductsModal = ({
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción ERP</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Moneda</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Moneda venta ERP</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP (MXN)</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">{fixedErpBranchCode ? "Sucursal" : "Almacén"}</th>
                   {mode === "ai" && (
@@ -485,7 +485,7 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-xs text-gray-700">{product.ean}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product.description}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product.unit}</td>
-                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.costCurrency}</td>
+                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.saleCurrency}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">${product.costUsd.toFixed(2)}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.stock}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">
@@ -543,7 +543,7 @@ export const AddErpProductsModal = ({
                           )}
                         </td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product?.unit || "-"}</td>
-                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product?.costCurrency || "-"}</td>
+                        <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product?.saleCurrency || "-"}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product ? `$${product.costUsd.toFixed(2)}` : "-"}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">
                           <p>{product?.stock ?? "-"}</p>

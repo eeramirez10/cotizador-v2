@@ -341,7 +341,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             purchaseBore: item.purchaseBore || "",
             technicalFamily: item.technicalFamily || "",
             technicalAttributes: item.technicalAttributes || {},
-            costCurrency: item.costCurrency || "USD",
+            costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
+            erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode ? item.costCurrency || "MXN" : null),
             sourceCurrency: item.sourceCurrency ?? undefined,
             sourceUnitPrice: item.sourceUnitPrice ?? undefined,
             sourceSubtotal: item.sourceSubtotal ?? undefined,
@@ -1702,6 +1703,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                         getDisplayCostCurrency(item.costCurrency, draft.currency)
                       )}
                     </span>
+                    {item.erpSaleCurrency && (
+                      <span className="mt-0.5 block whitespace-nowrap text-[9px] font-semibold text-blue-600">
+                        Venta ERP: {item.erpSaleCurrency}
+                      </span>
+                    )}
                     {fulfillment.requiresPurchase && effectiveCost.supplierUnitCost !== null && (
                       <span className="mt-0.5 block whitespace-nowrap text-[9px] font-semibold text-slate-500">
                         Efectivo: {formatCurrency(effectiveCost.effectiveUnitCost, draft.currency)}
