@@ -1,4 +1,4 @@
-import { Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, Warehouse, X } from "lucide-react";
+import { Eye, EyeOff, Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, Warehouse, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -18,6 +18,11 @@ import {
 } from "../../queries/users/use-users";
 
 const PAGE_SIZE = 20;
+const configuredEmailDomain = String(import.meta.env.VITE_USER_EMAIL_DOMAIN || "")
+  .trim()
+  .toLowerCase()
+  .replace(/^@+/, "");
+const USER_EMAIL_DOMAIN = configuredEmailDomain || "tuvansa.com.mx";
 
 interface UserFormState {
   firstName: string;
@@ -64,6 +69,20 @@ const normalizeBranchCode = (value?: string): string => {
   return raw;
 };
 
+const getEmailLocalPart = (email: string): string => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const domainSuffix = `@${USER_EMAIL_DOMAIN}`;
+  if (normalizedEmail.endsWith(domainSuffix)) {
+    return normalizedEmail.slice(0, -domainSuffix.length);
+  }
+  return normalizedEmail.split("@")[0] || "";
+};
+
+const buildCorporateEmail = (localPart: string): string => {
+  const normalizedLocalPart = localPart.toLowerCase().replace(/\s+/g, "").split("@")[0] || "";
+  return normalizedLocalPart ? `${normalizedLocalPart}@${USER_EMAIL_DOMAIN}` : "";
+};
+
 const toTitleCase = (value: string): string =>
   value
     .toLowerCase()
@@ -95,6 +114,7 @@ export const UsersPage = () => {
   const [branchFilter, setBranchFilter] = useState("ALL");
   const [openModal, setOpenModal] = useState(false);
   const [openErpUserModal, setOpenErpUserModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [erpUserTerm, setErpUserTerm] = useState("");
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [form, setForm] = useState<UserFormState>(EMPTY_FORM);
@@ -108,6 +128,7 @@ export const UsersPage = () => {
   );
   const actorName = `${actor?.name ?? ""} ${actor?.lastname ?? ""}`.trim() || "Usuario";
   const actorLabel = `${isAdmin ? "Administrador" : "Manager"}: ${actorName}`;
+  const actorBranchLabel = [actorBranchCode, actor?.branch?.name].filter(Boolean).join(" - ") || "Sucursal de la sesión";
 
   const usersQuery = useUsers({
     page,
@@ -154,6 +175,7 @@ export const UsersPage = () => {
     setOpenModal(false);
     setOpenErpUserModal(false);
     setErpUserTerm("");
+    setShowPassword(false);
     setEditingUser(null);
     resetForm();
   };
@@ -170,6 +192,7 @@ export const UsersPage = () => {
 
   const openCreateModal = () => {
     setEditingUser(null);
+    setShowPassword(false);
     setForm({
       ...EMPTY_FORM,
       role: isAdmin ? "SELLER" : "SELLER",
@@ -180,6 +203,7 @@ export const UsersPage = () => {
 
   const openEditModal = (user: ManagedUser) => {
     setEditingUser(user);
+    setShowPassword(false);
     setForm(mapUserToForm(user));
     setOpenModal(true);
   };
@@ -195,8 +219,7 @@ export const UsersPage = () => {
     }
     if (!editingUser && form.password.trim().length < 8) return "La contraseña debe tener al menos 8 caracteres.";
 
-    const branchCodeToUse = isAdmin ? form.branchCode : actorBranchCode;
-    if (!normalizeBranchCode(branchCodeToUse)) return "La sucursal es obligatoria.";
+    if (isAdmin && !normalizeBranchCode(form.branchCode)) return "La sucursal es obligatoria.";
 
     return null;
   };
@@ -210,7 +233,7 @@ export const UsersPage = () => {
       return;
     }
 
-    const roleToUse = editingUser ? form.role : isAdmin ? form.role : "SELLER";
+    const roleToUse = form.role;
     const branchCodeToUse = normalizeBranchCode(isAdmin ? form.branchCode : actorBranchCode);
 
     try {
@@ -313,7 +336,7 @@ export const UsersPage = () => {
 
   const roleOptions: UserRole[] = isAdmin
     ? ["SELLER", "MANAGER", "PURCHASING", "ADMIN"]
-    : ["SELLER", "MANAGER"];
+    : ["SELLER", "PURCHASING"];
 
   return (
     <div className="space-y-5">
@@ -420,14 +443,16 @@ export const UsersPage = () => {
                           <Warehouse className="h-4 w-4" />
                         </Link>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(user)}
-                        className="rounded-md border border-gray-300 p-1 text-gray-600 hover:bg-gray-100"
-                        aria-label="Editar usuario"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
+                      {(isAdmin || user.role === "SELLER" || user.role === "PURCHASING") && (
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(user)}
+                          className="rounded-md border border-gray-300 p-1 text-gray-600 hover:bg-gray-100"
+                          aria-label="Editar usuario"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      )}
 
                       {isAdmin && user.isActive && (
                         <button
@@ -549,20 +574,55 @@ export const UsersPage = () => {
                   value={form.username}
                   onChange={(value) => setForm((prev) => ({ ...prev, username: value }))}
                 />
-                <Input
-                  label="Correo"
-                  type="email"
-                  required
-                  value={form.email}
-                  onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
-                />
-                <Input
-                  label={editingUser ? "Contraseña (opcional)" : "Contraseña"}
-                  required={!editingUser}
-                  value={form.password}
-                  onChange={(value) => setForm((prev) => ({ ...prev, password: value }))}
-                  type="password"
-                />
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                    Correo<span className="ml-1 text-rose-500">*</span>
+                  </label>
+                  <div className="flex overflow-hidden rounded-md border border-gray-300 bg-white focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500">
+                    <input
+                      type="text"
+                      inputMode="email"
+                      autoComplete="off"
+                      required
+                      value={getEmailLocalPart(form.email)}
+                      onChange={(event) => setForm((prev) => ({
+                        ...prev,
+                        email: buildCorporateEmail(event.target.value),
+                      }))}
+                      placeholder="eeramirez"
+                      aria-label="Usuario del correo corporativo"
+                      className="min-w-0 flex-1 border-0 px-2 py-1.5 text-sm text-gray-700 outline-none"
+                    />
+                    <span className="flex shrink-0 items-center border-l border-gray-300 bg-gray-50 px-3 text-sm font-medium text-gray-600">
+                      @{USER_EMAIL_DOMAIN}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-gray-500">El correo es independiente del nombre de usuario.</p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                    {editingUser ? "Contraseña (opcional)" : "Contraseña"}
+                    {!editingUser && <span className="ml-1 text-rose-500">*</span>}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required={!editingUser}
+                      value={form.password}
+                      onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                      className="w-full rounded-md border border-gray-300 py-1.5 pl-2 pr-10 text-sm text-gray-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((visible) => !visible)}
+                      className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-gray-500 hover:text-gray-700"
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
                 <Input
                   label="Telefono"
                   type="tel"
@@ -609,8 +669,7 @@ export const UsersPage = () => {
                   <select
                     value={form.role}
                     onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value as UserRole }))}
-                    disabled={!isAdmin}
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 disabled:bg-gray-100"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
                   >
                     {roleOptions.map((role) => (
                       <option key={role} value={role}>
@@ -643,7 +702,7 @@ export const UsersPage = () => {
                   </div>
                 ) : (
                   <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                    Sucursal asignada: <strong>{actorBranchCode || "-"}</strong>
+                    Sucursal asignada: <strong>{actorBranchLabel}</strong>
                   </div>
                 )}
               </div>

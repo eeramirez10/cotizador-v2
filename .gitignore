@@ -24,5 +24,7 @@ dist-ssr
 *.sw?
 
 .env
+.env.development
+.env.production
 .firebase/
 quote-files/
