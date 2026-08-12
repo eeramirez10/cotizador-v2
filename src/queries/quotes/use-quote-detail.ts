@@ -7,6 +7,7 @@ import {
   type QuoteRevisionReason,
   type SavedQuoteStatus,
 } from "../../modules/quotes/services/quotes.service";
+import type { ProcurementPrequoteData } from "../../store/quote/manual-quote.store";
 
 const quoteDetailKeys = {
   all: ["quotes", "detail"] as const,
@@ -44,6 +45,22 @@ export const useUpdateQuoteStatus = () => {
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
+export const useUpdateQuoteProcurementReference = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, itemId, input }: {
+      quoteId: string;
+      itemId: string;
+      input: ProcurementPrequoteData;
+    }) => QuotesService.updateProcurementReference(quoteId, itemId, input),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+      await queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"], exact: false });
     },
   });
 };

@@ -21,7 +21,7 @@ interface SellerProcurementPrequoteModalProps {
   quoteCurrency: QuoteCurrency;
   quoteExchangeRate: number;
   onClose: () => void;
-  onSave: (data: ProcurementPrequoteData) => void;
+  onSave: (data: ProcurementPrequoteData) => void | Promise<void>;
 }
 
 const optionValue = (option: { value: string | null; label: string }) => option.value || option.label;
@@ -129,10 +129,13 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
         await AttachmentsService.uploadSellerQuote(clientDraftId, [item.id], attachmentFile);
         await attachments.refetch();
       }
-      onSave({
+      await onSave({
         sellerSupplierId: offer.supplierId,
         sellerSupplierName: offer.supplierName.trim(),
         sellerQuotedUnitCost: parsedCost,
+        sellerCostSource: attachmentFile || supplierQuoteFiles.length > 0
+          ? "SELLER_SUPPLIER_QUOTE"
+          : "ESTIMATED",
         sellerQuotedCurrency: offer.currency,
         sellerQuotedExchangeRate: offer.currency === "USD" ? parsedExchangeRate : null,
         sellerQuotedBrand: offer.brand,

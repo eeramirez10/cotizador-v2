@@ -21,6 +21,7 @@ import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import type { ManualQuoteItem, QuoteSourceChannel } from "../../store/quote/manual-quote.store";
 import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../modules/quotes/utils/quote-fulfillment";
+import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 import type { ExtractedPartyData } from "../../modules/ai/types/party-data.types";
@@ -650,17 +651,6 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         return false;
       }
 
-      if (draft.captureMethod !== "EXCEL_IMPORT") {
-        const missingProcurementData = draft.items.filter(
-          (item) => requiresProcurementPrequote(item) && !hasCompleteProcurementPrequote(item)
-        );
-        if (missingProcurementData.length > 0) {
-          notifier.error(
-            `No puedes generar la cotización. Completa los datos de compra en ${missingProcurementData.length} partida(s) local(es) o sin stock.`
-          );
-          return false;
-        }
-      }
     }
 
     if (options?.enforcePriceFloor) {
@@ -794,11 +784,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           type="button"
           onClick={() => setProcurementItemId(item.id)}
           className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
-          title="Capturar proveedor, costo y datos para la requisición"
+          title="Agregar una referencia opcional para Compras"
         >
           <span className="inline-flex items-center gap-1">
             <ShoppingCart className="h-3.5 w-3.5" />
-            {hasCompleteProcurementPrequote(item) ? "Datos compra" : "Completar compra"}
+            {hasCompleteProcurementPrequote(item) ? "Ver referencia" : "Agregar referencia"}
           </span>
         </button>
       )}
@@ -1534,7 +1524,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 	              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
 	            >
 	              <ShoppingCart className="h-3.5 w-3.5" />
-	              Completar compra en lote ({procurementItems.length})
+	              Referencias de compra ({procurementItems.length})
 	            </button>
 	          )}
 	          {showCustomerExtractionColumns && (
@@ -1574,7 +1564,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Tiempo entrega</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Cantidad</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo / origen</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Margen %</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Precio vendedor {quoteCurrency}</th>
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Subtotal {quoteCurrency}</th>
@@ -1608,6 +1598,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               const effectiveCostVariancePct = effectiveCost.effectiveUnitCost > 0
                 ? ((item.unitPrice - effectiveCost.effectiveUnitCost) / effectiveCost.effectiveUnitCost) * 100
                 : 0;
+              const sellerCostSource = resolveSellerCostSource(item);
 
               return (
                 <Fragment key={item.id}>
@@ -1713,6 +1704,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                         Efectivo: {formatCurrency(effectiveCost.effectiveUnitCost, draft.currency)}
                       </span>
                     )}
+                    {sellerCostSource && (
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold ${sellerCostSourceClassName(sellerCostSource)}`}>
+                        {sellerCostSourceLabel(sellerCostSource)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2">
 
@@ -1800,8 +1796,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                             type="button"
                             onClick={() => setProcurementItemId(item.id)}
                             className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${hasCompleteProcurementPrequote(item) ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-800"}`}
-                            title={hasCompleteProcurementPrequote(item) ? "Ver datos de compra" : "Completar compra"}
-                            aria-label={hasCompleteProcurementPrequote(item) ? "Ver datos de compra" : "Completar compra"}
+                            title={hasCompleteProcurementPrequote(item) ? "Ver referencia de compra" : "Agregar referencia de compra opcional"}
+                            aria-label={hasCompleteProcurementPrequote(item) ? "Ver referencia de compra" : "Agregar referencia de compra opcional"}
                           >
                             <ShoppingCart className="h-3.5 w-3.5" />
                           </button>
@@ -2058,7 +2054,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             setItemProcurementPrequote(procurementItemId, data);
             setProcurementItemId(null);
             void draftAttachments.refetch();
-            notifier.success("Datos de compra guardados y precio vendedor actualizado.");
+            notifier.success("Referencia de compra guardada y precio vendedor actualizado.");
           }}
         />
       )}
@@ -2073,7 +2069,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             setItemsProcurementPrequote(updates);
             setShowBulkProcurement(false);
             void draftAttachments.refetch();
-            notifier.success(`Datos de compra aplicados a ${updates.length} partida(s).`);
+            notifier.success(`Referencias de compra aplicadas a ${updates.length} partida(s).`);
           }}
         />
       )}

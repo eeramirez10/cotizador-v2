@@ -13,6 +13,7 @@ import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../module
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 export type QuoteCurrency = "MXN" | "USD";
+export type SellerCostSource = "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
 export type QuoteCaptureMethod = "SYSTEM" | "EXCEL_IMPORT";
 export type QuoteStatus = "BORRADOR" | "PENDIENTE" | "PENDIENTE_APROBACION" | "CAMBIOS_SOLICITADOS" | "COTIZADA" | "APROBADA" | "RECHAZADA" | "CANCELADA" | "REEMPLAZADA";
 export type QuoteSourceChannel =
@@ -50,6 +51,7 @@ export interface ManualQuoteItem {
   sellerSupplierId: string | null;
   sellerSupplierName: string;
   sellerQuotedUnitCost: number | null;
+  sellerCostSource?: SellerCostSource | null;
   sellerQuotedCurrency: QuoteCurrency;
   sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string;
@@ -110,12 +112,18 @@ export type ProcurementPrequoteData = Pick<
   | "purchaseBore"
   | "technicalFamily"
   | "technicalAttributes"
->;
+> & {
+  sellerCostSource: SellerCostSource;
+};
 
 export interface ProcurementPrequoteUpdate {
   itemId: string;
   data: ProcurementPrequoteData;
 }
+
+type EmptyProcurementPrequoteData = Omit<ProcurementPrequoteData, "sellerCostSource"> & {
+  sellerCostSource: SellerCostSource | null;
+};
 
 export interface ManualQuoteDraft {
   id: string;
@@ -254,10 +262,11 @@ const nowDateOnly = () => new Date().toISOString().slice(0, 10);
 const round = (value: number) => Number(value.toFixed(2));
 const roundMargin = (value: number) => Number(value.toFixed(1));
 
-const emptyProcurementPrequote = (): ProcurementPrequoteData => ({
+const emptyProcurementPrequote = (): EmptyProcurementPrequoteData => ({
   sellerSupplierId: null,
   sellerSupplierName: "",
   sellerQuotedUnitCost: null,
+  sellerCostSource: null as SellerCostSource | null,
   sellerQuotedCurrency: "MXN",
   sellerQuotedExchangeRate: null,
   sellerQuotedBrand: "",
@@ -426,6 +435,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         sellerSupplierId: item.sellerSupplierId,
         sellerSupplierName: item.sellerSupplierName,
         sellerQuotedUnitCost: item.sellerQuotedUnitCost,
+        sellerCostSource: item.sellerCostSource ?? null,
         sellerQuotedCurrency: item.sellerQuotedCurrency,
         sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
         sellerQuotedBrand: item.sellerQuotedBrand,
@@ -667,6 +677,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         deliveryTime: deliverySuggestion(product.stock, product.costUsd),
         itemComment: "",
         ...emptyProcurementPrequote(),
+        sellerCostSource: "ERP_COST" as const,
         costUsd: product.costUsd,
         costCurrency: "MXN" as const,
         erpSaleCurrency: product.saleCurrency,
@@ -692,6 +703,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         return {
           ...item,
           ...emptyProcurementPrequote(),
+          sellerCostSource: "ERP_COST" as const,
           localProductId: null,
           erpCode: product.code,
           ean: product.ean,
@@ -998,6 +1010,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         sellerSupplierId: item.sellerSupplierId || null,
         sellerSupplierName: item.sellerSupplierName || "",
         sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
+        sellerCostSource: (item.sellerQuotedUnitCost ?? 0) > 0
+          ? item.sellerCostSource ?? "ESTIMATED"
+          : item.erpCode?.trim() ? "ERP_COST" : null,
         sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
         sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
         sellerQuotedBrand: item.sellerQuotedBrand || "",
@@ -1086,6 +1101,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       sellerSupplierId: item.sellerSupplierId || null,
       sellerSupplierName: item.sellerSupplierName || "",
       sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
+      sellerCostSource: (item.sellerQuotedUnitCost ?? 0) > 0
+        ? item.sellerCostSource ?? "ESTIMATED"
+        : item.erpCode?.trim() ? "ERP_COST" : null,
       sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
       sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
       sellerQuotedBrand: item.sellerQuotedBrand || "",

@@ -42,6 +42,7 @@ import {
   useRegisterQuoteDeliveryAttempt,
   useRegisterErpQuote,
   useUpdateQuoteStatus,
+  useUpdateQuoteProcurementReference,
 } from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
@@ -52,6 +53,11 @@ import { useSystemCapabilities } from "../../queries/system/use-system-capabilit
 import { useQuoteAttachments } from "../../queries/attachments/use-attachments";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
+import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
+import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
+import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
+import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
+import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -670,6 +676,8 @@ export const QuoteDetailPage = () => {
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
+  const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
+  const [showBulkProcurement, setShowBulkProcurement] = useState(false);
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
@@ -691,6 +699,7 @@ export const QuoteDetailPage = () => {
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
   const registerErpQuote = useRegisterErpQuote();
+  const updateProcurementReference = useUpdateQuoteProcurementReference();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
   const rejectionCatalog = useQuoteCatalogs("REJECTION_REASON");
   const cancellationCatalog = useQuoteCatalogs("CANCELLATION_REASON");
@@ -737,7 +746,8 @@ export const QuoteDetailPage = () => {
     generateOrder.isPending ||
     downloadOrderFile.isPending ||
     registerDeliveryAttempt.isPending ||
-    registerErpQuote.isPending;
+    registerErpQuote.isPending ||
+    updateProcurementReference.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
   const availableWhatsAppRecipients = useMemo(
     () => sendRecipientOptions.filter((option) => option.whatsapp.trim()),
@@ -856,7 +866,25 @@ export const QuoteDetailPage = () => {
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
   const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
-  const purchaseReady = !purchaseRequisition || ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status);
+  const quoteRequiresPurchasing = quote.items.some((item) => {
+    const hasErpCode = Boolean(item.erpCode?.trim());
+    return !hasErpCode || Math.max(0, item.stock ?? 0) < item.qty;
+  });
+  const procurementItems = quote.items.filter(savedQuoteItemRequiresPurchase).map(toManualQuoteItem);
+  const procurementItem = procurementItemId
+    ? procurementItems.find((item) => item.id === procurementItemId) || null
+    : null;
+  const canManageProcurementReferences = currentRole === "seller"
+    && quote.captureMethod === "SYSTEM"
+    && !isArchived
+    && !hasRevisionInProgress
+    && (
+      quote.status === "COTIZADA"
+      || (quote.status === "APROBADA" && purchaseRequisition?.status === "DRAFT")
+    );
+  const purchaseReady = !quoteRequiresPurchasing || Boolean(
+    purchaseRequisition && ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status)
+  );
   const canGenerateOrder =
     quote.captureMethod !== "EXCEL_IMPORT"
     && !isArchived
@@ -880,6 +908,44 @@ export const QuoteDetailPage = () => {
     !quote.previousVersionId &&
     !quote.supersededByQuoteId &&
     !quote.nextRevision;
+
+  const saveProcurementReference = async (itemId: string, input: ProcurementPrequoteData) => {
+    const toast = notifier.loading("Guardando referencia de compra...");
+    try {
+      await updateProcurementReference.mutateAsync({ quoteId: quote.quoteId, itemId, input });
+      await Promise.all([refetch(), refetchPurchaseRequisition()]);
+      if (toast !== undefined) notifier.update(toast, "success", "Referencia de compra guardada.");
+      else notifier.success("Referencia de compra guardada.");
+      setProcurementItemId(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar la referencia de compra.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+      throw error;
+    }
+  };
+
+  const saveBulkProcurementReferences = async (updates: ProcurementPrequoteUpdate[]) => {
+    const toast = notifier.loading(`Guardando ${updates.length} referencia(s) de compra...`);
+    try {
+      for (const update of updates) {
+        await updateProcurementReference.mutateAsync({
+          quoteId: quote.quoteId,
+          itemId: update.itemId,
+          input: update.data,
+        });
+      }
+      await Promise.all([refetch(), refetchPurchaseRequisition()]);
+      if (toast !== undefined) notifier.update(toast, "success", "Referencias de compra guardadas.");
+      else notifier.success("Referencias de compra guardadas.");
+      setShowBulkProcurement(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron guardar todas las referencias.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+      throw error;
+    }
+  };
 
   const runActionWithToast = async <T,>({
     loadingMessage,
@@ -1083,7 +1149,7 @@ export const QuoteDetailPage = () => {
       loadingMessage: "Marcando cotización como APROBADA...",
       action: () => updateStatus.mutateAsync({ quoteId: quote.quoteId, status: "APROBADA" }),
       isSuccess: (result) => Boolean(result),
-      successMessage: "Cotización marcada como APROBADA.",
+      successMessage: "Cotización aprobada por el cliente.",
       errorMessage: "No se pudo marcar la cotización como APROBADA.",
       onSuccess: async () => {
         await refetch();
@@ -1623,14 +1689,16 @@ export const QuoteDetailPage = () => {
             <p className={`text-xs ${purchaseReady ? "text-emerald-800" : "text-amber-800"}`}>
               {purchaseReady
                 ? "Compras terminó las partidas requeridas. El pedido ERP está habilitado."
-                : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
+                : purchaseRequisition.status === "DRAFT"
+                  ? "El cliente aprobó la cotización. Completa la requisición y envíala a Compras."
+                  : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
             </p>
           </div>
           <NavLink
             to="/procurement"
             className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${purchaseReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}
           >
-            Ver requisición
+            {purchaseRequisition.status === "DRAFT" ? "Completar requisición" : "Ver requisición"}
           </NavLink>
         </div>
       )}
@@ -1822,8 +1890,19 @@ export const QuoteDetailPage = () => {
       </div>
 
       <div className="max-h-[62vh] overflow-x-auto overflow-y-auto rounded-md border border-gray-200 bg-white">
-        {(showCustomerExtractionColumns || hasItemComments) && (
-          <div className="flex justify-end border-b border-gray-200 px-3 py-2">
+        {(showCustomerExtractionColumns || hasItemComments || canManageProcurementReferences) && (
+          <div className="flex flex-wrap justify-end gap-2 border-b border-gray-200 px-3 py-2">
+            {canManageProcurementReferences && procurementItems.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowBulkProcurement(true)}
+                disabled={isActionLocked}
+                className={`inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 ${disabledActionClass}`}
+              >
+                <ShoppingCart className="h-3.5 w-3.5" />
+                Completar compra en lote
+              </button>
+            )}
             <div className="flex gap-2">
               {showCustomerExtractionColumns && (
                 <button
@@ -1868,10 +1947,13 @@ export const QuoteDetailPage = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Comentario</th>
               )}
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Cantidad</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo ERP</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo / origen</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Margen</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Precio</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Subtotal</th>
+              {canManageProcurementReferences && (
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Compra</th>
+              )}
             </tr>
           </thead>
 
@@ -1927,6 +2009,11 @@ export const QuoteDetailPage = () => {
                       Efectivo: {formatCurrency(item.effectiveCostAtQuote ?? 0, quote.currency)}
                     </p>
                   )}
+                  {resolveSellerCostSource(item) && (
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold ${sellerCostSourceClassName(resolveSellerCostSource(item)!)}`}>
+                      {sellerCostSourceLabel(resolveSellerCostSource(item))}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-xs text-gray-700">
                   <span>{item.marginPct}%</span>
@@ -1945,6 +2032,21 @@ export const QuoteDetailPage = () => {
                 </td>
                 <td className={`px-3 py-2 text-xs ${item.isBelowEffectiveCost ? "font-semibold text-rose-700" : "text-gray-700"}`}>{formatCurrency(item.unitPrice, quote.currency)}</td>
                 <td className="px-3 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quote.currency)}</td>
+                {canManageProcurementReferences && (
+                  <td className="px-3 py-2 text-xs">
+                    {savedQuoteItemRequiresPurchase(item) ? (
+                      <button
+                        type="button"
+                        onClick={() => setProcurementItemId(item.id)}
+                        disabled={isActionLocked}
+                        className={`inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-800 hover:bg-amber-100 ${disabledActionClass}`}
+                      >
+                        <ShoppingCart className="h-3.5 w-3.5" />
+                        {item.sellerSupplierId ? "Actualizar" : "Completar"}
+                      </button>
+                    ) : <span className="text-gray-400">No aplica</span>}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1984,6 +2086,27 @@ export const QuoteDetailPage = () => {
           onClose={() => setShowAttachmentsModal(false)}
           onDownload={(file) => { void downloadAttachment(file); }}
           onDelete={(file) => { void deleteAttachment(file); }}
+        />
+      )}
+
+      {procurementItem && (
+        <SellerProcurementPrequoteModal
+          item={procurementItem}
+          clientDraftId={quote.quoteDraftId}
+          quoteCurrency={quote.currency}
+          quoteExchangeRate={quote.exchangeRate}
+          onClose={() => { if (!updateProcurementReference.isPending) setProcurementItemId(null); }}
+          onSave={(input) => saveProcurementReference(procurementItem.id, input)}
+        />
+      )}
+
+      {showBulkProcurement && procurementItems.length > 0 && (
+        <SellerProcurementBulkPrequoteModal
+          items={procurementItems}
+          clientDraftId={quote.quoteDraftId}
+          quoteExchangeRate={quote.exchangeRate}
+          onClose={() => { if (!updateProcurementReference.isPending) setShowBulkProcurement(false); }}
+          onSave={saveBulkProcurementReferences}
         />
       )}
 

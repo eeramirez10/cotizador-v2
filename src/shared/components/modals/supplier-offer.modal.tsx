@@ -99,9 +99,9 @@ export const SupplierOfferModal = ({
   const update = <K extends keyof SupplierOfferFormValue>(key: K, fieldValue: SupplierOfferFormValue[K]) => {
     onChange({ ...value, [key]: fieldValue });
   };
-  const title = mode === "SELLER" ? "Completar cotización con proveedor" : "Nueva propuesta de proveedor";
-  const eyebrow = mode === "SELLER" ? "Propuesta del vendedor" : "Propuesta de Compras";
-  const submitLabel = mode === "SELLER" ? "Guardar propuesta del vendedor" : "Registrar propuesta de Compras";
+  const title = mode === "SELLER" ? "Agregar referencia de proveedor" : "Nueva propuesta de proveedor";
+  const eyebrow = mode === "SELLER" ? "Información opcional para Compras" : "Propuesta de Compras";
+  const submitLabel = mode === "SELLER" ? "Guardar referencia" : "Registrar propuesta de Compras";
   const modalBusy = busy || extracting;
   const canExtract = Boolean(attachmentFile && /\.(pdf|xlsx?)$/i.test(attachmentFile.name));
 

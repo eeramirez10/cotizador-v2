@@ -6,6 +6,7 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 import type {
   ManualQuoteDraft,
   ManualQuoteItem,
+  ProcurementPrequoteData,
   QuoteSourceChannel,
 } from "../../../store/quote/manual-quote.store";
 import type { ErpProduct } from "../../products/types/erp-product.types";
@@ -130,6 +131,7 @@ export interface SavedQuoteRecord {
     sellerSupplierId?: string | null;
     sellerSupplierName?: string;
     sellerQuotedUnitCost?: number | null;
+    sellerCostSource?: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED" | null;
     sellerQuotedCurrency?: "MXN" | "USD";
     sellerQuotedExchangeRate?: number | null;
     sellerQuotedBrand?: string;
@@ -189,6 +191,7 @@ interface ApiQuoteItem {
   sellerSupplierId: string | null;
   sellerSupplierNameSnapshot: string | null;
   sellerQuotedUnitCost: number | null;
+  sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED" | null;
   sellerQuotedCurrency: "MXN" | "USD" | null;
   sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string | null;
@@ -523,6 +526,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       sellerSupplierId: item.sellerSupplierId,
       sellerSupplierName: item.sellerSupplierNameSnapshot || "",
       sellerQuotedUnitCost: item.sellerQuotedUnitCost,
+      sellerCostSource: item.sellerCostSource,
       sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
       sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
       sellerQuotedBrand: item.sellerQuotedBrand || "",
@@ -649,6 +653,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     sellerSupplierId: item.sellerSupplierId || null,
     sellerSupplierNameSnapshot: item.sellerSupplierName?.trim() || null,
     sellerQuotedUnitCost: Number.isFinite(item.sellerQuotedUnitCost) ? item.sellerQuotedUnitCost : null,
+    sellerCostSource: item.sellerCostSource ?? null,
     sellerQuotedCurrency: item.sellerQuotedUnitCost !== null ? item.sellerQuotedCurrency : null,
     sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
     sellerQuotedBrand: item.sellerQuotedBrand?.trim() || null,
@@ -745,6 +750,23 @@ const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
 };
 
 export class QuotesService {
+  static async updateProcurementReference(
+    quoteId: string,
+    itemId: string,
+    input: ProcurementPrequoteData,
+  ): Promise<SavedQuoteRecord> {
+    try {
+      const { data } = await coreHttpClient.patch<ApiQuote>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/items/${encodeURIComponent(itemId)}/procurement-reference`,
+        input,
+        { headers: requireAuthHeaders() },
+      );
+      return mapApiQuoteToSavedRecord(data);
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudo guardar la referencia de compra."));
+    }
+  }
+
   static async linkImportedExcelItemToErp(
     quoteId: string,
     itemId: string,

@@ -1,0 +1,66 @@
+import type { SavedQuoteRecord } from "../services/quotes.service";
+import type { ManualQuoteItem } from "../../../store/quote/manual-quote.store";
+
+export type SavedQuoteItem = SavedQuoteRecord["items"][number];
+
+export const savedQuoteItemRequiresPurchase = (item: SavedQuoteItem): boolean =>
+  !item.erpCode.trim() || Math.max(0, item.stock) < item.qty;
+
+export const toManualQuoteItem = (item: SavedQuoteItem): ManualQuoteItem => ({
+  id: item.id,
+  localProductId: item.localProductId,
+  erpCode: item.erpCode,
+  ean: item.ean || "",
+  customerDescription: item.customerDescription || "",
+  customerDescriptionOriginal: item.customerDescriptionOriginal || item.customerDescription || "",
+  customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
+  customerDescriptionEditedByUser: item.customerDescriptionEditedByUser || null,
+  customerUnit: item.customerUnit || "",
+  erpDescription: item.erpDescription,
+  unit: item.unit,
+  qty: item.qty,
+  stock: item.stock,
+  deliveryTime: item.deliveryTime,
+  itemComment: item.itemComment || "",
+  sellerSupplierId: item.sellerSupplierId || null,
+  sellerSupplierName: item.sellerSupplierName || "",
+  sellerQuotedUnitCost: item.sellerQuotedUnitCost ?? null,
+  sellerCostSource: (item.sellerQuotedUnitCost ?? 0) > 0
+    ? item.sellerCostSource ?? "ESTIMATED"
+    : item.erpCode.trim() ? "ERP_COST" : null,
+  sellerQuotedCurrency: item.sellerQuotedCurrency || "MXN",
+  sellerQuotedExchangeRate: item.sellerQuotedExchangeRate ?? null,
+  sellerQuotedBrand: item.sellerQuotedBrand || "",
+  sellerSupplierDescription: item.sellerSupplierDescription || "",
+  sellerSupplierOrigin: item.sellerSupplierOrigin || "",
+  sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
+  sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
+  sellerSupplierQuoteNotes: item.sellerSupplierQuoteNotes || "",
+  sellerOriginRestrictions: item.sellerOriginRestrictions || [],
+  sellerDeliveryState: item.sellerDeliveryState || "",
+  sellerSupplierDeliveryTime: item.sellerSupplierDeliveryTime || "",
+  purchaseStandard: item.purchaseStandard || "",
+  purchaseDiameter: item.purchaseDiameter || "",
+  purchaseThickness: item.purchaseThickness || "",
+  purchaseBore: item.purchaseBore || "",
+  technicalFamily: item.technicalFamily || "",
+  technicalAttributes: item.technicalAttributes || {},
+  costUsd: item.costUsd,
+  costCurrency: item.costCurrency || "MXN",
+  erpSaleCurrency: item.erpSaleCurrency || null,
+  marginPct: item.marginPct,
+  effectiveCostAtQuote: item.effectiveCostAtQuote,
+  isBelowEffectiveCost: item.isBelowEffectiveCost,
+  effectiveCostVariance: item.effectiveCostVariance,
+  effectiveCostVariancePct: item.effectiveCostVariancePct,
+  effectiveCostEvaluatedAt: item.effectiveCostEvaluatedAt,
+  effectiveCostEvaluatedByUser: item.effectiveCostEvaluatedByUser,
+  sourceCurrency: item.sourceCurrency || undefined,
+  sourceUnitPrice: item.sourceUnitPrice ?? undefined,
+  sourceSubtotal: item.sourceSubtotal ?? undefined,
+  unitPrice: item.unitPrice,
+  subtotal: item.subtotal,
+  sourceRequiresReview: Boolean(item.sourceRequiresReview),
+  importedFromExcel: Boolean(item.importedFromExcel),
+  requiresReview: item.requiresReview,
+});

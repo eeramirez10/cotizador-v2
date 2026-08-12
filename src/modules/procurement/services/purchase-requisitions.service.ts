@@ -162,7 +162,7 @@ export interface RequisitionItem {
   sellerUnitCost: number;
   sellerCurrency: Currency;
   sellerExchangeRate: number;
-  sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "ESTIMATED";
+  sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
   sellerSupplierId: string | null;
   sellerSupplierName: string | null;
   sellerBrand: string | null;
@@ -217,7 +217,7 @@ export interface UpdateRequisitionItemInput {
   technicalAttributes?: Record<string, string>;
   sellerUnitCost?: number;
   sellerCurrency?: Currency;
-  sellerCostSource?: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "ESTIMATED";
+  sellerCostSource?: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
   sellerBrand?: string | null;
   originRestrictions?: string[];
   sellerDeliveryTime?: string | null;

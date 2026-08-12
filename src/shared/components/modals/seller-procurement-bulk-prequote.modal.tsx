@@ -37,7 +37,7 @@ interface SellerProcurementBulkPrequoteModalProps {
   clientDraftId: string;
   quoteExchangeRate: number;
   onClose: () => void;
-  onSave: (updates: ProcurementPrequoteUpdate[]) => void;
+  onSave: (updates: ProcurementPrequoteUpdate[]) => void | Promise<void>;
 }
 
 const MANUAL_SUPPLIER = "__MANUAL__";
@@ -343,7 +343,7 @@ export const SellerProcurementBulkPrequoteModal = ({
     const pendingTechnicalReview = selectedItems.find((item) => itemForms[item.id].technicalRequiresReview);
     if (pendingTechnicalReview) return setError(`Revisa y confirma los datos técnicos sugeridos para ${pendingTechnicalReview.erpCode || "la partida local"}.`);
 
-    const updates = selectedItems.map((item) => {
+    const updates: ProcurementPrequoteUpdate[] = selectedItems.map((item) => {
       const form = itemForms[item.id];
       return {
         itemId: item.id,
@@ -351,6 +351,9 @@ export const SellerProcurementBulkPrequoteModal = ({
           sellerSupplierId: supplierSelection === MANUAL_SUPPLIER ? null : supplierSelection,
           sellerSupplierName: normalizedSupplierName,
           sellerQuotedUnitCost: Number(form.unitCost),
+          sellerCostSource: attachmentFile || supplierQuoteFiles.some((file) => file.clientItemIds.includes(item.id))
+            ? "SELLER_SUPPLIER_QUOTE"
+            : "ESTIMATED",
           sellerQuotedCurrency: form.currency,
           sellerQuotedExchangeRate: form.currency === "USD"
             ? Number(form.exchangeRate)
@@ -380,7 +383,7 @@ export const SellerProcurementBulkPrequoteModal = ({
         await AttachmentsService.uploadSellerQuote(clientDraftId, selectedItems.map((item) => item.id), attachmentFile);
         await attachments.refetch();
       }
-      onSave(updates);
+      await onSave(updates);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No se pudo guardar la cotización del proveedor.");
     } finally {
@@ -405,9 +408,9 @@ export const SellerProcurementBulkPrequoteModal = ({
           <div className="flex gap-3">
             <span className="rounded-xl bg-amber-100 p-2 text-amber-700"><CheckSquare2 className="h-5 w-5" /></span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Información para Compras</p>
-              <h2 id="bulk-procurement-prequote-title" className="text-base font-semibold text-slate-900">Completar compra en lote</h2>
-              <p className="mt-1 text-xs text-slate-500">Asigna un proveedor a una o varias partidas locales o sin stock.</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Información opcional para Compras</p>
+              <h2 id="bulk-procurement-prequote-title" className="text-base font-semibold text-slate-900">Agregar referencias en lote</h2>
+              <p className="mt-1 text-xs text-slate-500">Registra anticipadamente un proveedor para una o varias partidas locales o sin stock.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button>

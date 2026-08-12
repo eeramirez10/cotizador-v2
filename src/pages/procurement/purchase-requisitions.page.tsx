@@ -50,6 +50,12 @@ import { AttachmentsService, type FileAttachment } from "../../modules/attachmen
 import { TechnicalDataService } from "../../modules/procurement/services/technical-data.service";
 import { SelectOrCreateSupplierModal } from "../../shared/components/modals/select-or-create-supplier.modal";
 import { SupplierOfferModal, type SupplierOfferFormValue } from "../../shared/components/modals/supplier-offer.modal";
+import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
+import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
+import { useQuoteDetail, useUpdateQuoteProcurementReference } from "../../queries/quotes/use-quote-detail";
+import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
+import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
+import { sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 
 const PAGE_SIZE = 15;
 
@@ -79,7 +85,7 @@ interface ItemForm {
   technicalAttributes: Record<string, string>;
   sellerUnitCost: string;
   sellerCurrency: Currency;
-  sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "ESTIMATED";
+  sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
   sellerBrand: string;
   originRestrictions: string[];
   sellerDeliveryTime: string;
@@ -139,6 +145,8 @@ export const PurchaseRequisitionsPage = () => {
   const [showOfferAttachmentModal, setShowOfferAttachmentModal] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
+  const [sellerProcurementItemId, setSellerProcurementItemId] = useState<string | null>(null);
+  const [showSellerBulkProcurement, setShowSellerBulkProcurement] = useState(false);
   const [supplierInitialValues, setSupplierInitialValues] = useState<Partial<SaveSupplierInput> | undefined>();
   const debouncedSearch = useDebouncedValue(search, 350);
   const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status });
@@ -160,6 +168,15 @@ export const PurchaseRequisitionsPage = () => {
     staleTime: 30_000,
   });
   const requisition = detail.data || null;
+  const sourceQuote = useQuoteDetail(requisition?.quoteId);
+  const updateProcurementReference = useUpdateQuoteProcurementReference();
+  const sellerProcurementItems = useMemo(
+    () => (sourceQuote.data?.items || []).filter(savedQuoteItemRequiresPurchase).map(toManualQuoteItem),
+    [sourceQuote.data],
+  );
+  const sellerProcurementItem = sellerProcurementItemId
+    ? sellerProcurementItems.find((item) => item.id === sellerProcurementItemId) || null
+    : null;
 
   const attachmentItemLabels = useMemo(() => Object.fromEntries(
     (requisition?.items || []).flatMap((item) => item.quoteClientItemId
@@ -200,6 +217,50 @@ export const PurchaseRequisitionsPage = () => {
   const openItem = (item: RequisitionItem) => {
     setEditingItem(item);
     setEditingItemForm(itemForm(item));
+  };
+
+  const openSellerProcurementItem = (item: RequisitionItem) => {
+    if (!item.quoteClientItemId) {
+      notifier.error("La partida no conserva el identificador de la cotización.");
+      return;
+    }
+    if (!sellerProcurementItems.some((quoteItem) => quoteItem.id === item.quoteClientItemId)) {
+      notifier.error("No se encontró la partida original de la cotización.");
+      return;
+    }
+    setSellerProcurementItemId(item.quoteClientItemId);
+  };
+
+  const saveSellerProcurementReference = async (itemId: string, input: ProcurementPrequoteData) => {
+    if (!requisition) return;
+    const saved = await run(
+      "Guardando referencia de compra...",
+      () => updateProcurementReference.mutateAsync({ quoteId: requisition.quoteId, itemId, input }),
+      "Referencia de compra guardada.",
+    );
+    if (!saved) throw new Error("No se pudo guardar la referencia de compra.");
+    await Promise.all([detail.refetch(), sourceQuote.refetch()]);
+    setSellerProcurementItemId(null);
+  };
+
+  const saveSellerBulkProcurement = async (updates: ProcurementPrequoteUpdate[]) => {
+    if (!requisition) return;
+    const saved = await run(
+      `Guardando ${updates.length} referencia(s) de compra...`,
+      async () => {
+        for (const update of updates) {
+          await updateProcurementReference.mutateAsync({
+            quoteId: requisition.quoteId,
+            itemId: update.itemId,
+            input: update.data,
+          });
+        }
+      },
+      "Referencias de compra guardadas.",
+    );
+    if (!saved) throw new Error("No se pudieron guardar todas las referencias de compra.");
+    await Promise.all([detail.refetch(), sourceQuote.refetch()]);
+    setShowSellerBulkProcurement(false);
   };
 
   const saveItem = async (event: React.FormEvent) => {
@@ -472,8 +533,9 @@ export const PurchaseRequisitionsPage = () => {
               onDownloadAttachment={(file) => { void downloadAttachment(file); }}
               onDeleteAttachment={(file) => { void deleteAttachment(file); }}
               onAttachOffers={() => setShowOfferAttachmentModal(true)}
+              onBulkSellerReference={() => setShowSellerBulkProcurement(true)}
               onBack={() => setSelectedId(null)}
-              onEdit={openItem}
+              onEdit={(item) => role === "SELLER" ? openSellerProcurementItem(item) : openItem(item)}
               onLinkErp={setLinkingItem}
               onOffer={(item) => { setOfferItem(item); setCurrentOfferForm(offerForm(item)); }}
               onSelect={(itemId, offerId) => run(
@@ -516,6 +578,25 @@ export const PurchaseRequisitionsPage = () => {
           deliveryTimes={deliveryTimeCatalog.data || []}
           onClose={() => { setEditingItem(null); setEditingItemForm(null); }}
           onSubmit={saveItem}
+        />
+      )}
+      {sellerProcurementItem && sourceQuote.data && (
+        <SellerProcurementPrequoteModal
+          item={sellerProcurementItem}
+          clientDraftId={sourceQuote.data.quoteDraftId}
+          quoteCurrency={sourceQuote.data.currency}
+          quoteExchangeRate={sourceQuote.data.exchangeRate}
+          onClose={() => { if (!updateProcurementReference.isPending) setSellerProcurementItemId(null); }}
+          onSave={(input) => saveSellerProcurementReference(sellerProcurementItem.id, input)}
+        />
+      )}
+      {showSellerBulkProcurement && sourceQuote.data && sellerProcurementItems.length > 0 && (
+        <SellerProcurementBulkPrequoteModal
+          items={sellerProcurementItems}
+          clientDraftId={sourceQuote.data.quoteDraftId}
+          quoteExchangeRate={sourceQuote.data.exchangeRate}
+          onClose={() => { if (!updateProcurementReference.isPending) setShowSellerBulkProcurement(false); }}
+          onSave={saveSellerBulkProcurement}
         />
       )}
       {offerItem && currentOfferForm && (
@@ -593,6 +674,7 @@ const RequisitionDetail = ({
   onDownloadAttachment,
   onDeleteAttachment,
   onAttachOffers,
+  onBulkSellerReference,
   onBack,
   onEdit,
   onLinkErp,
@@ -618,6 +700,7 @@ const RequisitionDetail = ({
   onDownloadAttachment: (file: FileAttachment) => void;
   onDeleteAttachment: (file: FileAttachment) => void;
   onAttachOffers: () => void;
+  onBulkSellerReference: () => void;
   onBack: () => void;
   onEdit: (item: RequisitionItem) => void;
   onLinkErp: (item: RequisitionItem) => void;
@@ -665,6 +748,11 @@ const RequisitionDetail = ({
             <button type="button" onClick={() => setAttachmentView({ type: "ALL" })} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
               <Paperclip className="h-3.5 w-3.5" />Expediente ({attachments.length})
             </button>
+            {sellerDraft && requisition.items.length > 1 && (
+              <button type="button" onClick={onBulkSellerReference} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                <PackageCheck className="h-3.5 w-3.5" />Completar compra en lote
+              </button>
+            )}
             {canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status) && buyers.length > 0 && (
               <select
                 value={requisition.assignedBuyerUserId || ""}
@@ -736,7 +824,7 @@ const RequisitionDetail = ({
               </div>
 
               <div className="grid gap-px bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
-                <InfoBlock label="Costo vendedor" value={money(item.sellerUnitCost, item.sellerCurrency)} />
+                <InfoBlock label={`Costo vendedor · ${sellerCostSourceLabel(item.sellerCostSource)}`} value={money(item.sellerUnitCost, item.sellerCurrency)} />
                 <InfoBlock label="Proveedor vendedor" value={item.sellerSupplierName || "No registrado"} />
                 <InfoBlock label="Norma / diámetro" value={[item.standard, item.diameter].filter(Boolean).join(" · ") || "-"} />
                 <InfoBlock label="Marca" value={item.sellerBrand || "-"} />
@@ -803,7 +891,11 @@ const RequisitionDetail = ({
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
         <p className="text-xs text-slate-500">
-          {requisition.status === "READY_FOR_ORDER" ? "La cotización ya puede generar el pedido ERP." : "El pedido se habilita cuando todas las partidas estén listas."}
+          {requisition.status === "READY_FOR_ORDER"
+            ? "La cotización ya puede generar el pedido ERP."
+            : requisition.status === "DRAFT"
+              ? "Completa los datos requeridos y envía la requisición a Compras."
+              : "El pedido se habilita cuando todas las partidas estén listas."}
         </p>
         {sellerDraft && (
           <button type="button" disabled={busy} onClick={() => void onSubmit()} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
@@ -918,7 +1010,7 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
         </div>
         <Field label="Costo unitario del vendedor *" type="number" value={form.sellerUnitCost} onChange={(sellerUnitCost) => setForm((state) => state && ({ ...state, sellerUnitCost }))} />
         <Select label="Moneda *" value={form.sellerCurrency} onChange={(sellerCurrency) => setForm((state) => state && ({ ...state, sellerCurrency: sellerCurrency as Currency }))} options={[["MXN", "MXN"], ["USD", "USD"]]} />
-        <Select label="Origen del costo *" value={form.sellerCostSource} onChange={(sellerCostSource) => setForm((state) => state && ({ ...state, sellerCostSource: sellerCostSource as ItemForm["sellerCostSource"] }))} options={[["ERP_COST", "Costo ERP"], ["SELLER_SUPPLIER_QUOTE", "Cotización del vendedor"], ["ESTIMATED", "Estimado"]]} />
+        <Select label="Origen del costo *" value={form.sellerCostSource} onChange={(sellerCostSource) => setForm((state) => state && ({ ...state, sellerCostSource: sellerCostSource as ItemForm["sellerCostSource"] }))} options={[["ERP_COST", "Costo ERP"], ["SELLER_SUPPLIER_QUOTE", "Cotización del vendedor"], ["PRICE_LIST", "Lista de precios"], ["ESTIMATED", "Estimado"]]} />
         <Select label="Marca cotizada" value={form.sellerBrand} onChange={(sellerBrand) => setForm((state) => state && ({ ...state, sellerBrand }))} options={[["", "Seleccionar"], ...brands.map((option) => [catalogValue(option), option.label] as [string, string])]} />
         <Select label="Tiempo de entrega *" value={form.sellerDeliveryTime} onChange={(sellerDeliveryTime) => setForm((state) => state && ({ ...state, sellerDeliveryTime }))} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [catalogValue(option), option.label] as [string, string])]} />
         <Select label="Estado de entrega *" value={form.deliveryPlace} onChange={(deliveryPlace) => setForm((state) => state && ({ ...state, deliveryPlace }))} options={[["", "Seleccionar"], ...deliveryStates.map((option) => [catalogValue(option), option.label] as [string, string])]} />
