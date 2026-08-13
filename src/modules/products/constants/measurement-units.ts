@@ -2,6 +2,7 @@ export const MEASUREMENT_UNIT_OPTIONS = [
   { value: "PZ", label: "PZ - Pieza" },
   { value: "K", label: "K - Kilo" },
   { value: "M", label: "M - Metro" },
+  { value: "ML", label: "ML - Metro lineal" },
   { value: "L", label: "L - Litro" },
   { value: "TR", label: "TR - Tramos" },
   { value: "SE", label: "SE - Servicio" },
@@ -23,7 +24,9 @@ const UNIT_ALIASES = new Map<string, MeasurementUnit>([
   ["K", "K"], ["KG", "K"], ["KGS", "K"], ["KILO", "K"], ["KILOS", "K"],
   ["KILOGRAMO", "K"], ["KILOGRAMOS", "K"], ["KILOGRAM", "K"], ["KILOGRAMS", "K"],
   ["M", "M"], ["MT", "M"], ["MTS", "M"], ["MTR", "M"], ["MTRS", "M"],
-  ["METRO", "M"], ["METROS", "M"], ["METRO LINEAL", "M"], ["METROS LINEALES", "M"],
+  ["METRO", "M"], ["METROS", "M"],
+  ["ML", "ML"], ["M L", "ML"], ["MTL", "ML"], ["MTLS", "ML"],
+  ["METRO LINEAL", "ML"], ["METROS LINEALES", "ML"],
   ["L", "L"], ["LT", "L"], ["LTS", "L"], ["LTR", "L"], ["LITRO", "L"], ["LITROS", "L"],
   ["TR", "TR"], ["TMO", "TR"], ["TMOS", "TR"], ["TRAMO", "TR"], ["TRAMOS", "TR"],
   ["SE", "SE"], ["SERV", "SE"], ["SERVICIO", "SE"], ["SERVICIOS", "SE"], ["SERVICE", "SE"],
@@ -49,7 +52,7 @@ export const normalizeMeasurementUnit = (value: unknown): MeasurementUnit | null
     .trim()
     .toUpperCase()
     .replace(/[.,;:()"'`]/g, "")
-    .replace(/[\/_-]+/g, " ")
+    .replace(/[/_-]+/g, " ")
     .replace(/\s+/g, " ");
   return UNIT_ALIASES.get(normalized) ?? UNIT_ALIASES.get(normalized.replace(/\s+/g, "")) ?? null;
 };

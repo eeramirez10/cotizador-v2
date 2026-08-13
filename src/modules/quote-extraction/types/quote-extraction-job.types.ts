@@ -23,7 +23,19 @@ export interface ExtractedQuotedExcelItem {
   moneda: "MXN" | "USD" | null;
   tiempo_entrega: string | null;
   requiere_revision: boolean;
+  motivos_revision?: QuotedExcelReviewReason[];
 }
+
+export type QuotedExcelReviewReason =
+  | "MISSING_DESCRIPTION"
+  | "INVALID_QUANTITY"
+  | "MISSING_UNIT"
+  | "UNRECOGNIZED_UNIT"
+  | "INVALID_UNIT_PRICE"
+  | "INVALID_SUBTOTAL"
+  | "MISSING_CURRENCY"
+  | "MISSING_DELIVERY_TIME"
+  | "SUBTOTAL_MISMATCH";
 
 export interface ExtractionJobCreateResponse {
   job_id: string;

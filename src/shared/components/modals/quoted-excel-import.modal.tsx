@@ -4,6 +4,12 @@ import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/se
 import type { ExtractedQuotedExcelItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
 import { useManualQuoteStore, type QuoteCurrency } from "../../../store/quote/manual-quote.store";
 import { AttachmentsService } from "../../../modules/attachments/services/attachments.service";
+import { MEASUREMENT_UNIT_OPTIONS, normalizeMeasurementUnit } from "../../../modules/products/constants/measurement-units";
+import {
+  getQuotedExcelReviewIssues,
+  normalizeAndReviewQuotedExcelItem,
+  type QuotedExcelReviewField,
+} from "../../../modules/quote-extraction/utils/quoted-excel-review";
 
 interface QuotedExcelImportModalProps {
   open: boolean;
@@ -16,18 +22,6 @@ const updateNumber = (rawValue: string): number | null => {
   const parsed = Number(rawValue);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
 };
-
-const needsReview = (item: ExtractedQuotedExcelItem): boolean =>
-  !item.description_normalizada.trim()
-  || item.cantidad === null
-  || item.cantidad <= 0
-  || !item.unidad?.trim()
-  || item.precio_vendedor === null
-  || item.precio_vendedor <= 0
-  || item.subtotal === null
-  || item.subtotal <= 0
-  || !item.moneda
-  || !item.tiempo_entrega?.trim();
 
 export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExcelImportModalProps) => {
   const currentItemsCount = useManualQuoteStore((state) => state.draft.items.length);
@@ -46,7 +40,9 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
   const [error, setError] = useState<string | null>(null);
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const importCurrency = lockedImportCurrency || selectedCurrency;
-  const hasPendingReview = items?.some((item) => item.requiere_revision || needsReview(item)) ?? false;
+  const pendingReviewCount = items?.filter((item) => getQuotedExcelReviewIssues(item).length > 0).length ?? 0;
+  const reviewIssueCount = items?.reduce((total, item) => total + getQuotedExcelReviewIssues(item).length, 0) ?? 0;
+  const hasPendingReview = pendingReviewCount > 0;
 
   if (!open) return null;
 
@@ -67,8 +63,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
     setExtractedItems((current) => current?.map((item, itemIndex) => (
       itemIndex === index
         ? (() => {
-            const updated = { ...item, ...patch };
-            return { ...updated, requiere_revision: needsReview(updated) };
+            return normalizeAndReviewQuotedExcelItem({ ...item, ...patch }, false);
           })()
         : item
     )) ?? null);
@@ -103,10 +98,9 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         },
       });
 
-      const extracted = (result.result?.items ?? []).map((item) => {
-        const normalized = { ...item, moneda: item.moneda ?? null };
-        return { ...normalized, requiere_revision: item.requiere_revision || needsReview(normalized) };
-      });
+      const extracted = (result.result?.items ?? []).map((item) =>
+        normalizeAndReviewQuotedExcelItem({ ...item, moneda: item.moneda ?? null })
+      );
       if (extracted.length === 0) {
         throw new Error("No se encontraron partidas en el archivo Excel.");
       }
@@ -213,14 +207,19 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
           {items && (
             <>
             {hasPendingReview && (
-              <div className="mt-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                <AlertCircle className="h-4 w-4" /> Completa y revisa las partidas marcadas antes de cargarlas.
+              <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-semibold">Hay {reviewIssueCount} dato(s) por corregir en {pendingReviewCount} partida(s).</p>
+                  <p className="mt-0.5">Los campos están resaltados y la última columna explica exactamente qué debes revisar.</p>
+                </div>
               </div>
             )}
             <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200">
-              <table className="min-w-[980px] divide-y divide-gray-200 text-xs">
+              <table className="min-w-[1280px] divide-y divide-gray-200 text-xs">
                 <thead className="bg-gray-50 text-left font-semibold uppercase text-gray-500">
                   <tr>
+                    <th className="px-3 py-2">Partida</th>
                     <th className="px-3 py-2">Descripción</th>
                     <th className="px-3 py-2">UM</th>
                     <th className="px-3 py-2">Cantidad</th>
@@ -232,30 +231,59 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {items.map((item, index) => (
-                    <tr key={`${index}-${item.description_original}`}>
-                      <td className="min-w-80 px-3 py-2">
-                        <textarea value={item.description_normalizada} rows={2} onChange={(event) => patchItem(index, { description_normalizada: event.target.value.toUpperCase() })} className="w-full resize-none rounded border border-gray-300 px-2 py-1" />
+                  {items.map((item, index) => {
+                    const issues = getQuotedExcelReviewIssues(item);
+                    const hasFieldIssue = (field: QuotedExcelReviewField) => issues.some((issue) => issue.field === field);
+                    const fieldClass = (field: QuotedExcelReviewField, width: string) =>
+                      `${width} rounded border px-2 py-1 outline-none ${hasFieldIssue(field)
+                        ? "border-rose-400 bg-rose-50 text-rose-900 focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                        : "border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"}`;
+                    const normalizedUnit = normalizeMeasurementUnit(item.unidad);
+                    const unitValue = normalizedUnit ?? item.unidad?.trim().toUpperCase() ?? "";
+
+                    return (
+                    <tr key={`${index}-${item.description_original}`} className={issues.length > 0 ? "bg-amber-50/30" : undefined}>
+                      <td className="px-3 py-2 text-center align-top">
+                        <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${issues.length > 0 ? "bg-amber-200 text-amber-900" : "bg-slate-100 text-slate-600"}`}>
+                          {index + 1}
+                        </span>
                       </td>
-                      <td className="px-3 py-2"><input value={item.unidad ?? ""} onChange={(event) => patchItem(index, { unidad: event.target.value.toUpperCase() })} className="w-20 rounded border border-gray-300 px-2 py-1" /></td>
-                      <td className="px-3 py-2"><input type="number" min="0" value={item.cantidad ?? ""} onChange={(event) => patchItem(index, { cantidad: updateNumber(event.target.value) })} className="w-24 rounded border border-gray-300 px-2 py-1" /></td>
+                      <td className="min-w-80 px-3 py-2">
+                        <textarea value={item.description_normalizada} rows={2} onChange={(event) => patchItem(index, { description_normalizada: event.target.value.toUpperCase() })} className={`${fieldClass("description_normalizada", "w-full")} resize-none`} />
+                      </td>
                       <td className="px-3 py-2">
-                        <select value={item.moneda ?? ""} onChange={(event) => patchItem(index, { moneda: (event.target.value || null) as QuoteCurrency | null })} className="w-24 rounded border border-gray-300 px-2 py-1">
+                        <select value={unitValue} onChange={(event) => patchItem(index, { unidad: event.target.value || null })} className={fieldClass("unidad", "w-28")}>
+                          <option value="">Seleccionar</option>
+                          {!normalizedUnit && unitValue && <option value={unitValue}>{unitValue} (revisar)</option>}
+                          {MEASUREMENT_UNIT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.value}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2"><input type="number" min="0" value={item.cantidad ?? ""} onChange={(event) => patchItem(index, { cantidad: updateNumber(event.target.value) })} className={fieldClass("cantidad", "w-24")} /></td>
+                      <td className="px-3 py-2">
+                        <select value={item.moneda ?? ""} onChange={(event) => patchItem(index, { moneda: (event.target.value || null) as QuoteCurrency | null })} className={fieldClass("moneda", "w-24")}>
                           <option value="">Revisar</option>
                           <option value="MXN">MXN</option>
                           <option value="USD">USD</option>
                         </select>
                       </td>
-                      <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.precio_vendedor ?? ""} onChange={(event) => patchItem(index, { precio_vendedor: updateNumber(event.target.value) })} className="w-28 rounded border border-gray-300 px-2 py-1" /></td>
-                      <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.subtotal ?? ""} onChange={(event) => patchItem(index, { subtotal: updateNumber(event.target.value) })} className="w-28 rounded border border-gray-300 px-2 py-1" /></td>
-                      <td className="px-3 py-2"><input value={item.tiempo_entrega ?? ""} onChange={(event) => patchItem(index, { tiempo_entrega: event.target.value })} className="w-36 rounded border border-gray-300 px-2 py-1" /></td>
-                      <td className="px-3 py-2">
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${item.requiere_revision ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                          {item.requiere_revision ? "Revisar" : "Lista"}
-                        </span>
+                      <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.precio_vendedor ?? ""} onChange={(event) => patchItem(index, { precio_vendedor: updateNumber(event.target.value) })} className={fieldClass("precio_vendedor", "w-28")} /></td>
+                      <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.subtotal ?? ""} onChange={(event) => patchItem(index, { subtotal: updateNumber(event.target.value) })} className={fieldClass("subtotal", "w-28")} /></td>
+                      <td className="px-3 py-2"><input value={item.tiempo_entrega ?? ""} onChange={(event) => patchItem(index, { tiempo_entrega: event.target.value })} className={fieldClass("tiempo_entrega", "w-36")} /></td>
+                      <td className="min-w-64 px-3 py-2 align-top">
+                        {issues.length > 0 ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] leading-4 text-amber-900">
+                            <p className="font-bold uppercase tracking-wide">Partida {index + 1} · Revisar</p>
+                            <ul className="mt-1 list-disc pl-4">
+                              {issues.map((issue) => <li key={issue.code}>{issue.message}</li>)}
+                            </ul>
+                          </div>
+                        ) : (
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">Lista</span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
