@@ -124,8 +124,12 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
     ...row,
     label: row.method === "EXCEL_IMPORT" ? "Importadas por formato" : "Capturadas en el sistema",
   }));
+  const captureMethodsChart = captureMethods.map((row) => ({ ...row, chartLabel: `${row.label}: ${row.count}` }));
+  const channelsChart = channels.map((row) => ({ ...row, chartLabel: `${row.label}: ${row.count}` }));
   const systemCapture = captureMethods.find((row) => row.method === "SYSTEM") ?? { count: 0, amount: 0 };
   const excelCapture = captureMethods.find((row) => row.method === "EXCEL_IMPORT") ?? { count: 0, amount: 0 };
+  const captureMethodTotal = captureMethods.reduce((total, row) => total + row.count, 0);
+  const channelTotal = channels.reduce((total, row) => total + row.count, 0);
   const attribution = [
     { label: "Directas", value: dashboards.reduce((total, dashboard) => total + dashboard.attribution.direct, 0) },
     { label: "Proporcionadas", value: dashboards.reduce((total, dashboard) => total + dashboard.attribution.provided, 0) },
@@ -163,6 +167,30 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
   const sellerRanking = [...sellerMap.values()]
     .map((row) => ({ ...row, conversionRate: row.quotes > 0 ? (row.approved / row.quotes) * 100 : 0 }))
     .sort((a, b) => b.approvedMxn + b.approvedUsd - (a.approvedMxn + a.approvedUsd));
+  const sellerTotals = sellerRanking.reduce(
+    (totals, row) => ({
+      quotes: totals.quotes + row.quotes,
+      approved: totals.approved + row.approved,
+      quotedMxn: totals.quotedMxn + row.quotedMxn,
+      quotedUsd: totals.quotedUsd + row.quotedUsd,
+      approvedMxn: totals.approvedMxn + row.approvedMxn,
+      approvedUsd: totals.approvedUsd + row.approvedUsd,
+    }),
+    { quotes: 0, approved: 0, quotedMxn: 0, quotedUsd: 0, approvedMxn: 0, approvedUsd: 0 },
+  );
+  const sellerTotalConversion = sellerTotals.quotes > 0
+    ? (sellerTotals.approved / sellerTotals.quotes) * 100
+    : 0;
+  const sellerTotalRow = [
+    "Totales",
+    `${sellerTotals.quotes}`,
+    `${sellerTotals.approved}`,
+    `${sellerTotalConversion.toFixed(1)}%`,
+    formatMoney(sellerTotals.quotedMxn, "MXN"),
+    formatMoney(sellerTotals.quotedUsd, "USD"),
+    formatMoney(sellerTotals.approvedMxn, "MXN"),
+    formatMoney(sellerTotals.approvedUsd, "USD"),
+  ];
   const providerMap = new Map<string, { name: string; branchName: string; quotes: number; approved: number; approvedMxn: number; approvedUsd: number }>();
   for (const [currency, dashboard] of [["MXN", mxnData], ["USD", usdData]] as const) {
     for (const row of dashboard.providerRanking) {
@@ -197,6 +225,53 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
         <KpiCard label="Hechas en el sistema" value={`${systemCapture.count}`} caption="Todas las monedas del periodo" icon={<FileChartColumn className="h-5 w-5" />} />
         <KpiCard label="Importadas por formato" value={`${excelCapture.count}`} caption="Todas las monedas del periodo" icon={<FileSpreadsheet className="h-5 w-5" />} />
       </section>
+
+      {tab === "branch" && (
+        <RankingTable
+          title="Rendimiento por vendedor"
+          subtitle="Cotizaciones e importes acumulados por vendedor en el periodo seleccionado."
+          headers={["Vendedor", "Cotizaciones", "Aprobadas", "Conversión", "Cotizado MXN", "Cotizado USD", "Aprobado MXN", "Aprobado USD"]}
+          rows={sellerRanking.map((row) => [row.name, `${row.quotes}`, `${row.approved}`, `${row.conversionRate.toFixed(1)}%`, formatMoney(row.quotedMxn, "MXN"), formatMoney(row.quotedUsd, "USD"), formatMoney(row.approvedMxn, "MXN"), formatMoney(row.approvedUsd, "USD")])}
+          totals={sellerTotalRow}
+          numericColumns={[1, 2, 3, 4, 5, 6, 7]}
+        />
+      )}
+
+      {tab === "branch" && (
+        <section className="grid gap-4 xl:grid-cols-2">
+          <ChartCard title="Método de captura" subtitle="Cotizaciones hechas en el sistema frente a formatos importados.">
+            {captureMethods.length === 0 ? <EmptyChart /> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={captureMethodsChart} dataKey="count" nameKey="chartLabel" innerRadius={58} outerRadius={92} paddingAngle={3}>
+                    <Cell fill="#0f766e" /><Cell fill="#d97706" />
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
+                  <Legend />
+                  <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" className="fill-gray-500 text-[11px] font-semibold uppercase">Total</text>
+                  <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" className="fill-gray-900 text-2xl font-bold">{captureMethodTotal}</text>
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard title="Canales de origen" subtitle="Cómo llegaron las oportunidades comerciales del periodo.">
+            {channels.length === 0 ? <EmptyChart /> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={channelsChart} dataKey="count" nameKey="chartLabel" innerRadius={58} outerRadius={92} paddingAngle={2}>
+                    {channelsChart.map((row, index) => <Cell key={row.channel} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
+                  <Legend />
+                  <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" className="fill-gray-500 text-[11px] font-semibold uppercase">Total</text>
+                  <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" className="fill-gray-900 text-2xl font-bold">{channelTotal}</text>
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </section>
+      )}
 
       {tab === "user" && (
         <section className="grid gap-3 md:grid-cols-2">
@@ -249,40 +324,12 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
           )}
         </ChartCard>
 
-        <ChartCard title="Canales de origen" subtitle="Cómo llegaron las oportunidades comerciales.">
-          {channels.length === 0 ? <EmptyChart /> : (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={channels} dataKey="count" nameKey="label" innerRadius={58} outerRadius={92} paddingAngle={2}>
-                  {channels.map((row, index) => <Cell key={row.channel} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
         <ChartCard title="Atribución comercial" subtitle="Cotizaciones directas frente a oportunidades proporcionadas.">
           {attribution.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={attribution} dataKey="value" nameKey="label" innerRadius={58} outerRadius={92} paddingAngle={3}>
                   <Cell fill="#2563eb" /><Cell fill="#059669" />
-                </Pie>
-                <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard title="Método de captura" subtitle="Adopción del cotizador frente a cotizaciones elaboradas externamente.">
-          {captureMethods.length === 0 ? <EmptyChart /> : (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={captureMethods} dataKey="count" nameKey="label" innerRadius={58} outerRadius={92} paddingAngle={3}>
-                  <Cell fill="#0f766e" /><Cell fill="#d97706" />
                 </Pie>
                 <Tooltip formatter={(value) => [`${value}`, "Cotizaciones"]} />
                 <Legend />
@@ -307,9 +354,8 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
       </section>
 
       {tab === "branch" && (
-        <section className="grid gap-4 xl:grid-cols-2">
-          <RankingTable title="Rendimiento por vendedor" headers={["Vendedor", "Cotizaciones", "Aprobadas", "Conversión", "Cotizado MXN", "Cotizado USD", "Aprobado MXN", "Aprobado USD"]} rows={sellerRanking.slice(0, 10).map((row) => [row.name, `${row.quotes}`, `${row.approved}`, `${row.conversionRate.toFixed(1)}%`, formatMoney(row.quotedMxn, "MXN"), formatMoney(row.quotedUsd, "USD"), formatMoney(row.approvedMxn, "MXN"), formatMoney(row.approvedUsd, "USD")])} />
-          <RankingTable title="Oportunidades proporcionadas" headers={["Usuario", "Sucursal", "Proporcionadas", "Aprobadas", "Aprobado MXN", "Aprobado USD"]} rows={providerRanking.slice(0, 10).map((row) => [row.name, row.branchName, `${row.quotes}`, `${row.approved}`, formatMoney(row.approvedMxn, "MXN"), formatMoney(row.approvedUsd, "USD")])} />
+        <section>
+          <RankingTable title="Oportunidades proporcionadas" headers={["Usuario", "Sucursal", "Proporcionadas", "Aprobadas", "Aprobado MXN", "Aprobado USD"]} rows={providerRanking.slice(0, 10).map((row) => [row.name, row.branchName, `${row.quotes}`, `${row.approved}`, formatMoney(row.approvedMxn, "MXN"), formatMoney(row.approvedUsd, "USD")])} numericColumns={[2, 3, 4, 5]} />
         </section>
       )}
 
@@ -332,10 +378,32 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
   );
 };
 
-const RankingTable = ({ title, headers, rows }: { title: string; headers: string[]; rows: string[][] }) => (
+const RankingTable = ({ title, subtitle, headers, rows, totals, numericColumns = [] }: { title: string; subtitle?: string; headers: string[]; rows: string[][]; totals?: string[]; numericColumns?: number[] }) => (
   <article className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-    <div className="border-b border-gray-200 px-4 py-3"><h3 className="text-sm font-semibold text-gray-900">{title}</h3></div>
-    <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200 text-xs"><thead className="bg-gray-50 text-left uppercase text-gray-500"><tr>{headers.map((header) => <th key={header} className="px-3 py-3">{header}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{rows.length === 0 && <tr><td colSpan={headers.length} className="px-3 py-8 text-center text-gray-500">Sin datos.</td></tr>}{rows.map((row, rowIndex) => <tr key={`${row[0]}-${rowIndex}`} className="hover:bg-gray-50">{row.map((cell, index) => <td key={`${index}-${cell}`} className={`px-3 py-3 ${index === 0 ? "font-semibold text-gray-800" : "text-gray-600"}`}>{cell}</td>)}</tr>)}</tbody></table></div>
+    <div className="border-b border-gray-200 px-4 py-3">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
+    </div>
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-xs">
+        <thead className="bg-gray-50 text-left uppercase text-gray-500">
+          <tr>{headers.map((header, index) => <th key={header} className={`whitespace-nowrap px-3 py-3 ${numericColumns.includes(index) ? "text-right" : ""}`}>{header}</th>)}</tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.length === 0 && <tr><td colSpan={headers.length} className="px-3 py-8 text-center text-gray-500">Sin datos.</td></tr>}
+          {rows.map((row, rowIndex) => (
+            <tr key={`${row[0]}-${rowIndex}`} className="hover:bg-gray-50">
+              {row.map((cell, index) => <td key={`${index}-${cell}`} className={`whitespace-nowrap px-3 py-3 ${index === 0 ? "font-semibold text-gray-800" : "text-gray-600"} ${numericColumns.includes(index) ? "text-right tabular-nums" : ""}`}>{cell}</td>)}
+            </tr>
+          ))}
+        </tbody>
+        {totals && rows.length > 0 && (
+          <tfoot className="border-t-2 border-slate-300 bg-slate-100">
+            <tr>{totals.map((cell, index) => <td key={`${index}-${cell}`} className={`whitespace-nowrap px-3 py-3 font-bold text-slate-900 ${numericColumns.includes(index) ? "text-right tabular-nums" : ""}`}>{cell}</td>)}</tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
   </article>
 );
 
