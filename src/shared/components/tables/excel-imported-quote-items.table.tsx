@@ -22,7 +22,7 @@ export const ExcelImportedQuoteItemsTable = ({
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className={`flex flex-wrap items-center justify-between border-b border-slate-200 bg-slate-50 ${compact ? "gap-2 px-3 py-2" : "gap-3 px-4 py-3"}`}>
         <div>
-          <p className={`${compact ? "text-xs" : "text-sm"} font-semibold text-slate-800`}>Partidas importadas desde Excel</p>
+          <p className={`${compact ? "text-xs" : "text-sm"} font-semibold text-slate-800`}>Partidas importadas desde el formato del vendedor</p>
           <p className={`${compact ? "text-[10px]" : "text-xs"} text-slate-500`}>Los importes se convierten desde la moneda original de cada partida a la moneda final.</p>
         </div>
         <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
@@ -52,7 +52,7 @@ export const ExcelImportedQuoteItemsTable = ({
             {items.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                  No hay partidas importadas desde Excel.
+                  No hay partidas importadas desde el formato del vendedor.
                 </td>
               </tr>
             )}

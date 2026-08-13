@@ -1469,7 +1469,7 @@ export const QuoteDetailPage = () => {
           <button
             onClick={() => navigate(`${quote.captureMethod === "EXCEL_IMPORT" ? "/cotizador/importar-excel" : "/cotizador/sistema"}?quoteId=${quote.quoteId}`)}
             disabled={isActionLocked || !canEditQuote}
-            title={!canEditQuote ? (quote.captureMethod === "EXCEL_IMPORT" && !sellerExcelImportEnabled ? "La edición de cotizaciones Excel está deshabilitada." : "Esta cotización no se puede editar en su estado actual.") : undefined}
+            title={!canEditQuote ? (quote.captureMethod === "EXCEL_IMPORT" && !sellerExcelImportEnabled ? "La edición de cotizaciones importadas está deshabilitada." : "Esta cotización no se puede editar en su estado actual.") : undefined}
             className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
           >
             <Pencil className="h-4 w-4" />
@@ -1779,7 +1779,7 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Método de captura</p>
           <p className="text-sm text-gray-700">
-            {quote.captureMethod === "EXCEL_IMPORT" ? "Importada desde Excel" : "Capturada en el sistema"}
+            {quote.captureMethod === "EXCEL_IMPORT" ? "Importada desde formato del vendedor" : "Capturada en el sistema"}
           </p>
           {quote.captureMethod === "EXCEL_IMPORT" && quote.originalQuoteDate && (
             <p className="mt-1 text-xs text-gray-500">Fecha original: {formatDate(quote.originalQuoteDate)}</p>

@@ -122,7 +122,7 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
     .map((row) => ({ ...row, label: CHANNEL_LABELS[row.channel] || row.channel }));
   const captureMethods = mergeCountRows(dashboards.map((dashboard) => dashboard.captureMethods ?? []), (row) => row.method).map((row) => ({
     ...row,
-    label: row.method === "EXCEL_IMPORT" ? "Importadas desde Excel" : "Capturadas en el sistema",
+    label: row.method === "EXCEL_IMPORT" ? "Importadas por formato" : "Capturadas en el sistema",
   }));
   const systemCapture = captureMethods.find((row) => row.method === "SYSTEM") ?? { count: 0, amount: 0 };
   const excelCapture = captureMethods.find((row) => row.method === "EXCEL_IMPORT") ?? { count: 0, amount: 0 };
@@ -195,7 +195,7 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
         <KpiCard label="Pendientes" value={`${totalKpi("pending")}`} caption="Borrador o pendiente" icon={<Clock3 className="h-5 w-5" />} />
         <KpiCard label="Partidas por revisar" value={`${totalKpi("pendingItems")}`} caption="Sin vincular o con revisión" icon={<Activity className="h-5 w-5" />} />
         <KpiCard label="Hechas en el sistema" value={`${systemCapture.count}`} caption="Todas las monedas del periodo" icon={<FileChartColumn className="h-5 w-5" />} />
-        <KpiCard label="Importadas desde Excel" value={`${excelCapture.count}`} caption="Todas las monedas del periodo" icon={<FileSpreadsheet className="h-5 w-5" />} />
+        <KpiCard label="Importadas por formato" value={`${excelCapture.count}`} caption="Todas las monedas del periodo" icon={<FileSpreadsheet className="h-5 w-5" />} />
       </section>
 
       {tab === "user" && (
@@ -277,7 +277,7 @@ const DashboardContent = ({ mxnData, usdData, tab }: { mxnData: AnalyticsDashboa
           )}
         </ChartCard>
 
-        <ChartCard title="Método de captura" subtitle="Adopción del cotizador frente a cotizaciones elaboradas en Excel.">
+        <ChartCard title="Método de captura" subtitle="Adopción del cotizador frente a cotizaciones elaboradas externamente.">
           {captureMethods.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, FileCheck2, FileSpreadsheet, FileText, FileUp, LayoutList, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -709,7 +709,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       setShowClearExcelConfirmation(false);
       setOpenQuotedExcelImport(true);
       navigate("/cotizador/importar-excel", { replace: true });
-      notifier.success("Cotización limpiada. Ya puedes seleccionar otro archivo Excel.");
+      notifier.success("Cotización limpiada. Ya puedes seleccionar otro archivo.");
     } catch (error) {
       notifier.error(error instanceof Error ? error.message : "No se pudo limpiar la cotización importada.");
     } finally {
@@ -964,8 +964,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                   disabled={saving}
                   className="inline-flex h-8 items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <FileSpreadsheet className="h-3.5 w-3.5" />
-                  {draft.items.length > 0 ? "Cambiar Excel" : "Importar Excel"}
+                  <FileUp className="h-3.5 w-3.5" />
+                  {draft.items.length > 0 ? "Cambiar archivo" : "Importar archivo"}
                 </button>
               ) : null}
 
@@ -1097,8 +1097,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <FileSpreadsheet className="h-4 w-4" />
-              {draft.items.length > 0 ? "Importar otro Excel" : "Seleccionar archivo Excel"}
+              <FileUp className="h-4 w-4" />
+              {draft.items.length > 0 ? "Importar otro archivo" : "Seleccionar archivo"}
             </button>
           )}
 
@@ -1188,7 +1188,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       {isExcelFlow && (
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase text-teal-800">Cotización Excel para seguimiento</p>
+            <p className="text-xs font-semibold uppercase text-teal-800">Cotización importada para seguimiento</p>
             <p className="mt-1 text-xs text-teal-700">Las partidas son de solo lectura y no se vinculan con ERP. Esta cotización no genera requisición de compra ni pedido ERP.</p>
           </div>
           <label className="text-xs font-semibold uppercase text-teal-800" htmlFor="originalQuoteDate">
@@ -1303,7 +1303,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             <option value="USD">USD</option>
           </select>
           {isExcelImportedQuote && (
-            <p className="mt-1 text-xs text-gray-500">Definida al importar la cotización Excel.</p>
+            <p className="mt-1 text-xs text-gray-500">Definida al importar la cotización del vendedor.</p>
           )}
         </div>
 
@@ -2213,7 +2213,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         onCompleted={(itemsCount) => {
           setOpenQuotedExcelImport(false);
           void draftAttachments.refetch();
-          notifier.success(`${itemsCount} partida(s) importada(s) desde Excel.`);
+          notifier.success(`${itemsCount} partida(s) importada(s) desde el formato del vendedor.`);
         }}
       />
       <SelectQuoteProviderModal

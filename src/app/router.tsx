@@ -86,7 +86,7 @@ export const appRouter = createBrowserRouter([
       {
         path: "cotizador/importar-excel",
         loader: requireRolesLoader(["seller"]),
-        handle: { title: "Importar cotización Excel" },
+        handle: { title: "Importar formato del vendedor" },
         Component: ExcelImportQuotePage,
       },
       {

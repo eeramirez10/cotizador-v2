@@ -1,4 +1,4 @@
-import { AlertCircle, FileSpreadsheet, Loader2, X } from "lucide-react";
+import { AlertCircle, FileUp, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { QuoteExtractionJobsService } from "../../../modules/quote-extraction/services/quote-extraction-jobs.service";
 import type { ExtractedQuotedExcelItem } from "../../../modules/quote-extraction/types/quote-extraction-job.types";
@@ -22,6 +22,8 @@ const updateNumber = (rawValue: string): number | null => {
   const parsed = Number(rawValue);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
 };
+
+const isSupportedSellerQuoteFile = (file: File): boolean => /\.(pdf|xlsx?)$/i.test(file.name);
 
 export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExcelImportModalProps) => {
   const currentItemsCount = useManualQuoteStore((state) => state.draft.items.length);
@@ -71,6 +73,10 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
 
   const processFile = async () => {
     if (!file || processing) return;
+    if (!isSupportedSellerQuoteFile(file)) {
+      setError("Selecciona un archivo PDF, XLSX o XLS.");
+      return;
+    }
     if (!importCurrency) {
       setError("Selecciona la moneda en la que fue elaborada la cotización.");
       return;
@@ -81,7 +87,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
       setProcessing(true);
       setError(null);
       setProgress(5);
-      setStatus("Subiendo cotización Excel...");
+      setStatus("Subiendo cotización del vendedor...");
       const attachment = await AttachmentsService.uploadQuoteSource(clientDraftId, file);
       uploadedAttachmentId = attachment.id;
       setAttachmentId(attachment.id);
@@ -102,7 +108,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         normalizeAndReviewQuotedExcelItem({ ...item, moneda: item.moneda ?? null })
       );
       if (extracted.length === 0) {
-        throw new Error("No se encontraron partidas en el archivo Excel.");
+        throw new Error("No se encontraron partidas en el archivo.");
       }
 
       setExtractedItems(extracted);
@@ -113,7 +119,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         await AttachmentsService.delete(uploadedAttachmentId).catch(() => undefined);
         setAttachmentId(null);
       }
-      setError(caught instanceof Error ? caught.message : "No se pudo procesar la cotización Excel.");
+      setError(caught instanceof Error ? caught.message : "No se pudo procesar la cotización del vendedor.");
       setStatus("Error durante el procesamiento.");
     } finally {
       setProcessing(false);
@@ -134,8 +140,8 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
         <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
           <div>
             <div className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
-              <h3 className="text-base font-semibold text-gray-800">Importar cotización elaborada en Excel</h3>
+              <FileUp className="h-5 w-5 text-emerald-600" />
+              <h3 className="text-base font-semibold text-gray-800">Importar cotización elaborada por el vendedor</h3>
             </div>
             <p className="mt-1 text-sm text-gray-500">Se extraerán descripción, unidad, cantidad, moneda, precio y tiempo de entrega por partida.</p>
           </div>
@@ -149,7 +155,7 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
             <div className="space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <label htmlFor="quoted-excel-currency" className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-                  Moneda de la cotización Excel *
+                  Moneda de la cotización *
                 </label>
                 <select
                   id="quoted-excel-currency"
@@ -168,23 +174,30 @@ export const QuotedExcelImportModal = ({ open, onClose, onCompleted }: QuotedExc
                 <p className="mt-2 text-xs text-amber-800">
                   {lockedImportCurrency
                     ? `Esta cotización ya fue importada en ${lockedImportCurrency}; las partidas adicionales usarán la misma moneda.`
-                    : "Elige la moneda final. Las partidas en otra moneda se convertirán usando el tipo de cambio de la cotización."}
+                    : "Elige la moneda final. La IA identificará MXN o USD por partida y las que tengan otra moneda se convertirán usando el tipo de cambio."}
                 </p>
               </div>
 
               <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-5">
                 <input
                   type="file"
-                  accept=".xlsx,.xls"
+                  accept=".pdf,.xlsx,.xls"
                   disabled={processing}
                   onChange={(event) => {
-                    setFile(event.currentTarget.files?.[0] ?? null);
+                    const selectedFile = event.currentTarget.files?.[0] ?? null;
+                    if (selectedFile && !isSupportedSellerQuoteFile(selectedFile)) {
+                      setFile(null);
+                      setError("Selecciona un archivo PDF, XLSX o XLS.");
+                      event.currentTarget.value = "";
+                      return;
+                    }
+                    setFile(selectedFile);
                     setError(null);
                     setStatus("");
                   }}
                   className="w-full text-sm text-gray-700 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-700"
                 />
-                <p className="mt-3 text-xs text-gray-500">Formatos permitidos: XLSX y XLS. El número de partida y los encabezados serán ignorados.</p>
+                <p className="mt-3 text-xs text-gray-500">Formatos permitidos: PDF, XLSX y XLS. El PDF debe contener texto legible; el número de partida y los encabezados serán ignorados.</p>
               </div>
             </div>
           )}
