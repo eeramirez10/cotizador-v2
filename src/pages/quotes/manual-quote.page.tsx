@@ -145,7 +145,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [creatingLocalItems, setCreatingLocalItems] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [savingAction, setSavingAction] = useState<"draft" | "quote" | null>(null);
-  const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
+  const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(true);
   const [commentItemId, setCommentItemId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [descriptionItemId, setDescriptionItemId] = useState<string | null>(null);

@@ -236,11 +236,22 @@ interface ApiQuoteItem {
   } | null;
 }
 
+type ApiQuoteStatus =
+  | "DRAFT"
+  | "PENDING"
+  | "PENDING_APPROVAL"
+  | "CHANGES_REQUESTED"
+  | "QUOTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "SUPERSEDED";
+
 interface ApiQuote {
   id: string;
   quoteNumber: string;
   clientDraftId: string | null;
-  status: "DRAFT" | "PENDING" | "PENDING_APPROVAL" | "CHANGES_REQUESTED" | "QUOTED" | "APPROVED" | "REJECTED" | "CANCELLED" | "SUPERSEDED";
+  status: ApiQuoteStatus;
   deliveryStatus: "NOT_SENT" | "SENT";
   firstSentAt: string | null;
   orderStatus: "NOT_GENERATED" | "GENERATED";
@@ -330,6 +341,38 @@ interface ApiQuote {
   relatedVersions?: ApiQuote[];
 }
 
+interface ApiQuoteListSummary {
+  id: string;
+  quoteNumber: string;
+  erpQuoteNumber: string | null;
+  status: ApiQuoteStatus;
+  captureMethod: "SYSTEM" | "EXCEL_IMPORT";
+  originalQuoteDate: string | null;
+  currency: "MXN" | "USD";
+  taxRate: number;
+  revisionNumber: number;
+  providedByNameSnapshot: string | null;
+  createdAt: string;
+  updatedAt: string;
+  branch: {
+    id: string;
+    name: string;
+  };
+  customer: {
+    id: string;
+    displayName: string;
+    legalName: string | null;
+    email: string | null;
+    phone: string | null;
+    whatsapp: string;
+  };
+  createdByUser: {
+    firstName: string;
+    lastName: string;
+  };
+  relatedVersions?: ApiQuoteListSummary[];
+}
+
 interface ApiPaginatedResponse<T> {
   items: T[];
   total: number;
@@ -381,7 +424,7 @@ const formatDate = (iso: string): string => {
   }).format(date);
 };
 
-const mapApiStatusToSaved = (status: ApiQuote["status"]): SavedQuoteStatus => {
+const mapApiStatusToSaved = (status: ApiQuoteStatus): SavedQuoteStatus => {
   if (status === "DRAFT") return "BORRADOR";
   if (status === "PENDING") return "PENDIENTE";
   if (status === "PENDING_APPROVAL") return "PENDIENTE_APROBACION";
@@ -623,6 +666,47 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   },
 });
 
+const mapApiQuoteSummaryToQuote = (summary: ApiQuoteListSummary): Quote => {
+  const legalName = (summary.customer.legalName || "").trim();
+  const person = splitName(summary.customer.displayName);
+
+  return {
+    id: summary.id,
+    quoteNumber: summary.quoteNumber,
+    erpQuoteNumber: summary.erpQuoteNumber,
+    status: mapApiStatusToSaved(summary.status),
+    createdByName: `${summary.createdByUser.firstName} ${summary.createdByUser.lastName}`.trim(),
+    providedByName: summary.providedByNameSnapshot,
+    captureMethod: summary.captureMethod,
+    originalQuoteDate: summary.originalQuoteDate || undefined,
+    branch: summary.branch.name,
+    currency: summary.currency,
+    taxRate: summary.taxRate,
+    customer: {
+      id: summary.customer.id,
+      name: legalName || person.name || summary.customer.displayName,
+      lastname: legalName ? "" : person.lastname,
+      phone: summary.customer.whatsapp || summary.customer.phone || "",
+      email: summary.customer.email || "",
+      company: legalName || summary.customer.displayName,
+    },
+    items: [],
+    createdAt: formatDate(summary.createdAt),
+    updatedAt: summary.updatedAt,
+    fileKey: null,
+    version: "",
+    statusVersion: mapApiStatusToSaved(summary.status),
+    revisionNumber: summary.revisionNumber,
+    relatedVersions: (summary.relatedVersions ?? []).map(mapApiQuoteSummaryToQuote),
+    quoteMeta: {
+      pdfSentAt: null,
+      quoteCreatedAt: summary.createdAt,
+      versionCreatedAt: null,
+      createdByUser: null,
+    },
+  };
+};
+
 const mapDraftItemToPayload = (item: ManualQuoteItem) => {
   const safeQty = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : 1;
   const safeCost = Number.isFinite(item.costUsd) && item.costUsd >= 0 ? item.costUsd : 0;
@@ -795,8 +879,35 @@ export class QuotesService {
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 10;
 
+    if (params.status !== "PENDING_APPROVAL") {
+      const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuoteListSummary>>("/api/quotes", {
+        params: {
+          page,
+          pageSize,
+          search: params.search?.trim() || undefined,
+          archived: params.archived || undefined,
+          view: "SUMMARY",
+        },
+        headers: requireAuthHeaders(),
+      });
+
+      return {
+        items: data.items.map(mapApiQuoteSummaryToQuote),
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+      };
+    }
+
     const { data } = await coreHttpClient.get<ApiPaginatedResponse<ApiQuote>>("/api/quotes", {
-      params: { page, pageSize, search: params.search?.trim() || undefined, status: params.status, archived: params.archived || undefined },
+      params: {
+        page,
+        pageSize,
+        search: params.search?.trim() || undefined,
+        status: params.status,
+        archived: params.archived || undefined,
+        view: "FULL",
+      },
       headers: requireAuthHeaders(),
     });
 

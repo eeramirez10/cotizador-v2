@@ -709,7 +709,7 @@ export const QuoteDetailPage = () => {
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
-  const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
+  const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(true);
   const [showItemComments, setShowItemComments] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CONTEMPORARY");
@@ -2041,13 +2041,6 @@ export const QuoteDetailPage = () => {
                 {showCustomerExtractionColumns && showCustomerOrderColumns && (
                   <td className="px-3 py-2 text-xs text-gray-700">
                     <p>{item.customerDescription || "-"}</p>
-                    {item.customerDescriptionOriginal?.trim()
-                      && item.customerDescriptionOriginal.trim() !== (item.customerDescription || "").trim() && (
-                        <div className="mt-2 border-t border-gray-100 pt-2">
-                          <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">Original</p>
-                          <p className="mt-0.5 text-[10px] leading-4 text-gray-500">{item.customerDescriptionOriginal}</p>
-                        </div>
-                      )}
                   </td>
                 )}
                 {showCustomerExtractionColumns && showCustomerOrderColumns && (
