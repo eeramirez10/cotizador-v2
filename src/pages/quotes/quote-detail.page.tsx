@@ -323,6 +323,35 @@ const printableColorVars: CSSProperties = {
 } as CSSProperties;
 
 type QuotePdfStyle = "CLASSIC" | "CONTEMPORARY";
+type QuotePdfDescriptionMode = "ERP" | "CUSTOMER" | "BOTH";
+
+const getPdfItemDescriptions = (
+  item: { erpDescription?: string | null; customerDescription?: string | null },
+  mode: QuotePdfDescriptionMode,
+): { primary: string; secondary: string | null } => {
+  const erpDescription = item.erpDescription?.trim() || "";
+  const customerDescription = item.customerDescription?.trim() || "";
+
+  if (mode === "ERP") {
+    return { primary: erpDescription || customerDescription || "-", secondary: null };
+  }
+
+  if (mode === "CUSTOMER") {
+    return { primary: customerDescription || erpDescription || "-", secondary: null };
+  }
+
+  const primary = erpDescription || customerDescription || "-";
+  const descriptionsAreEqual = erpDescription.localeCompare(customerDescription, "es-MX", {
+    sensitivity: "base",
+  }) === 0;
+
+  return {
+    primary,
+    secondary: customerDescription && !descriptionsAreEqual && customerDescription !== primary
+      ? customerDescription
+      : null,
+  };
+};
 
 interface QuotePrintableDocumentProps {
   quote: SavedQuoteRecord;
@@ -330,12 +359,13 @@ interface QuotePrintableDocumentProps {
   contactName: string;
   deliverySummary: string[];
   pdfStyle: QuotePdfStyle;
+  descriptionMode: QuotePdfDescriptionMode;
   className?: string;
   style?: CSSProperties;
 }
 
 const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentProps>(function QuotePrintableDocument(
-  { quote, customerDisplayName, contactName, deliverySummary, pdfStyle, className, style },
+  { quote, customerDisplayName, contactName, deliverySummary, pdfStyle, descriptionMode, className, style },
   ref
 ) {
   const branchAddressLines = getBranchAddressLines(quote.branch);
@@ -378,15 +408,22 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
         </header>
 
         <section className="mt-4 flex items-start justify-between gap-6">
-          <div>
-            <p className="text-[15px] font-bold" style={{ color: ink }}>Tubería y Válvulas del Norte SA de CV</p>
-            <p className="mt-1 text-[9px] leading-4" style={{ color: muted }}>
-              Sucursal: {quote.branchName || "-"}<br />
-                {branchAddressLines.map((line) => <span key={line}>{line}<br /></span>)}
-              {quote.branch.email && <>Correo: {quote.branch.email}<br /></>}
-              {branchPhones && <>Teléfono: {branchPhones}<br /></>}
-              www.tuvansa.com.mx
-            </p>
+          <div className="flex items-start gap-3">
+            <img
+              src="/img/logo-tuvansa.png"
+              alt="Tuvansa"
+              className="mt-0.5 h-auto w-[1.15in] shrink-0 object-contain"
+            />
+            <div>
+              <p className="text-[15px] font-bold" style={{ color: ink }}>Tubería y Válvulas del Norte SA de CV</p>
+              <p className="mt-1 text-[9px] leading-4" style={{ color: muted }}>
+                Sucursal: {quote.branchName || "-"}<br />
+                  {branchAddressLines.map((line) => <span key={line}>{line}<br /></span>)}
+                {quote.branch.email && <>Correo: {quote.branch.email}<br /></>}
+                {branchPhones && <>Teléfono: {branchPhones}<br /></>}
+                www.tuvansa.com.mx
+              </p>
+            </div>
           </div>
 
           <div className="w-[2.35in] border-l-[3px] px-3 py-2 text-[9px]" style={{ borderColor: brand, backgroundColor: brandSoft }}>
@@ -431,21 +468,30 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item, index) => (
-                <tr key={item.id} style={{ borderBottom: `1px solid ${line}`, backgroundColor: index % 2 === 0 ? "#ffffff" : "#fbfffe" }}>
-                  <td className="px-1.5 py-3 text-center align-top font-bold" style={{ color: ink }}>{index + 1}.</td>
-                  <td className="px-1.5 py-3 align-top font-medium" style={{ color: muted }}>{item.erpCode || "-"}</td>
-                  <td className="px-1.5 py-3 align-top">
-                    <p className="font-semibold" style={{ color: ink }}>{item.customerDescription || item.erpDescription || "-"}</p>
-                    {item.itemComment && <p className="mt-1 text-[7px] leading-3" style={{ color: muted }}>{item.itemComment}</p>}
-                  </td>
-                  <td className="px-1 py-3 text-center align-top">{item.unit || "-"}</td>
-                  <td className="px-1 py-3 text-right align-top">{item.qty}</td>
-                  <td className="px-1.5 py-3 text-right align-top">{formatLineAmount(item.unitPrice)}</td>
-                  <td className="px-1.5 py-3 align-top">{item.deliveryTime || "Por definir"}</td>
-                  <td className="px-1.5 py-3 text-right align-top font-semibold">{formatLineAmount(item.subtotal)}</td>
-                </tr>
-              ))}
+              {quote.items.map((item, index) => {
+                const descriptions = getPdfItemDescriptions(item, descriptionMode);
+
+                return (
+                  <tr key={item.id} style={{ borderBottom: `1px solid ${line}`, backgroundColor: index % 2 === 0 ? "#ffffff" : "#fbfffe" }}>
+                    <td className="px-1.5 py-3 text-center align-top font-bold" style={{ color: ink }}>{index + 1}.</td>
+                    <td className="px-1.5 py-3 align-top font-medium" style={{ color: muted }}>{item.erpCode || "-"}</td>
+                    <td className="px-1.5 py-3 align-top">
+                      <p className="font-semibold" style={{ color: ink }}>{descriptions.primary}</p>
+                      {descriptions.secondary && (
+                        <p className="mt-1 text-[7px] leading-3" style={{ color: muted }}>
+                          <span className="font-semibold">Cliente:</span> {descriptions.secondary}
+                        </p>
+                      )}
+                      {item.itemComment && <p className="mt-1 text-[7px] leading-3" style={{ color: muted }}>{item.itemComment}</p>}
+                    </td>
+                    <td className="px-1 py-3 text-center align-top">{item.unit || "-"}</td>
+                    <td className="px-1 py-3 text-right align-top">{item.qty}</td>
+                    <td className="px-1.5 py-3 text-right align-top">{formatLineAmount(item.unitPrice)}</td>
+                    <td className="px-1.5 py-3 align-top">{item.deliveryTime || "Por definir"}</td>
+                    <td className="px-1.5 py-3 text-right align-top font-semibold">{formatLineAmount(item.subtotal)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </section>
@@ -498,14 +544,21 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
     >
       <header className="border-b border-gray-200 pb-4">
         <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
-            <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
-            <p className="mt-1 text-[10px] font-semibold text-gray-700">Tubería y Válvulas del Norte SA de CV</p>
-            <p className="text-[9px] leading-3 text-gray-500">Sucursal: {quote.branchName || "-"}</p>
-              {branchAddressLines.map((line) => <p key={line} className="text-[9px] leading-3 text-gray-500">{line}</p>)}
-            {quote.branch.email && <p className="text-[9px] leading-3 text-gray-500">{quote.branch.email}{branchPhones ? ` · ${branchPhones}` : ""}</p>}
-            {!quote.branch.email && branchPhones && <p className="text-[9px] leading-3 text-gray-500">{branchPhones}</p>}
+          <div className="flex items-start gap-3">
+            <img
+              src="/img/logo-tuvansa.png"
+              alt="Tuvansa"
+              className="mt-1 h-auto w-[1.12in] shrink-0 object-contain"
+            />
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Cotización</p>
+              <h1 className="text-2xl font-semibold">Propuesta Comercial</h1>
+              <p className="mt-1 text-[10px] font-semibold text-gray-700">Tubería y Válvulas del Norte SA de CV</p>
+              <p className="text-[9px] leading-3 text-gray-500">Sucursal: {quote.branchName || "-"}</p>
+                {branchAddressLines.map((line) => <p key={line} className="text-[9px] leading-3 text-gray-500">{line}</p>)}
+              {quote.branch.email && <p className="text-[9px] leading-3 text-gray-500">{quote.branch.email}{branchPhones ? ` · ${branchPhones}` : ""}</p>}
+              {!quote.branch.email && branchPhones && <p className="text-[9px] leading-3 text-gray-500">{branchPhones}</p>}
+            </div>
           </div>
 
           <div className="space-y-1 text-right text-xs">
@@ -584,20 +637,31 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
             </thead>
 
             <tbody className="divide-y divide-gray-200 bg-white text-[10px] leading-4">
-              {quote.items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
-                  <td className="px-2 py-2 align-top">{item.customerDescription || item.erpDescription || "-"}</td>
-                  <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
-                  <td className="px-2 py-2 text-right align-top">{item.qty}</td>
-                  <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
-                  <td className="px-2 py-2 text-right align-top font-semibold">
-                    {formatCurrency(item.subtotal, quote.currency)}
-                  </td>
-                  <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
-                  <td className="px-2 py-2 align-top">{item.itemComment || "-"}</td>
-                </tr>
-              ))}
+              {quote.items.map((item) => {
+                const descriptions = getPdfItemDescriptions(item, descriptionMode);
+
+                return (
+                  <tr key={item.id}>
+                    <td className="px-2 py-2 align-top font-semibold">{item.erpCode || "-"}</td>
+                    <td className="px-2 py-2 align-top">
+                      <p>{descriptions.primary}</p>
+                      {descriptions.secondary && (
+                        <p className="mt-1 text-[8px] leading-3 text-gray-500">
+                          <span className="font-semibold">Cliente:</span> {descriptions.secondary}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 align-top">{item.unit || "-"}</td>
+                    <td className="px-2 py-2 text-right align-top">{item.qty}</td>
+                    <td className="px-2 py-2 text-right align-top">{formatCurrency(item.unitPrice, quote.currency)}</td>
+                    <td className="px-2 py-2 text-right align-top font-semibold">
+                      {formatCurrency(item.subtotal, quote.currency)}
+                    </td>
+                    <td className="px-2 py-2 align-top">{item.deliveryTime || "Por definir"}</td>
+                    <td className="px-2 py-2 align-top">{item.itemComment || "-"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -648,7 +712,8 @@ export const QuoteDetailPage = () => {
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(false);
   const [showItemComments, setShowItemComments] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
-  const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CLASSIC");
+  const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CONTEMPORARY");
+  const [pdfDescriptionMode, setPdfDescriptionMode] = useState<QuotePdfDescriptionMode>("CUSTOMER");
   const [showSendModal, setShowSendModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
@@ -2675,6 +2740,24 @@ export const QuoteDetailPage = () => {
                     Contemporáneo
                   </button>
                 </div>
+                <div className="mr-1 inline-flex items-center rounded-lg border border-gray-300 bg-white p-1 shadow-sm" aria-label="Descripción de las partidas">
+                  <span className="px-2 text-gray-400" aria-hidden="true"><FileText className="h-4 w-4" /></span>
+                  {([
+                    ["ERP", "ERP"],
+                    ["CUSTOMER", "Cliente"],
+                    ["BOTH", "Ambas"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setPdfDescriptionMode(value)}
+                      disabled={isActionLocked}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${pdfDescriptionMode === value ? "bg-slate-800 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"} ${disabledActionClass}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 {canDownloadQuotePdf && (
                   <button
                     type="button"
@@ -2713,6 +2796,7 @@ export const QuoteDetailPage = () => {
               contactName={contactName}
               deliverySummary={deliverySummary}
               pdfStyle={pdfStyle}
+              descriptionMode={pdfDescriptionMode}
               className="mx-auto bg-white text-gray-900 shadow-lg"
             />
           </div>
@@ -2727,6 +2811,7 @@ export const QuoteDetailPage = () => {
           contactName={contactName}
           deliverySummary={deliverySummary}
           pdfStyle={pdfStyle}
+          descriptionMode={pdfDescriptionMode}
           className="bg-white text-gray-900"
         />
       </div>
