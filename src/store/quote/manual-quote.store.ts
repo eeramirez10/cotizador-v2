@@ -728,10 +728,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           localProductId: localProduct.id,
           erpCode: "",
           ean: localProduct.ean || item.ean,
-          erpDescription:
-            item.erpDescription.trim()
-            || localProduct.description.trim()
-            || item.customerDescription.trim(),
+          customerDescription: item.customerDescription.trim() || localProduct.description.trim(),
+          erpDescription: "",
           unit:
             normalizeMeasurementUnit(item.unit)
             ?? normalizeMeasurementUnit(localProduct.unit)
