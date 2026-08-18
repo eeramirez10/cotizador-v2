@@ -28,10 +28,18 @@ export const getQuoteItemReviewIssues = (item: QuoteItemReviewSubject): string[]
     return issues;
   }
 
-  if (!hasText(item.localProductId) && !hasText(item.erpCode) && !hasText(item.ean)) {
+  const hasLocalProduct = hasText(item.localProductId);
+  const hasErpProduct = !hasLocalProduct && (hasText(item.erpCode) || hasText(item.ean));
+
+  if (!hasLocalProduct && !hasErpProduct) {
     issues.push("Falta vincular a ERP o producto local");
   }
-  if (!hasText(item.erpDescription)) issues.push("Falta descripción del producto");
+  if (hasErpProduct && !hasText(item.erpDescription)) {
+    issues.push("Falta descripción del producto ERP");
+  }
+  if (hasLocalProduct && !hasText(item.customerDescription) && !hasText(item.erpDescription)) {
+    issues.push("Falta descripción del producto local");
+  }
   if (!Number.isFinite(item.qty) || item.qty <= 0) issues.push("La cantidad debe ser mayor a cero");
   if (!hasText(item.unit)) issues.push("Falta unidad de medida");
 
