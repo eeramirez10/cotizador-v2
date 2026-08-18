@@ -32,6 +32,7 @@ import { useClientsStore } from "../../store/clients/clients.store";
 import { DetectedCustomerModal } from "../../shared/components/modals/detected-customer.modal";
 import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
+import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
 
 type OriginFilter = "ALL" | "UNLINKED";
 type QuoteEditorView = "classic" | "compact";
@@ -637,8 +638,17 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
       const reviewItems = draft.items.filter((item) => item.requiresReview);
       if (reviewItems.length > 0) {
+        const reviewDetail = reviewItems
+          .slice(0, 4)
+          .map((item) => {
+            const itemIndex = draft.items.findIndex((candidate) => candidate.id === item.id) + 1;
+            const issues = getQuoteItemReviewIssues(item);
+            return `Partida ${itemIndex}: ${issues.join(", ") || "Requiere revisión"}`;
+          })
+          .join(". ");
+        const remaining = reviewItems.length > 4 ? ` Hay ${reviewItems.length - 4} partida(s) adicional(es).` : "";
         notifier.error(
-          `No puedes generar la cotización. Hay ${reviewItems.length} partida(s) pendiente(s) de revisión.`
+          `No puedes generar la cotización. ${reviewDetail}.${remaining}`
         );
         return false;
       }
@@ -1591,6 +1601,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
             {visibleItems.map((item) => {
               const marginVisual = getMarginVisual(item.marginPct);
+              const reviewIssues = getQuoteItemReviewIssues(item);
               const fulfillment = getQuoteItemFulfillment(item);
               const effectiveCost = getQuoteItemEffectiveCost(item, draft.currency, draft.exchangeRate);
               const isBelowEffectiveCost = effectiveCost.effectiveUnitCost > 0
@@ -1644,15 +1655,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                         placeholder="Ej. 3-5 días"
                         className={`${isCompactView ? "h-7 w-24" : "w-32"} rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700`}
                       />
-                    ) : item.erpCode.trim() && !fulfillment.requiresPurchase ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
-                        Inmediato
-                      </span>
                     ) : (
                       <div>
-                        {fulfillment.availableQty > 0 && (
+                        {fulfillment.stockQty > 0 && (
                           <p className="mb-1 whitespace-nowrap text-[9px] font-semibold text-emerald-700">
-                            {fulfillment.availableQty} inmediato
+                            {fulfillment.stockQty} según ERP
                           </p>
                         )}
                         <select
@@ -1783,7 +1790,19 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                   <td className="px-4 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quoteCurrency)}</td>
                   <td className="px-4 py-2">
                     {item.requiresReview ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">Revisar</span>
+                      <div className="min-w-32">
+                        <span
+                          className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700"
+                          title={reviewIssues.join(". ")}
+                        >
+                          Revisar
+                        </span>
+                        {reviewIssues.map((issue) => (
+                          <p key={issue} className="mt-1 max-w-44 text-[9px] font-medium leading-3 text-amber-800">
+                            {issue}
+                          </p>
+                        ))}
+                      </div>
                     ) : (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">OK</span>
                     )}

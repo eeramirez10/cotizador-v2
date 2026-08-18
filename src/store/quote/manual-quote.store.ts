@@ -9,7 +9,8 @@ import type {
 } from "../../modules/quote-extraction/types/quote-extraction-job.types";
 import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
 import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
-import { getQuoteItemEffectiveCost, getQuoteItemFulfillment } from "../../modules/quotes/utils/quote-fulfillment";
+import { getQuoteItemEffectiveCost } from "../../modules/quotes/utils/quote-fulfillment";
+import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 
 export type QuoteCurrency = "MXN" | "USD";
@@ -286,8 +287,8 @@ const emptyProcurementPrequote = (): EmptyProcurementPrequoteData => ({
   technicalAttributes: {},
 });
 
-const deliverySuggestion = (stock: number, costUsd: number): string => {
-  if (stock > 0) return "Inmediato";
+const deliverySuggestion = (stock: number, costUsd: number, requestedQty = 1): string => {
+  if (requestedQty > 0 && stock >= requestedQty) return "Inmediato";
   if (costUsd >= 100) return "4-6 semanas";
   if (costUsd >= 40) return "2-4 semanas";
   return "1-2 semanas";
@@ -388,16 +389,7 @@ const computeItem = (
     ? round((item.sourceUnitPrice ?? 0) * item.qty)
     : item.sourceSubtotal;
   const subtotal = round(unitPrice * item.qty);
-  const hasCurrentProduct = Boolean(item.localProductId?.trim() || item.erpCode.trim() || item.ean.trim());
-  const hasCurrentDescription = Boolean(item.erpDescription.trim());
-  const requiresReview = item.importedFromExcel
-    ? item.sourceRequiresReview
-      || !item.customerDescription.trim()
-      || item.qty <= 0
-      || !item.unit.trim()
-      || unitPrice <= 0
-      || !item.deliveryTime.trim()
-    : !hasCurrentProduct || !hasCurrentDescription || item.qty <= 0 || !item.unit.trim();
+  const requiresReview = getQuoteItemReviewIssues({ ...item, unitPrice }).length > 0;
 
   return {
     ...item,
@@ -426,11 +418,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         unit: item.unit,
         qty: item.qty,
         stock: item.stock,
-        deliveryTime: !item.importedFromExcel
-          && Boolean(item.erpCode.trim())
-          && !getQuoteItemFulfillment(item).requiresPurchase
-          ? "Inmediato"
-          : item.deliveryTime,
+        deliveryTime: item.deliveryTime,
         itemComment: item.itemComment,
         sellerSupplierId: item.sellerSupplierId,
         sellerSupplierName: item.sellerSupplierName,
@@ -712,7 +700,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           stock: product.stock,
           deliveryTime: item.importedFromExcel
             ? item.deliveryTime
-            : deliverySuggestion(product.stock, product.costUsd),
+            : deliverySuggestion(product.stock, product.costUsd, item.qty),
           costUsd: product.costUsd,
           costCurrency: "MXN" as const,
           erpSaleCurrency: product.saleCurrency,
@@ -740,7 +728,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           localProductId: localProduct.id,
           erpCode: "",
           ean: localProduct.ean || item.ean,
-          erpDescription: item.erpDescription.trim() || localProduct.description,
+          erpDescription:
+            item.erpDescription.trim()
+            || localProduct.description.trim()
+            || item.customerDescription.trim(),
+          unit:
+            normalizeMeasurementUnit(item.unit)
+            ?? normalizeMeasurementUnit(localProduct.unit)
+            ?? (localProduct.unit.trim() || "PZ"),
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
           manualUnitPrice: item.importedFromExcel ? item.manualUnitPrice : undefined,
@@ -893,13 +888,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       draft: {
         ...state.draft,
         items: recalcItems(
-          state.draft.items.map((item) => {
-            if (item.id !== itemId) return item;
-            if (item.erpCode.trim() && !getQuoteItemFulfillment(item).requiresPurchase) {
-              return { ...item, deliveryTime: "Inmediato" };
-            }
-            return { ...item, deliveryTime };
-          }),
+          state.draft.items.map((item) =>
+            item.id === itemId ? { ...item, deliveryTime } : item
+          ),
           state.draft.currency,
           state.draft.exchangeRate
         ),
