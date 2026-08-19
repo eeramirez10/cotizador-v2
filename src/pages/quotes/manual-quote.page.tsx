@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
+import { CustomerContactsModal } from "../../shared/components/modals/customer-contacts.modal";
 import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
@@ -28,6 +29,7 @@ import type { ExtractedPartyData } from "../../modules/ai/types/party-data.types
 import type { ClientInput } from "../../modules/clients/types/client.types";
 import { partyToCustomerInput } from "../../modules/ai/utils/party-data-form.mapper";
 import { erpCustomerToClientInput } from "../../modules/clients/utils/erp-customer-mapper";
+import { clientWithSelectedContact } from "../../modules/clients/utils/customer-contact-selection";
 import { useClientsStore } from "../../store/clients/clients.store";
 import { DetectedCustomerModal } from "../../shared/components/modals/detected-customer.modal";
 import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
@@ -137,6 +139,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   });
   const [openModal, setOpenModal] = useState(false);
   const [openClientModal, setOpenClientModal] = useState(false);
+  const [openContactSelector, setOpenContactSelector] = useState(false);
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
@@ -222,6 +225,12 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
+  const selectedClientContact = draft.client?.contacts?.find((contact) =>
+    contact.id === draft.client?.selectedContactId
+  ) || draft.client?.contacts?.find((contact) => contact.isPrimary);
+  const selectedClientContactName = draft.client?.selectedContactName
+    || selectedClientContact?.name
+    || `${draft.client?.name || ""} ${draft.client?.lastname || ""}`.trim();
   const draftAttachments = useDraftAttachments(draft.id);
   const initializeDraft = useManualQuoteStore((state) => state.initializeDraft);
   const setCurrency = useManualQuoteStore((state) => state.setCurrency);
@@ -1260,7 +1269,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           <div className={`mt-1 truncate rounded-md border border-gray-300 bg-white text-gray-700 ${isCompactView ? "min-h-7 px-2 py-1 text-xs" : "px-2 py-2 text-sm"}`}>
             {draft.client ? (
               <p className="truncate">
-                {draft.client.name} {draft.client.lastname} - {draft.client.companyName || "Sin empresa"}
+                {draft.client.companyName || "Sin razón social"}
               </p>
             ) : (
               <p className="text-gray-500">Sin cliente seleccionado.</p>
@@ -1450,36 +1459,44 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       {draft.client && (
         <div className={`border border-gray-200 bg-white text-gray-700 ${isCompactView ? "mb-3 rounded-lg px-3 py-2 text-xs" : "mb-4 rounded-md p-4 text-sm"}`}>
           {isCompactView ? (
-            <button
-              type="button"
-              onClick={() => setShowCompactClientDetails((current) => !current)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-              aria-expanded={showCompactClientDetails}
-            >
-              <span>
-                <span className="font-semibold text-gray-800">Datos del cliente</span>
-                <span className="ml-2 text-[10px] text-gray-500">{draft.client.companyName || `${draft.client.name} ${draft.client.lastname}`}</span>
-              </span>
-              {showCompactClientDetails ? <ChevronUp className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCompactClientDetails((current) => !current)}
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                aria-expanded={showCompactClientDetails}
+              >
+                <span className="truncate">
+                  <span className="font-semibold text-gray-800">Contacto seleccionado</span>
+                  <span className="ml-2 text-[10px] text-gray-500">{selectedClientContactName}</span>
+                </span>
+                {showCompactClientDetails ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />}
+              </button>
+              {!isProviderAttributionLocked && (
+                <button type="button" onClick={() => setOpenContactSelector(true)} className="shrink-0 rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100">
+                  Cambiar contacto
+                </button>
+              )}
+            </div>
           ) : (
-            <p className="text-xs font-semibold uppercase text-gray-500">Datos del cliente</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase text-gray-500">Contacto seleccionado</p>
+              {!isProviderAttributionLocked && (
+                <button type="button" onClick={() => setOpenContactSelector(true)} className="rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-semibold normal-case text-blue-700 hover:bg-blue-100">
+                  Cambiar contacto
+                </button>
+              )}
+            </div>
           )}
           <div className={`${isCompactView && !showCompactClientDetails ? "hidden" : "grid"} mt-2 gap-2 md:grid-cols-2 lg:grid-cols-3`}>
-            <p>
-              <span className="font-semibold">Nombre:</span> {draft.client.name} {draft.client.lastname}
-            </p>
-            <p>
-              <span className="font-semibold">Empresa:</span> {draft.client.companyName}
-            </p>
+            {!isCompactView && <p>
+              <span className="font-semibold">Contacto:</span> {selectedClientContactName}
+            </p>}
             <p>
               <span className="font-semibold">WhatsApp:</span> {draft.client.whatsappPhone}
             </p>
             <p>
               <span className="font-semibold">Correo:</span> {draft.client.email}
-            </p>
-            <p>
-              <span className="font-semibold">RFC:</span> {draft.client.rfc}
             </p>
             <p>
               <span className="font-semibold">Teléfono:</span> {draft.client.phone || "-"}
@@ -2163,6 +2180,19 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         onSelect={(client) => {
           setClient(client);
           setOpenClientModal(false);
+        }}
+      />
+      <CustomerContactsModal
+        open={openContactSelector}
+        onClose={() => setOpenContactSelector(false)}
+        customerId={draft.client?.id || null}
+        customerLabel={draft.client?.companyName || "Cliente sin razón social"}
+        selectionMode
+        onSelectContact={(contact) => {
+          if (!draft.client) return;
+          setClient(clientWithSelectedContact(draft.client, contact));
+          setOpenContactSelector(false);
+          notifier.success("Contacto de la cotización actualizado.");
         }}
       />
       {detectedCustomer && !syncingDetectedCustomer && (

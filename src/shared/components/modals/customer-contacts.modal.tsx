@@ -1,5 +1,5 @@
-import { Loader2, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { LockKeyhole, Loader2, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { CustomerContactsService } from "../../../modules/clients/services/customer-contacts.service";
 import type {
   CustomerContact,
@@ -13,6 +13,10 @@ interface CustomerContactsModalProps {
   onClose: () => void;
   customerId: string | null;
   customerLabel: string;
+  onChanged?: () => void | Promise<void>;
+  lockOldestContact?: boolean;
+  selectionMode?: boolean;
+  onSelectContact?: (contact: CustomerContact) => void;
 }
 
 const EMPTY_FORM: CustomerContactInput = {
@@ -31,17 +35,38 @@ export const CustomerContactsModal = ({
   onClose,
   customerId,
   customerLabel,
+  onChanged,
+  lockOldestContact = false,
+  selectionMode = false,
+  onSelectContact,
 }: CustomerContactsModalProps) => {
   const [contacts, setContacts] = useState<CustomerContact[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [form, setForm] = useState<CustomerContactInput>(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<CustomerContact | null>(null);
+  const lockedContactId = useMemo(() => {
+    if (!lockOldestContact || contacts.length === 0) return null;
+    return [...contacts].sort((left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+    )[0]?.id || null;
+  }, [contacts, lockOldestContact]);
 
   useEffect(() => {
     if (!open || !customerId) return;
+    setEditingContactId(null);
+    setForm(EMPTY_FORM);
+    setDeleteTarget(null);
     void loadContacts(customerId);
   }, [open, customerId]);
+
+  const emitChanged = () => {
+    if (!onChanged) return;
+    void Promise.resolve(onChanged()).catch((error) => {
+      notifier.error(error instanceof Error ? error.message : "El contacto se guardó, pero no se pudo actualizar el listado.");
+    });
+  };
 
   const loadContacts = async (targetCustomerId: string) => {
     try {
@@ -118,6 +143,7 @@ export const CustomerContactsModal = ({
 
       await loadContacts(customerId);
       resetForm();
+      emitChanged();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "No se pudo guardar el contacto.";
@@ -129,8 +155,6 @@ export const CustomerContactsModal = ({
 
   const handleDelete = async (contactId: string) => {
     if (!customerId) return;
-    const confirmed = window.confirm("¿Eliminar este contacto?");
-    if (!confirmed) return;
 
     try {
       setSaving(true);
@@ -138,6 +162,8 @@ export const CustomerContactsModal = ({
       notifier.success("Contacto eliminado.");
       await loadContacts(customerId);
       if (editingContactId === contactId) resetForm();
+      setDeleteTarget(null);
+      emitChanged();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "No se pudo eliminar el contacto.";
@@ -150,7 +176,7 @@ export const CustomerContactsModal = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
@@ -161,8 +187,13 @@ export const CustomerContactsModal = ({
       <div className="relative w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div>
-            <h3 className="text-sm font-semibold text-gray-800">Contactos del cliente</h3>
-            <p className="text-xs text-gray-500">{customerLabel || "Cliente sin nombre"}</p>
+            <h3 className="text-sm font-semibold text-gray-800">
+              {selectionMode ? "Seleccionar contacto" : "Contactos del cliente"}
+            </h3>
+            <p className="text-xs text-gray-500">
+              {customerLabel || "Cliente sin nombre"}
+              {selectionMode ? " · El contacto elegido se anexará a la cotización." : ""}
+            </p>
           </div>
 
           <button
@@ -175,7 +206,7 @@ export const CustomerContactsModal = ({
           </button>
         </div>
 
-        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
+        <div className={`grid gap-4 p-4 ${selectionMode ? "grid-cols-1" : "lg:grid-cols-[1fr_320px]"}`}>
           <div className="overflow-hidden rounded-lg border border-gray-200">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -186,7 +217,9 @@ export const CustomerContactsModal = ({
                   <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Teléfono</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Correo</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Principal</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">Acciones</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">
+                    {selectionMode ? "Seleccionar" : "Acciones"}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
@@ -212,7 +245,15 @@ export const CustomerContactsModal = ({
                 {!loading &&
                   contacts.map((contact) => (
                     <tr key={contact.id}>
-                      <td className="px-3 py-2 text-xs text-gray-700">{contact.name}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">
+                        <span>{contact.name}</span>
+                        {contact.id === lockedContactId && (
+                          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-600">
+                            <LockKeyhole className="h-2.5 w-2.5" />
+                            ERP
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-xs text-gray-700">{contact.jobTitle || "-"}</td>
                       <td className="px-3 py-2 text-xs text-gray-700">{contact.mobile || "-"}</td>
                       <td className="px-3 py-2 text-xs text-gray-700">{contact.phone || "-"}</td>
@@ -227,6 +268,17 @@ export const CustomerContactsModal = ({
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
+                        {selectionMode ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectContact?.(contact)}
+                            className="rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
+                          >
+                            Elegir contacto
+                          </button>
+                        ) : contact.id === lockedContactId ? (
+                          <span className="text-[10px] font-semibold text-slate-400">Solo lectura</span>
+                        ) : (
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
@@ -237,9 +289,7 @@ export const CustomerContactsModal = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              void handleDelete(contact.id);
-                            }}
+                            onClick={() => setDeleteTarget(contact)}
                             disabled={saving}
                             className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
                           >
@@ -249,6 +299,7 @@ export const CustomerContactsModal = ({
                             </span>
                           </button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -256,7 +307,7 @@ export const CustomerContactsModal = ({
             </table>
           </div>
 
-          <aside className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          {!selectionMode && <aside className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xs font-semibold uppercase text-gray-600">
                 {editingContactId ? "Editar contacto" : "Agregar contacto"}
@@ -331,9 +382,25 @@ export const CustomerContactsModal = ({
                 {saving ? "Guardando..." : editingContactId ? "Guardar cambios" : "Agregar contacto"}
               </button>
             </div>
-          </aside>
+          </aside>}
         </div>
       </div>
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h4 className="text-lg font-bold text-slate-950">Eliminar contacto</h4>
+            <p className="mt-2 text-sm text-slate-600">El contacto dejará de estar disponible para nuevas cotizaciones.</p>
+            <p className="mt-3 text-sm font-bold text-slate-900">{deleteTarget.name}</p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button>
+              <button type="button" onClick={() => void handleDelete(deleteTarget.id)} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

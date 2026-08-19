@@ -111,6 +111,8 @@ export interface SavedQuoteRecord {
     rfc: string;
     companyName: string;
     phone?: string;
+    selectedContactId?: string | null;
+    selectedContactName?: string | null;
   } | null;
   items: Array<{
     id: string;
@@ -324,6 +326,14 @@ interface ApiQuote {
     phone: string | null;
     whatsapp: string;
   };
+  customerContactId: string | null;
+  customerContact: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    mobile: string | null;
+  } | null;
   createdByUser: {
     firstName: string;
     lastName: string;
@@ -549,6 +559,8 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       rfc: "",
       companyName,
       phone: apiQuote.customer.phone || "",
+      selectedContactId: apiQuote.customerContactId,
+      selectedContactName: apiQuote.customerContact?.name || null,
     },
     items: apiQuote.items.map((item) => ({
       id: item.clientItemId || item.id,
@@ -959,6 +971,7 @@ export class QuotesService {
         quoteId: draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null,
         action: options.status === "COTIZADA" ? "SUBMIT_FOR_APPROVAL" : "SAVE_DRAFT",
         customerId,
+        customerContactId: draft.client.selectedContactId || null,
         currency: draft.currency,
         exchangeRate: draft.exchangeRate,
         exchangeRateDate: draft.exchangeRateDate,

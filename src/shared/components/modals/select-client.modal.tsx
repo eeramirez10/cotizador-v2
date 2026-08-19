@@ -2,8 +2,11 @@ import { Loader2, Search, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { Client } from "../../../modules/clients/types/client.types";
+import type { CustomerContact } from "../../../modules/clients/types/customer-contact.types";
+import { CustomerContactsService } from "../../../modules/clients/services/customer-contacts.service";
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
 import { erpCustomerHasDeliveryChannel, erpCustomerToClientInput } from "../../../modules/clients/utils/erp-customer-mapper";
+import { clientWithSelectedContact } from "../../../modules/clients/utils/customer-contact-selection";
 import { useErpCustomerSearch } from "../../../queries/customers/use-erp-customer-search";
 import { notifier } from "../../notifications/notifier";
 import { useClientsStore } from "../../../store/clients/clients.store";
@@ -35,6 +38,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const [contactsModalOpen, setContactsModalOpen] = useState(false);
   const [contactsCustomerId, setContactsCustomerId] = useState<string | null>(null);
   const [contactsCustomerLabel, setContactsCustomerLabel] = useState("");
+  const [contactsCustomer, setContactsCustomer] = useState<Client | null>(null);
 
   const debouncedTerm = useDebouncedValue(term, 300);
   const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
@@ -54,6 +58,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     setContactsModalOpen(false);
     setContactsCustomerId(null);
     setContactsCustomerLabel("");
+    setContactsCustomer(null);
     setLocalCustomerModalOpen(false);
   }, [open]);
 
@@ -78,8 +83,15 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
 
   if (!open) return null;
 
-  const handleSelectLocal = (client: Client) => {
-    onSelect(client);
+  const handleSelectLocal = async (client: Client) => {
+    const contacts = client.contacts?.length
+      ? client.contacts
+      : await CustomerContactsService.list(client.id);
+    const clientWithContacts = { ...client, contacts };
+    onSelect(clientWithSelectedContact(
+      clientWithContacts,
+      contacts.find((contact) => contact.isPrimary) || contacts[0]
+    ));
     onClose();
   };
 
@@ -87,7 +99,14 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     try {
       setCreating(true);
       const created = await addClient(erpCustomerToClientInput(erpCustomer));
-      onSelect(created);
+      const contacts = created.contacts?.length
+        ? created.contacts
+        : await CustomerContactsService.list(created.id);
+      const clientWithContacts = { ...created, contacts };
+      onSelect(clientWithSelectedContact(
+        clientWithContacts,
+        contacts.find((contact) => contact.isPrimary) || contacts[0]
+      ));
       onClose();
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo anexar el cliente ERP.";
@@ -103,6 +122,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
       const upserted = await addClient(erpCustomerToClientInput(erpCustomer));
       setContactsCustomerId(upserted.id);
       setContactsCustomerLabel(upserted.companyName || `${upserted.name} ${upserted.lastname}`.trim() || erpCustomer.displayName);
+      setContactsCustomer(upserted);
       setContactsModalOpen(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo preparar el cliente ERP.";
@@ -110,6 +130,13 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleSelectContact = (contact: CustomerContact) => {
+    if (!contactsCustomer) return;
+    onSelect(clientWithSelectedContact(contactsCustomer, contact));
+    setContactsModalOpen(false);
+    onClose();
   };
 
   return (
@@ -201,7 +228,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
                         <td className="px-3 py-2 text-xs text-gray-700">{client.email || "-"}</td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            onClick={() => handleSelectLocal(client)}
+                            onClick={() => void handleSelectLocal(client)}
                             className="rounded-md bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-xs font-semibold text-white hover:from-emerald-600 hover:to-teal-700"
                           >
                             Seleccionar
@@ -303,6 +330,9 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
         onClose={() => setContactsModalOpen(false)}
         customerId={contactsCustomerId}
         customerLabel={contactsCustomerLabel}
+        lockOldestContact
+        selectionMode
+        onSelectContact={handleSelectContact}
       />
       {localCustomerModalOpen && (
         <ErpCustomerOnboardingModal

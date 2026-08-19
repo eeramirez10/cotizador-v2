@@ -190,6 +190,8 @@ interface HydrateQuoteClient {
   rfc: string;
   companyName: string;
   phone?: string;
+  selectedContactId?: string | null;
+  selectedContactName?: string | null;
 }
 
 interface HydrateQuoteInput {

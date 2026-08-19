@@ -26,6 +26,8 @@ export interface Client {
   isActive?: boolean;
   notes?: string;
   contacts?: CustomerContact[];
+  selectedContactId?: string | null;
+  selectedContactName?: string | null;
   createdAt: string;
   updatedAt: string;
   createdByUserId?: string | null;

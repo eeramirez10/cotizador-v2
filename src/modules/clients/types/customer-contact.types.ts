@@ -14,6 +14,8 @@ export interface CustomerContact {
 }
 
 export interface CustomerContactInput {
+  id?: string;
+  createdAt?: string;
   name: string;
   jobTitle?: string | null;
   label?: string | null;

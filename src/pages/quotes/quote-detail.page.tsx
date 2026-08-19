@@ -722,6 +722,7 @@ export const QuoteDetailPage = () => {
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showErpRegistrationModal, setShowErpRegistrationModal] = useState(false);
+  const [resolvedCustomerContactName, setResolvedCustomerContactName] = useState("");
   const [erpQuoteNumberDraft, setErpQuoteNumberDraft] = useState("");
   const [rejectionReason, setRejectionReason] = useState<QuoteRejectionReason | "">("");
   const [rejectionComment, setRejectionComment] = useState("");
@@ -776,6 +777,35 @@ export const QuoteDetailPage = () => {
   const revisionRequiresComment = revisionOptions.find((option) => option.value === revisionReason)?.requiresComment || false;
   const rejectionRequiresComment = rejectionOptions.find((option) => option.value === rejectionReason)?.requiresComment || false;
   const cancellationRequiresComment = cancellationOptions.find((option) => option.value === cancellationReason)?.requiresComment || false;
+
+  useEffect(() => {
+    const client = quote?.client;
+    if (!client || client.selectedContactName?.trim()) {
+      setResolvedCustomerContactName("");
+      return;
+    }
+
+    let cancelled = false;
+    void CustomerContactsService.list(client.id).then((contacts) => {
+      if (cancelled) return;
+      const email = normalizeEmail(client.email || "");
+      const whatsapp = normalizePhone(client.whatsappPhone || "");
+      const phone = normalizePhone(client.phone || "");
+      const match = contacts.find((contact) => contact.id === client.selectedContactId)
+        || contacts.find((contact) => Boolean(
+          (email && normalizeEmail(contact.email || "") === email)
+          || (whatsapp && normalizePhone(contact.mobile || "") === whatsapp)
+          || (phone && normalizePhone(contact.phone || "") === phone)
+        ));
+      setResolvedCustomerContactName(match?.name || "");
+    }).catch(() => {
+      if (!cancelled) setResolvedCustomerContactName("");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [quote?.client]);
 
   const downloadAttachment = async (file: FileAttachment) => {
     setBusyAttachmentId(file.id);
@@ -900,7 +930,9 @@ export const QuoteDetailPage = () => {
   );
   const hasItemComments = quote.items.some((item) => (item.itemComment || "").trim().length > 0);
   const company = quote.client?.companyName?.trim() || "";
-  const contactName = `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
+  const contactName = quote.client?.selectedContactName?.trim()
+    || resolvedCustomerContactName
+    || `${quote.client?.name || ""} ${quote.client?.lastname || ""}`.trim();
   const customerDisplayName = company || contactName || "Cliente sin nombre";
   const deliverySummary = Array.from(
     new Set(quote.items.map((item) => (item.deliveryTime || "").trim()).filter(Boolean))

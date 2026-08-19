@@ -2,7 +2,6 @@ import { AxiosError } from "axios";
 import {
   Building2,
   CircleOff,
-  Eye,
   Loader2,
   Mail,
   MessageCircle,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Client, ClientInput } from "../../modules/clients/types/client.types";
+import { CustomerContactsService } from "../../modules/clients/services/customer-contacts.service";
 import type { CustomerContactInput } from "../../modules/clients/types/customer-contact.types";
 import { emptyCustomerContact } from "../../modules/clients/utils/customer-contact-form";
 import { CustomerContactsEditor } from "../../shared/components/forms/customer-contacts.editor";
@@ -25,6 +25,7 @@ import { useAuthStore } from "../../store/auth/auth.store";
 import { useClientsStore } from "../../store/clients/clients.store";
 
 type SourceFilter = "ALL" | "LOCAL" | "ERP";
+const ERP_FALLBACK_CONTACT_ID = "__erp_original_contact__";
 
 const EMPTY_FORM: ClientInput = {
   name: "",
@@ -51,6 +52,8 @@ const EMPTY_FORM: ClientInput = {
 const contactsFromClient = (client: Client): CustomerContactInput[] => {
   if (client.contacts?.length) {
     return client.contacts.map((contact) => ({
+      id: contact.id,
+      createdAt: contact.createdAt,
       name: contact.name,
       jobTitle: contact.jobTitle,
       label: contact.label,
@@ -64,6 +67,8 @@ const contactsFromClient = (client: Client): CustomerContactInput[] => {
 
   if (client.email || client.phone || client.whatsappPhone) {
     return [{
+      id: client.source === "ERP" ? ERP_FALLBACK_CONTACT_ID : undefined,
+      createdAt: client.createdAt,
       name: `${client.name} ${client.lastname}`.trim() || "Contacto principal",
       jobTitle: "",
       label: "Contacto principal",
@@ -75,7 +80,9 @@ const contactsFromClient = (client: Client): CustomerContactInput[] => {
     }];
   }
 
-  return [emptyCustomerContact(true)];
+  return client.source === "ERP"
+    ? [{ ...emptyCustomerContact(true), id: ERP_FALLBACK_CONTACT_ID, createdAt: client.createdAt }]
+    : [emptyCustomerContact(true)];
 };
 
 const clientToForm = (client: Client): ClientInput => ({
@@ -178,11 +185,7 @@ export const ClientsPage = () => {
     setForm(EMPTY_FORM);
   };
 
-  const validate = (): string | null => {
-    if (!form.name.trim()) return "El nombre es obligatorio.";
-    if (!form.lastname.trim()) return "El apellido es obligatorio.";
-
-    const contacts = form.contacts || [];
+  const validateContacts = (contacts: CustomerContactInput[]): string | null => {
     if (contacts.length === 0) return "Agrega al menos un contacto.";
     for (let index = 0; index < contacts.length; index += 1) {
       const contact = contacts[index];
@@ -207,9 +210,65 @@ export const ClientsPage = () => {
     return null;
   };
 
+  const validate = (): string | null => {
+    if (!form.name.trim()) return "El nombre es obligatorio.";
+    if (!form.lastname.trim()) return "El apellido es obligatorio.";
+    return validateContacts(form.contacts || []);
+  };
+
   const saveClient = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedClient || selectedClient.source === "ERP") return;
+    if (!selectedClient) return;
+
+    if (selectedClient.source === "ERP") {
+      const initialContacts = selectedClient.contacts || [];
+      const lockedContactId = [...initialContacts].sort((left, right) =>
+        new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      )[0]?.id || ERP_FALLBACK_CONTACT_ID;
+      const currentContacts = form.contacts || [];
+      const fallbackErpContact = currentContacts.find((contact) => contact.id === ERP_FALLBACK_CONTACT_ID);
+      const currentIds = new Set(currentContacts.flatMap((contact) => contact.id ? [contact.id] : []));
+      const removedContacts = initialContacts.filter((contact) =>
+        contact.id !== lockedContactId && !currentIds.has(contact.id)
+      );
+      const editableContacts = currentContacts.filter((contact) => contact.id !== lockedContactId);
+      const validationError = validateContacts(editableContacts);
+      if (validationError) return notifier.warning(validationError);
+      if (!currentContacts.some((contact) => contact.email?.trim() || contact.mobile?.trim())) {
+        return notifier.warning("El cliente debe tener al menos un correo o WhatsApp para enviar cotizaciones.");
+      }
+      const toast = notifier.loading("Guardando contactos...");
+
+      try {
+        setSaving(true);
+        if (lockedContactId === ERP_FALLBACK_CONTACT_ID && fallbackErpContact) {
+          await CustomerContactsService.create(selectedClient.id, {
+            ...fallbackErpContact,
+            isPrimary: false,
+          });
+        }
+        for (const contact of removedContacts) {
+          await CustomerContactsService.remove(selectedClient.id, contact.id);
+        }
+        for (const contact of editableContacts) {
+          if (contact.id) await CustomerContactsService.update(selectedClient.id, contact.id, contact);
+          else await CustomerContactsService.create(selectedClient.id, contact);
+        }
+        await loadClients();
+        if (toast !== undefined) notifier.update(toast, "success", "Contactos actualizados.");
+        else notifier.success("Contactos actualizados.");
+        setSelectedClient(null);
+        setForm(EMPTY_FORM);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudieron guardar los contactos.";
+        if (toast !== undefined) notifier.update(toast, "error", message);
+        else notifier.error(message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const validationError = validate();
     if (validationError) return notifier.warning(validationError);
 
@@ -341,8 +400,8 @@ export const ClientsPage = () => {
                     <td className="px-4 py-3 text-xs text-slate-600">{client.createdByName || "Sistema"}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        <button type="button" onClick={() => openClient(client)} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100" title={client.source === "ERP" ? "Ver detalle" : "Editar cliente"}>
-                          {client.source === "ERP" ? <Eye className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                        <button type="button" onClick={() => openClient(client)} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100" title={client.source === "ERP" ? "Editar contactos del cliente ERP" : "Editar cliente"}>
+                          <Pencil className="h-4 w-4" />
                         </button>
                         {canDelete && client.source !== "ERP" && (
                           <button type="button" onClick={() => setDeleteTarget(client)} className="rounded-md border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50" title="Desactivar cliente">
@@ -405,7 +464,7 @@ const ClientModal = ({
   <div className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true">
     <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
-        <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300">{client.id ? (editable ? "Editar cliente" : "Detalle ERP") : "Nuevo registro"}</p><h2 className="mt-1 text-xl font-bold">{form.companyName || `${form.name} ${form.lastname}`.trim() || "Nuevo cliente"}</h2></div>
+        <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300">{client.id ? (editable ? "Editar cliente" : "Editar contactos ERP") : "Nuevo registro"}</p><h2 className="mt-1 text-xl font-bold">{form.companyName || `${form.name} ${form.lastname}`.trim() || "Nuevo cliente"}</h2></div>
         <button type="button" onClick={onClose} disabled={saving} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button>
       </header>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
@@ -430,7 +489,15 @@ const ClientModal = ({
             <FormField label="País" value={form.billingCountry || ""} disabled={!editable} onChange={(value) => setForm((current) => ({ ...current, billingCountry: value }))} />
           </FormSection>
 
-          <CustomerContactsEditor contacts={form.contacts || []} onChange={(contacts) => setForm((current) => ({ ...current, contacts }))} disabled={!editable} />
+          <CustomerContactsEditor
+            contacts={form.contacts || []}
+            onChange={(contacts) => setForm((current) => ({ ...current, contacts }))}
+            readonlyContactIds={client.source === "ERP"
+              ? new Set([[...(client.contacts || [])].sort((left, right) =>
+                new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+              )[0]?.id || ERP_FALLBACK_CONTACT_ID])
+              : undefined}
+          />
 
           <FormSection title="Notas internas" description="Información visible únicamente dentro del cotizador.">
             <label className="sm:col-span-2 lg:col-span-3 text-[11px] font-semibold text-slate-600">Notas<textarea value={form.notes || ""} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} disabled={!editable} rows={3} className="mt-1 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 disabled:bg-slate-100" /></label>
@@ -438,7 +505,7 @@ const ClientModal = ({
         </div>
         <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Cerrar</button>
-          {editable && <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{client.id ? "Guardar cambios" : "Crear cliente"}</button>}
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{client.source === "ERP" ? "Guardar contactos" : client.id ? "Guardar cambios" : "Crear cliente"}</button>
         </footer>
       </form>
     </div>

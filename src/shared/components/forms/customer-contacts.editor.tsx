@@ -7,12 +7,14 @@ interface CustomerContactsEditorProps {
   contacts: CustomerContactInput[];
   onChange: (contacts: CustomerContactInput[]) => void;
   disabled?: boolean;
+  readonlyContactIds?: ReadonlySet<string>;
 }
 
 export const CustomerContactsEditor = ({
   contacts,
   onChange,
   disabled = false,
+  readonlyContactIds,
 }: CustomerContactsEditorProps) => {
   const people = contacts.length > 0 ? contacts : [emptyCustomerContact(true)];
 
@@ -34,6 +36,13 @@ export const CustomerContactsEditor = ({
     commit(people.filter((_, currentIndex) => currentIndex !== index));
   };
 
+  const add = () => {
+    commit([
+      ...people.map((contact) => ({ ...contact, isPrimary: false })),
+      emptyCustomerContact(true),
+    ]);
+  };
+
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -44,7 +53,7 @@ export const CustomerContactsEditor = ({
           </p>
         </div>
         {!disabled && (
-          <button type="button" onClick={() => commit([...people, emptyCustomerContact(false)])} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">
+          <button type="button" onClick={add} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100">
             <Plus className="h-3.5 w-3.5" />
             Agregar otro contacto
           </button>
@@ -52,8 +61,11 @@ export const CustomerContactsEditor = ({
       </div>
 
       <div className="mt-4 space-y-3">
-        {people.map((contact, index) => (
-          <article key={index} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {people.map((contact, index) => {
+          const contactDisabled = disabled || Boolean(contact.id && readonlyContactIds?.has(contact.id));
+
+          return (
+          <article key={contact.id || index} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="rounded-lg bg-slate-100 p-2 text-slate-600"><UserRound className="h-4 w-4" /></span>
@@ -62,7 +74,7 @@ export const CustomerContactsEditor = ({
                   <p className="text-[10px] text-slate-500">{contact.isPrimary ? "Contacto principal" : "Contacto adicional"}</p>
                 </div>
               </div>
-              {!disabled && people.length > 1 && (
+              {!contactDisabled && people.length > 1 && (
                 <button type="button" onClick={() => remove(index)} className="rounded-md border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50" title="Quitar contacto">
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -70,23 +82,24 @@ export const CustomerContactsEditor = ({
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-12">
-              <ContactField label="Nombre *" value={contact.name} disabled={disabled} onChange={(value) => update(index, { name: value })} className="lg:col-span-4" />
-              <ContactField label="Puesto" value={contact.jobTitle || ""} disabled={disabled} onChange={(value) => update(index, { jobTitle: value })} className="lg:col-span-4" placeholder="Compras, dirección..." />
-              <ContactField label="Área o etiqueta" value={contact.label || ""} disabled={disabled} onChange={(value) => update(index, { label: value })} className="lg:col-span-4" placeholder="Cotizaciones, pagos..." />
-              <ContactField icon={<Mail className="h-3.5 w-3.5" />} label="Correo" type="email" value={contact.email || ""} disabled={disabled} onChange={(value) => update(index, { email: value })} className="lg:col-span-4" placeholder="correo@cliente.com" />
-              <ContactField icon={<Phone className="h-3.5 w-3.5" />} label="Teléfono fijo" type="tel" value={contact.phone || ""} disabled={disabled} onChange={(value) => update(index, { phone: value })} className="lg:col-span-3" placeholder="+52 55 1234 5678" />
-              <ContactField label="Extensión" value={contact.phoneExtension || ""} disabled={disabled} onChange={(value) => update(index, { phoneExtension: value.replace(/\D/g, "").slice(0, 10) })} className="lg:col-span-2" />
-              <ContactField icon={<MessageCircle className="h-3.5 w-3.5 text-emerald-600" />} label="WhatsApp" type="tel" value={contact.mobile || ""} disabled={disabled} onChange={(value) => update(index, { mobile: value })} className="lg:col-span-3" placeholder="+52 81 9876 5432" accent />
+              <ContactField label="Nombre *" value={contact.name} disabled={contactDisabled} onChange={(value) => update(index, { name: value })} className="lg:col-span-4" />
+              <ContactField label="Puesto" value={contact.jobTitle || ""} disabled={contactDisabled} onChange={(value) => update(index, { jobTitle: value })} className="lg:col-span-4" placeholder="Compras, dirección..." />
+              <ContactField label="Área o etiqueta" value={contact.label || ""} disabled={contactDisabled} onChange={(value) => update(index, { label: value })} className="lg:col-span-4" placeholder="Cotizaciones, pagos..." />
+              <ContactField icon={<Mail className="h-3.5 w-3.5" />} label="Correo" type="email" value={contact.email || ""} disabled={contactDisabled} onChange={(value) => update(index, { email: value })} className="lg:col-span-4" placeholder="correo@cliente.com" />
+              <ContactField icon={<Phone className="h-3.5 w-3.5" />} label="Teléfono fijo" type="tel" value={contact.phone || ""} disabled={contactDisabled} onChange={(value) => update(index, { phone: value })} className="lg:col-span-3" placeholder="+52 55 1234 5678" />
+              <ContactField label="Extensión" value={contact.phoneExtension || ""} disabled={contactDisabled} onChange={(value) => update(index, { phoneExtension: value.replace(/\D/g, "").slice(0, 10) })} className="lg:col-span-2" />
+              <ContactField icon={<MessageCircle className="h-3.5 w-3.5 text-emerald-600" />} label="WhatsApp" type="tel" value={contact.mobile || ""} disabled={contactDisabled} onChange={(value) => update(index, { mobile: value })} className="lg:col-span-3" placeholder="+52 81 9876 5432" accent />
             </div>
 
             <div className="mt-3 border-t border-slate-100 pt-3">
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700">
-                <input type="radio" name="customer-primary-contact" checked={Boolean(contact.isPrimary)} disabled={disabled} onChange={() => setPrimary(index)} />
+                <input type="radio" name="customer-primary-contact" checked={Boolean(contact.isPrimary)} disabled={contactDisabled} onChange={() => setPrimary(index)} />
                 Contacto principal
               </label>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
