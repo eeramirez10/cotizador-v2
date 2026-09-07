@@ -1225,7 +1225,7 @@ export class QuotesService {
 
   static async sendWhatsApp(
     quoteId: string,
-    payload: { contactId?: string; file: File }
+    payload: { contactId?: string; message: string; file: File }
   ): Promise<{
     ok: boolean;
     message: string;
@@ -1237,6 +1237,7 @@ export class QuotesService {
       const form = new FormData();
       form.append("file", payload.file, payload.file.name);
       if (payload.contactId) form.append("contactId", payload.contactId);
+      form.append("message", payload.message);
       const { data } = await coreHttpClient.post<{
         providerMessageId: string;
         recipient: string;

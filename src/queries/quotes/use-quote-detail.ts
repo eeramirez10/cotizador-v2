@@ -165,8 +165,8 @@ export const useRegisterQuoteDeliveryAttempt = () => {
 export const useSendQuoteWhatsApp = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ quoteId, contactId, file }: { quoteId: string; contactId?: string; file: File }) =>
-      QuotesService.sendWhatsApp(quoteId, { contactId, file }),
+    mutationFn: ({ quoteId, contactId, message, file }: { quoteId: string; contactId?: string; message: string; file: File }) =>
+      QuotesService.sendWhatsApp(quoteId, { contactId, message, file }),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });

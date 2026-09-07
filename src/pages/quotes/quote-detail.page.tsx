@@ -227,6 +227,14 @@ const createRecipientLabel = (name: string, companyName: string, whatsapp: strin
   return fragments.length > 0 ? `${safeName} (${fragments.join(" · ")})` : safeName;
 };
 
+const buildDeliveryMessage = (quote: SavedQuoteRecord, recipientName?: string): string => [
+  `Hola ${recipientName?.trim() || "cliente"}, soy ${quote.createdByName || "tu ejecutivo de ventas"} de Tuvansa.`,
+  "",
+  `Te comparto la cotización ${quote.quoteNumber || quote.quoteId} para tu revisión.`,
+  "",
+  "Quedo atento a tus comentarios o cualquier cambio que necesites.",
+].join("\n");
+
 const buildRecipientOptions = (
   client: SavedQuoteRecord["client"],
   contacts: CustomerContact[]
@@ -739,6 +747,8 @@ export const QuoteDetailPage = () => {
   const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
   const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
   const [selectedEmailRecipientId, setSelectedEmailRecipientId] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendMessageTouched, setSendMessageTouched] = useState(false);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientsError, setRecipientsError] = useState("");
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
@@ -864,6 +874,21 @@ export const QuoteDetailPage = () => {
     () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
     [sendRecipientOptions, selectedEmailRecipientId]
   );
+
+  useEffect(() => {
+    if (!showSendModal || sendMessageTouched || !quote) return;
+    const recipient = sendChannel === "EMAIL"
+      ? selectedEmailRecipient
+      : selectedWhatsAppRecipient || selectedEmailRecipient;
+    setSendMessage(buildDeliveryMessage(quote, recipient?.name));
+  }, [
+    quote,
+    selectedEmailRecipient,
+    selectedWhatsAppRecipient,
+    sendChannel,
+    sendMessageTouched,
+    showSendModal,
+  ]);
 
   useEffect(() => {
     if (!showSendModal) return;
@@ -1319,14 +1344,19 @@ export const QuoteDetailPage = () => {
     });
   };
 
-  const buildMailToUrl = (recipient: string): string => {
+  const buildMailToUrl = (recipient: string, message: string): string => {
     const email = recipient || "";
     const subject = `Cotización ${quote.quoteNumber || quote.quoteId}`;
-    const body = `Hola,\n\nTe comparto la cotización ${quote.quoteNumber || quote.quoteId}.\n\nSaludos.`;
-    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
   };
 
   const handleSendQuote = async () => {
+    const deliveryMessage = sendMessage.trim();
+    if (!deliveryMessage) {
+      notifier.warning("Escribe el mensaje que se enviará al cliente.");
+      return;
+    }
+
     await runActionWithToast({
       loadingMessage: "Preparando y enviando la cotización...",
       action: async () => {
@@ -1360,6 +1390,7 @@ export const QuoteDetailPage = () => {
               contactId: selectedWhatsAppRecipient?.id === "__base__"
                 ? undefined
                 : selectedWhatsAppRecipient?.id,
+              message: deliveryMessage,
               file: pdfFile,
             });
             results.push(response.ok);
@@ -1367,13 +1398,13 @@ export const QuoteDetailPage = () => {
             continue;
           }
 
-          window.open(buildMailToUrl(recipient), "_blank", "noopener,noreferrer");
+          window.open(buildMailToUrl(recipient, deliveryMessage), "_blank", "noopener,noreferrer");
 
           const response = await registerDeliveryAttempt.mutateAsync({
             quoteId: quote.quoteId,
             channel,
             recipient,
-            note: "Quote sent manually via email from frontend.",
+            note: deliveryMessage,
           });
 
           results.push(response.ok);
@@ -1579,7 +1610,10 @@ export const QuoteDetailPage = () => {
 
           {canSendQuote && (
             <button
-              onClick={() => setShowSendModal(true)}
+              onClick={() => {
+                setSendMessageTouched(false);
+                setShowSendModal(true);
+              }}
               disabled={isActionLocked}
               className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
@@ -2636,6 +2670,31 @@ export const QuoteDetailPage = () => {
               )}
             </div>
 
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="quote-delivery-message" className="text-xs font-semibold text-gray-700">
+                  Mensaje para el cliente
+                </label>
+                <span className="text-[11px] text-gray-500">{sendMessage.length}/1500</span>
+              </div>
+              <textarea
+                id="quote-delivery-message"
+                value={sendMessage}
+                onChange={(event) => {
+                  setSendMessage(event.target.value);
+                  setSendMessageTouched(true);
+                }}
+                disabled={isActionLocked}
+                rows={6}
+                maxLength={1500}
+                placeholder="Escribe el mensaje que recibirá el cliente..."
+                className="mt-1 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+              />
+              <p className="mt-1 text-[11px] text-gray-500">
+                Este mismo mensaje se utilizará para WhatsApp y correo.
+              </p>
+            </div>
+
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -2648,7 +2707,7 @@ export const QuoteDetailPage = () => {
               <button
                 type="button"
                 onClick={handleSendQuote}
-                disabled={isActionLocked}
+                disabled={isActionLocked || !sendMessage.trim()}
                 className={`rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
               >
                 {isActionLocked ? "Procesando..." : "Confirmar envío"}
