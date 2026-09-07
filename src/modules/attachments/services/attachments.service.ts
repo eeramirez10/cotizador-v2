@@ -2,7 +2,11 @@ import axios from "axios";
 import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 
-export type AttachmentCategory = "SOURCE_DOCUMENT" | "SELLER_SUPPLIER_QUOTE" | "PURCHASE_SUPPLIER_PROPOSAL";
+export type AttachmentCategory =
+  | "SOURCE_DOCUMENT"
+  | "SELLER_SUPPLIER_QUOTE"
+  | "PURCHASE_SUPPLIER_PROPOSAL"
+  | "CUSTOMER_QUOTE_PDF";
 
 export interface FileAttachment {
   id: string;

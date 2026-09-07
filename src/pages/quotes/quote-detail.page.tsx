@@ -40,6 +40,7 @@ import {
   useDeleteQuotePermanently,
   useQuoteDetail,
   useRegisterQuoteDeliveryAttempt,
+  useSendQuoteWhatsApp,
   useRegisterErpQuote,
   useUpdateQuoteStatus,
   useUpdateQuoteProcurementReference,
@@ -58,6 +59,7 @@ import { SellerProcurementBulkPrequoteModal } from "../../shared/components/moda
 import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
 import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
+import { createQuotePdfFile, downloadQuotePdfFile } from "../../modules/quotes/utils/quote-pdf";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -733,7 +735,7 @@ export const QuoteDetailPage = () => {
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
+  const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("WHATSAPP");
   const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
   const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
   const [selectedEmailRecipientId, setSelectedEmailRecipientId] = useState("");
@@ -764,6 +766,7 @@ export const QuoteDetailPage = () => {
   const generateOrder = useGenerateQuoteOrder();
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
+  const sendQuoteWhatsApp = useSendQuoteWhatsApp();
   const registerErpQuote = useRegisterErpQuote();
   const updateProcurementReference = useUpdateQuoteProcurementReference();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
@@ -841,6 +844,7 @@ export const QuoteDetailPage = () => {
     generateOrder.isPending ||
     downloadOrderFile.isPending ||
     registerDeliveryAttempt.isPending ||
+    sendQuoteWhatsApp.isPending ||
     registerErpQuote.isPending ||
     updateProcurementReference.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
@@ -1315,12 +1319,6 @@ export const QuoteDetailPage = () => {
     });
   };
 
-  const buildWhatsAppUrl = (recipient: string): string => {
-    const digits = recipient.replace(/\D/g, "");
-    const message = `Hola, comparto la cotización ${quote.quoteNumber || quote.quoteId}.`;
-    return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-  };
-
   const buildMailToUrl = (recipient: string): string => {
     const email = recipient || "";
     const subject = `Cotización ${quote.quoteNumber || quote.quoteId}`;
@@ -1330,12 +1328,13 @@ export const QuoteDetailPage = () => {
 
   const handleSendQuote = async () => {
     await runActionWithToast({
-      loadingMessage: "Registrando envío de cotización...",
+      loadingMessage: "Preparando y enviando la cotización...",
       action: async () => {
         const channels =
           sendChannel === "BOTH" ? (["WHATSAPP", "EMAIL"] as const) : ([sendChannel] as const);
 
         const results: boolean[] = [];
+        let pdfFile: File | null = null;
 
         for (const channel of channels) {
           const recipient =
@@ -1352,17 +1351,29 @@ export const QuoteDetailPage = () => {
             continue;
           }
 
-          const url = channel === "WHATSAPP" ? buildWhatsAppUrl(recipient) : buildMailToUrl(recipient);
-          window.open(url, "_blank", "noopener,noreferrer");
+          if (channel === "WHATSAPP") {
+            const printable = printableRef.current;
+            if (!printable) throw new Error("No se pudo preparar la cotización para enviar.");
+            pdfFile ??= await createQuotePdfFile(printable, quote.quoteNumber || quote.quoteId);
+            const response = await sendQuoteWhatsApp.mutateAsync({
+              quoteId: quote.quoteId,
+              contactId: selectedWhatsAppRecipient?.id === "__base__"
+                ? undefined
+                : selectedWhatsAppRecipient?.id,
+              file: pdfFile,
+            });
+            results.push(response.ok);
+            if (!response.ok) notifier.error(response.message);
+            continue;
+          }
+
+          window.open(buildMailToUrl(recipient), "_blank", "noopener,noreferrer");
 
           const response = await registerDeliveryAttempt.mutateAsync({
             quoteId: quote.quoteId,
             channel,
             recipient,
-            note:
-              channel === "WHATSAPP"
-                ? "Quote sent manually via WhatsApp from frontend."
-                : "Quote sent manually via email from frontend.",
+            note: "Quote sent manually via email from frontend.",
           });
 
           results.push(response.ok);
@@ -1374,8 +1385,10 @@ export const QuoteDetailPage = () => {
         return { anySuccess: results.some(Boolean) };
       },
       isSuccess: (result) => result.anySuccess,
-      successMessage: "Envío registrado correctamente.",
-      errorMessage: "No se pudo registrar el envío.",
+      successMessage: sendChannel === "WHATSAPP"
+        ? "Cotización enviada por WhatsApp."
+        : "Envío procesado correctamente.",
+      errorMessage: "No se pudo enviar la cotización.",
       onSuccess: async () => {
         setShowSendModal(false);
         await refetch();
@@ -1421,90 +1434,8 @@ export const QuoteDetailPage = () => {
         if (!printable) {
           throw new Error("No se pudo preparar la cotización para descargar.");
         }
-
-        const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-
-        if ("fonts" in document) {
-          await document.fonts.ready;
-        }
-        await waitForImages(printable);
-
-        const rootRect = printable.getBoundingClientRect();
-        const rowBreaksDom = Array.from(printable.querySelectorAll("tbody tr"))
-          .map((row) => (row as HTMLElement).getBoundingClientRect().top - rootRect.top)
-          .filter((top) => Number.isFinite(top) && top > 0)
-          .sort((a, b) => a - b);
-
-        const canvas = await html2canvas(printable, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          windowWidth: printable.scrollWidth,
-          windowHeight: printable.scrollHeight,
-        });
-
-        const pdf = new jsPDF({
-          orientation: "portrait",
-          unit: "pt",
-          format: "letter",
-        });
-
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const marginTop = 26;
-        const marginBottom = 20;
-        const marginX = 18;
-        const contentWidth = pageWidth - marginX * 2;
-        const contentHeight = pdf.internal.pageSize.getHeight() - marginTop - marginBottom;
-        const imageHeight = (canvas.height * contentWidth) / canvas.width;
-        const domToPdfFactor = imageHeight / Math.max(printable.scrollHeight, 1);
-        const rowBreaksPdf = rowBreaksDom.map((value) => value * domToPdfFactor);
-        const pxPerPdfUnit = canvas.height / Math.max(imageHeight, 1);
-
-        let currentOffset = 0;
-        const minChunkHeight = 130;
-        let pageIndex = 0;
-
-        while (currentOffset < imageHeight - 0.5) {
-          const tentativeEnd = Math.min(currentOffset + contentHeight, imageHeight);
-          const candidates = rowBreaksPdf.filter(
-            (value) => value > currentOffset + minChunkHeight && value <= tentativeEnd - 4
-          );
-          const nextOffset = candidates.length > 0 ? candidates[candidates.length - 1] : tentativeEnd;
-          const safeNextOffset = nextOffset > currentOffset + 4 ? nextOffset : tentativeEnd;
-          const chunkHeightPdf = safeNextOffset - currentOffset;
-          if (chunkHeightPdf <= 0) {
-            break;
-          }
-
-          if (pageIndex > 0) {
-            pdf.addPage("letter", "portrait");
-          }
-
-          const sourceY = Math.floor(currentOffset * pxPerPdfUnit);
-          const sourceHeight = Math.max(1, Math.ceil(chunkHeightPdf * pxPerPdfUnit));
-          const pageCanvas = document.createElement("canvas");
-          pageCanvas.width = canvas.width;
-          pageCanvas.height = sourceHeight;
-          const pageContext = pageCanvas.getContext("2d");
-          if (!pageContext) {
-            throw new Error("No se pudo preparar el contexto de imagen para PDF.");
-          }
-
-          pageContext.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
-          const pageImageData = pageCanvas.toDataURL("image/jpeg", 0.96);
-          const renderedHeight = sourceHeight / pxPerPdfUnit;
-          pdf.addImage(pageImageData, "JPEG", marginX, marginTop, contentWidth, renderedHeight, undefined, "FAST");
-
-          currentOffset = safeNextOffset;
-          pageIndex += 1;
-        }
-
-        const safeFileName = `${quote.quoteNumber || quote.quoteId}`
-          .replace(/[^a-zA-Z0-9_-]/g, "_")
-          .replace(/_+/g, "_")
-          .replace(/^_|_$/g, "");
-
-        pdf.save(`${safeFileName || "cotizacion"}.pdf`);
+        const file = await createQuotePdfFile(printable, quote.quoteNumber || quote.quoteId);
+        downloadQuotePdfFile(file);
         return true;
       },
       isSuccess: (result) => Boolean(result),
@@ -2586,7 +2517,7 @@ export const QuoteDetailPage = () => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Enviar cotización</h3>
                 <p className="text-xs text-gray-500">
-                  Selecciona el canal. Se registrará el envío automáticamente en la cotización.
+                  WhatsApp enviará el PDF mostrado con el nombre del vendedor responsable.
                 </p>
               </div>
               <button

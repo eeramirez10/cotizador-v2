@@ -1222,4 +1222,40 @@ export class QuotesService {
       return { ok: false, message };
     }
   }
+
+  static async sendWhatsApp(
+    quoteId: string,
+    payload: { contactId?: string; file: File }
+  ): Promise<{
+    ok: boolean;
+    message: string;
+    providerMessageId?: string;
+    recipient?: string;
+    sellerName?: string;
+  }> {
+    try {
+      const form = new FormData();
+      form.append("file", payload.file, payload.file.name);
+      if (payload.contactId) form.append("contactId", payload.contactId);
+      const { data } = await coreHttpClient.post<{
+        providerMessageId: string;
+        recipient: string;
+        sellerName: string;
+      }>(`/api/quotes/${quoteId}/deliveries/whatsapp`, form, {
+        headers: requireAuthHeaders(),
+      });
+      return {
+        ok: true,
+        message: "Cotización enviada por WhatsApp.",
+        providerMessageId: data.providerMessageId,
+        recipient: data.recipient,
+        sellerName: data.sellerName,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: mapAxiosErrorMessage(error, "No se pudo enviar la cotización por WhatsApp."),
+      };
+    }
+  }
 }
