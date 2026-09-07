@@ -1232,6 +1232,7 @@ export class QuotesService {
     providerMessageId?: string;
     recipient?: string;
     sellerName?: string;
+    deliveryMode?: "FREE_FORM" | "TEMPLATE";
   }> {
     try {
       const form = new FormData();
@@ -1242,6 +1243,7 @@ export class QuotesService {
         providerMessageId: string;
         recipient: string;
         sellerName: string;
+        deliveryMode: "FREE_FORM" | "TEMPLATE";
       }>(`/api/quotes/${quoteId}/deliveries/whatsapp`, form, {
         headers: requireAuthHeaders(),
       });
@@ -1251,6 +1253,7 @@ export class QuotesService {
         providerMessageId: data.providerMessageId,
         recipient: data.recipient,
         sellerName: data.sellerName,
+        deliveryMode: data.deliveryMode,
       };
     } catch (error) {
       return {

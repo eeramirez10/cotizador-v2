@@ -60,6 +60,7 @@ import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../s
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
 import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 import { createQuotePdfFile, downloadQuotePdfFile } from "../../modules/quotes/utils/quote-pdf";
+import { useWhatsAppConversationWindow } from "../../queries/integrations/use-whatsapp-window";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -716,7 +717,6 @@ export const QuoteDetailPage = () => {
   const capabilities = useSystemCapabilities();
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
-  const whatsAppQuoteTemplateEnabled = capabilities.data?.whatsAppQuoteTemplateEnabled ?? false;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -750,6 +750,7 @@ export const QuoteDetailPage = () => {
   const [selectedEmailRecipientId, setSelectedEmailRecipientId] = useState("");
   const [sendMessage, setSendMessage] = useState("");
   const [sendMessageTouched, setSendMessageTouched] = useState(false);
+  const [whatsAppWindowExpired, setWhatsAppWindowExpired] = useState(false);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientsError, setRecipientsError] = useState("");
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
@@ -875,7 +876,35 @@ export const QuoteDetailPage = () => {
     () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
     [sendRecipientOptions, selectedEmailRecipientId]
   );
-  const isTemplateMessageLocked = whatsAppQuoteTemplateEnabled && sendChannel !== "EMAIL";
+  const sendIncludesWhatsApp = sendChannel !== "EMAIL";
+  const whatsAppWindow = useWhatsAppConversationWindow(
+    selectedWhatsAppRecipient?.whatsapp || "",
+    showSendModal && sendIncludesWhatsApp,
+  );
+  const isWhatsAppWindowActive = Boolean(whatsAppWindow.data?.active && !whatsAppWindowExpired);
+  const isTemplateMessageLocked = sendIncludesWhatsApp && (
+    !selectedWhatsAppRecipient
+    || whatsAppWindow.isPending
+    || whatsAppWindow.isError
+    || whatsAppWindow.data?.deliveryMode === "TEMPLATE"
+    || whatsAppWindowExpired
+  );
+
+  useEffect(() => {
+    const expiresAt = whatsAppWindow.data?.expiresAt;
+    if (!showSendModal || !sendIncludesWhatsApp || !expiresAt) {
+      setWhatsAppWindowExpired(false);
+      return;
+    }
+    const remainingMs = new Date(expiresAt).getTime() - Date.now();
+    if (remainingMs <= 0) {
+      setWhatsAppWindowExpired(true);
+      return;
+    }
+    setWhatsAppWindowExpired(false);
+    const timeoutId = window.setTimeout(() => setWhatsAppWindowExpired(true), remainingMs + 100);
+    return () => window.clearTimeout(timeoutId);
+  }, [sendIncludesWhatsApp, showSendModal, whatsAppWindow.data?.expiresAt]);
 
   useEffect(() => {
     if (!showSendModal || !quote || (sendMessageTouched && !isTemplateMessageLocked)) return;
@@ -2701,6 +2730,17 @@ export const QuoteDetailPage = () => {
                     ? "Este mismo mensaje se utilizará para WhatsApp y correo."
                     : `Este mensaje se enviará por ${sendChannel === "WHATSAPP" ? "WhatsApp" : "correo"} y puede modificarse antes de enviarlo.`}
               </p>
+              {sendIncludesWhatsApp && selectedWhatsAppRecipient && (
+                <p className={`mt-1 text-[11px] font-semibold ${isWhatsAppWindowActive ? "text-emerald-700" : "text-amber-700"}`}>
+                  {whatsAppWindow.isPending
+                    ? "Validando la ventana de conversación de WhatsApp..."
+                    : whatsAppWindow.isError
+                      ? "No se pudo validar la ventana; por seguridad se utilizará la plantilla."
+                      : isWhatsAppWindowActive && whatsAppWindow.data?.expiresAt
+                        ? `Mensaje directo disponible hasta ${new Date(whatsAppWindow.data.expiresAt).toLocaleString("es-MX")}.`
+                        : "La ventana de 24 horas está cerrada; se utilizará la plantilla aprobada."}
+                </p>
+              )}
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
