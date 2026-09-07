@@ -5,6 +5,7 @@ export interface SystemCapabilities {
   quoteInternalApprovalEnabled: boolean;
   requisitionInternalApprovalEnabled: boolean;
   sellerExcelImportEnabled: boolean;
+  whatsAppQuoteTemplateEnabled: boolean;
 }
 
 export class SystemCapabilitiesService {

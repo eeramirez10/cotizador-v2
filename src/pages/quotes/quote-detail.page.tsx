@@ -228,7 +228,7 @@ const createRecipientLabel = (name: string, companyName: string, whatsapp: strin
 };
 
 const buildDeliveryMessage = (quote: SavedQuoteRecord, recipientName?: string): string => [
-  `Hola ${recipientName?.trim() || "cliente"}, soy ${quote.createdByName || "tu ejecutivo de ventas"} de Tuvansa.`,
+  `Hola ${recipientName?.trim() || "cliente"}, soy ${quote.createdByName || "tu ejecutivo de ventas"} del área de ventas de Tubería y Válvulas del Norte.`,
   "",
   `Te comparto la cotización ${quote.quoteNumber || quote.quoteId} para tu revisión.`,
   "",
@@ -716,6 +716,7 @@ export const QuoteDetailPage = () => {
   const capabilities = useSystemCapabilities();
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
+  const whatsAppQuoteTemplateEnabled = capabilities.data?.whatsAppQuoteTemplateEnabled ?? false;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -874,15 +875,17 @@ export const QuoteDetailPage = () => {
     () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
     [sendRecipientOptions, selectedEmailRecipientId]
   );
+  const isTemplateMessageLocked = whatsAppQuoteTemplateEnabled && sendChannel !== "EMAIL";
 
   useEffect(() => {
-    if (!showSendModal || sendMessageTouched || !quote) return;
+    if (!showSendModal || !quote || (sendMessageTouched && !isTemplateMessageLocked)) return;
     const recipient = sendChannel === "EMAIL"
       ? selectedEmailRecipient
       : selectedWhatsAppRecipient || selectedEmailRecipient;
     setSendMessage(buildDeliveryMessage(quote, recipient?.name));
   }, [
     quote,
+    isTemplateMessageLocked,
     selectedEmailRecipient,
     selectedWhatsAppRecipient,
     sendChannel,
@@ -2685,13 +2688,18 @@ export const QuoteDetailPage = () => {
                   setSendMessageTouched(true);
                 }}
                 disabled={isActionLocked}
+                readOnly={isTemplateMessageLocked}
                 rows={6}
                 maxLength={1500}
                 placeholder="Escribe el mensaje que recibirá el cliente..."
-                className="mt-1 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                className={`mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 ${isTemplateMessageLocked ? "cursor-not-allowed bg-gray-100" : "bg-white"}`}
               />
               <p className="mt-1 text-[11px] text-gray-500">
-                Este mismo mensaje se utilizará para WhatsApp y correo.
+                {isTemplateMessageLocked
+                  ? "El mensaje está definido por la plantilla aprobada de WhatsApp y no puede modificarse."
+                  : sendChannel === "BOTH"
+                    ? "Este mismo mensaje se utilizará para WhatsApp y correo."
+                    : `Este mensaje se enviará por ${sendChannel === "WHATSAPP" ? "WhatsApp" : "correo"} y puede modificarse antes de enviarlo.`}
               </p>
             </div>
 
