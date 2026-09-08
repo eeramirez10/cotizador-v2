@@ -845,7 +845,29 @@ const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
   return true;
 };
 
+export interface QuoteCustomerChangeRequest {
+  id: string;
+  quoteId: string;
+  requestedByPhone: string;
+  requestedChanges: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CANCELLED";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class QuotesService {
+  static async listCustomerChangeRequests(quoteId: string): Promise<QuoteCustomerChangeRequest[]> {
+    try {
+      const { data } = await coreHttpClient.get<QuoteCustomerChangeRequest[]>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/customer-change-requests`,
+        { headers: requireAuthHeaders() },
+      );
+      return data;
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudieron consultar las solicitudes del cliente."));
+    }
+  }
+
   static async updateProcurementReference(
     quoteId: string,
     itemId: string,

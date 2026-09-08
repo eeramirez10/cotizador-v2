@@ -39,6 +39,7 @@ import {
   useRestoreQuote,
   useDeleteQuotePermanently,
   useQuoteDetail,
+  useQuoteCustomerChangeRequests,
   useRegisterQuoteDeliveryAttempt,
   useSendQuoteWhatsApp,
   useRegisterErpQuote,
@@ -761,6 +762,7 @@ export const QuoteDetailPage = () => {
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
+  const customerChangeRequests = useQuoteCustomerChangeRequests(quoteId);
   const quoteAttachments = useQuoteAttachments(quoteId);
   const {
     data: purchaseRequisition,
@@ -1754,6 +1756,35 @@ export const QuoteDetailPage = () => {
               ? ` Archivada por ${quote.archivedByUser.firstName} ${quote.archivedByUser.lastName}.`
               : ""}
           </p>
+        </div>
+      )}
+
+      {(customerChangeRequests.data?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-md border border-sky-300 bg-sky-50 p-4">
+          <div className="flex items-start gap-3">
+            <MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-sky-950">Solicitudes del cliente por WhatsApp</p>
+              <p className="mt-0.5 text-xs text-sky-800">
+                Revisa estos cambios antes de crear una nueva versión de la cotización.
+              </p>
+              <div className="mt-3 space-y-2">
+                {customerChangeRequests.data?.map((request) => (
+                  <div key={request.id} className="rounded-md border border-sky-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase text-sky-700">
+                        {request.status === "OPEN" ? "Pendiente" : request.status.replaceAll("_", " ")}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {new Date(request.createdAt).toLocaleString("es-MX")} · {request.requestedByPhone}
+                      </span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{request.requestedChanges}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
