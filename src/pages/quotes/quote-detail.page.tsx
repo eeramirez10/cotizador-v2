@@ -726,6 +726,7 @@ export const QuoteDetailPage = () => {
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CONTEMPORARY");
   const [pdfDescriptionMode, setPdfDescriptionMode] = useState<QuotePdfDescriptionMode>("CUSTOMER");
+  const [sendPdfDescriptionMode, setSendPdfDescriptionMode] = useState<QuotePdfDescriptionMode>("CUSTOMER");
   const [showSendModal, setShowSendModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
@@ -1646,6 +1647,7 @@ export const QuoteDetailPage = () => {
             <button
               onClick={() => {
                 setSendMessageTouched(false);
+                setSendPdfDescriptionMode("CUSTOMER");
                 setShowSendModal(true);
               }}
               disabled={isActionLocked}
@@ -2734,6 +2736,38 @@ export const QuoteDetailPage = () => {
             </div>
 
             <div className="mt-4">
+              <p className="mb-1.5 text-xs font-semibold text-gray-700">Descripción incluida en el PDF</p>
+              <div className="grid grid-cols-3 rounded-md border border-gray-300 bg-gray-50 p-1">
+                {([
+                  ["ERP", "ERP"],
+                  ["CUSTOMER", "Cliente"],
+                  ["BOTH", "Ambas"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSendPdfDescriptionMode(value)}
+                    disabled={isActionLocked}
+                    className={`rounded px-3 py-2 text-xs font-semibold transition ${
+                      sendPdfDescriptionMode === value
+                        ? "bg-slate-800 text-white"
+                        : "text-gray-600 hover:bg-white"
+                    } ${disabledActionClass}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                {sendPdfDescriptionMode === "ERP"
+                  ? "El cliente recibirá únicamente la descripción vinculada al ERP."
+                  : sendPdfDescriptionMode === "CUSTOMER"
+                    ? "El cliente recibirá únicamente la descripción de su solicitud."
+                    : "La descripción del cliente aparecerá debajo de la descripción ERP."}
+              </p>
+            </div>
+
+            <div className="mt-4">
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="quote-delivery-message" className="text-xs font-semibold text-gray-700">
                   Mensaje para el cliente
@@ -2905,7 +2939,7 @@ export const QuoteDetailPage = () => {
           contactName={contactName}
           deliverySummary={deliverySummary}
           pdfStyle={pdfStyle}
-          descriptionMode={pdfDescriptionMode}
+          descriptionMode={showSendModal ? sendPdfDescriptionMode : pdfDescriptionMode}
           className="bg-white text-gray-900"
         />
       </div>

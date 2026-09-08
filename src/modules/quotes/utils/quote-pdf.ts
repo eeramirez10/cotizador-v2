@@ -14,7 +14,7 @@ const safeQuoteFileName = (quoteNumber: string): string => {
     .replace(/[^a-zA-Z0-9_-]/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "");
-  return `${safeName || "cotizacion"}.pdf`;
+  return `Cotizacion-${safeName || "sin-folio"}.pdf`;
 };
 
 export const createQuotePdfFile = async (printable: HTMLElement, quoteNumber: string): Promise<File> => {
