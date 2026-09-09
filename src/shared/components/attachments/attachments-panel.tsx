@@ -5,6 +5,7 @@ const labels: Record<FileAttachment["category"], string> = {
   SOURCE_DOCUMENT: "Archivo origen",
   SELLER_SUPPLIER_QUOTE: "Cotización del proveedor (vendedor)",
   PURCHASE_SUPPLIER_PROPOSAL: "Propuesta registrada por Compras",
+  CUSTOMER_QUOTE_PDF: "Cotización enviada al cliente",
 };
 
 const size = (bytes: number) => bytes < 1024 * 1024

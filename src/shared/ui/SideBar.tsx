@@ -1,9 +1,10 @@
-import { ArrowLeft, BarChart3, Building2, ChevronDown, ContactRound, DollarSign, FilePlus2, FileSpreadsheet, FileUp, LucideLayoutDashboard, Package, Power, Settings2, ShieldCheck, ShoppingCart, Truck, UserRound, Users, Warehouse } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, ChevronDown, ContactRound, DollarSign, FilePlus2, FileSpreadsheet, FileUp, LucideLayoutDashboard, MessageCircleMore, Package, Power, Settings2, ShieldCheck, ShoppingCart, Truck, UserRound, Users, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { Form, NavLink, useLocation } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
+import { useWhatsAppUnreadCount } from "../../queries/whatsapp/use-whatsapp-unread-count";
 
 export const SideBar = () => {
   const open = useUiStore((state) => state.open);
@@ -25,6 +26,8 @@ export const SideBar = () => {
   const canApproveQuotes = quoteInternalApprovalEnabled && (role === "admin" || role === "manager");
   const canAccessProcurement = role === "admin" || role === "manager" || role === "seller" || role === "purchasing";
   const canAccessCommercial = role !== "purchasing";
+  const canAccessWhatsApp = role === "admin" || role === "manager" || role === "seller";
+  const whatsappUnread = useWhatsAppUnreadCount(canAccessWhatsApp);
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
   const active = "bg-gray-100 text-gray-900";
@@ -34,6 +37,12 @@ export const SideBar = () => {
 
   const nav = [
     ...(canAccessCommercial ? [{ name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> }] : []),
+    ...(canAccessWhatsApp ? [{
+      name: "WhatsApp",
+      to: "/whatsapp",
+      icon: <MessageCircleMore />,
+      badge: whatsappUnread.data || 0,
+    }] : []),
     ...(canApproveQuotes ? [{ name: "Aprobar cotizaciones", to: "/quote-approvals", icon: <ShieldCheck /> }] : []),
     ...(canAccessCommercial ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
     ...(canAccessCommercial ? [{ name: "Clientes", to: "/clients", icon: <ContactRound /> }] : []),
@@ -103,7 +112,12 @@ export const SideBar = () => {
             <li key={item.name}>
               <NavLink onClick={handleNavClick} className={navClass} to={item.to}>
                 <div className="h-5 w-5 shrink-0 text-gray-900 transition duration-75 group-hover:text-gray-900">{item.icon}</div>
-                {item.name}
+                <span className="flex-1">{item.name}</span>
+                {"badge" in item && (item.badge ?? 0) > 0 && (
+                  <span className="min-w-5 rounded-full bg-amber-300 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-900">
+                    {(item.badge ?? 0) > 99 ? "99+" : item.badge}
+                  </span>
+                )}
               </NavLink>
             </li>
           ))}

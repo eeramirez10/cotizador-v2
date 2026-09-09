@@ -12,12 +12,26 @@ import type { ProcurementPrequoteData } from "../../store/quote/manual-quote.sto
 const quoteDetailKeys = {
   all: ["quotes", "detail"] as const,
   byId: (quoteId: string) => [...quoteDetailKeys.all, quoteId] as const,
+  customerChangeRequests: (quoteId: string) => [...quoteDetailKeys.byId(quoteId), "customer-change-requests"] as const,
 };
 
 export const useQuoteDetail = (quoteId?: string) => {
   return useQuery({
     queryKey: quoteId ? quoteDetailKeys.byId(quoteId) : ["quotes", "detail", "disabled"],
     queryFn: () => QuotesService.getById(quoteId!),
+    enabled: Boolean(quoteId),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+};
+
+export const useQuoteCustomerChangeRequests = (quoteId?: string) => {
+  return useQuery({
+    queryKey: quoteId
+      ? quoteDetailKeys.customerChangeRequests(quoteId)
+      : ["quotes", "detail", "customer-change-requests", "disabled"],
+    queryFn: () => QuotesService.listCustomerChangeRequests(quoteId!),
     enabled: Boolean(quoteId),
     staleTime: 0,
     refetchOnMount: "always",
@@ -158,6 +172,19 @@ export const useRegisterQuoteDeliveryAttempt = () => {
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
+export const useSendQuoteWhatsApp = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, contactId, message, file }: { quoteId: string; contactId?: string; message: string; file: File }) =>
+      QuotesService.sendWhatsApp(quoteId, { contactId, message, file }),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+      await queryClient.invalidateQueries({ queryKey: ["attachments", "quote", variables.quoteId], exact: false });
     },
   });
 };

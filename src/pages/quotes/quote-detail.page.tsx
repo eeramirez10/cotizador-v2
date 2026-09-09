@@ -39,7 +39,9 @@ import {
   useRestoreQuote,
   useDeleteQuotePermanently,
   useQuoteDetail,
+  useQuoteCustomerChangeRequests,
   useRegisterQuoteDeliveryAttempt,
+  useSendQuoteWhatsApp,
   useRegisterErpQuote,
   useUpdateQuoteStatus,
   useUpdateQuoteProcurementReference,
@@ -58,6 +60,8 @@ import { SellerProcurementBulkPrequoteModal } from "../../shared/components/moda
 import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
 import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
+import { createQuotePdfFile, downloadQuotePdfFile } from "../../modules/quotes/utils/quote-pdf";
+import { useWhatsAppConversationWindow } from "../../queries/integrations/use-whatsapp-window";
 
 const statusClass: Record<string, string> = {
   BORRADOR: "bg-slate-100 text-slate-700",
@@ -224,6 +228,14 @@ const createRecipientLabel = (name: string, companyName: string, whatsapp: strin
   if (email.trim()) fragments.push(`Correo: ${email.trim()}`);
   return fragments.length > 0 ? `${safeName} (${fragments.join(" · ")})` : safeName;
 };
+
+const buildDeliveryMessage = (quote: SavedQuoteRecord, recipientName?: string): string => [
+  `Hola ${recipientName?.trim() || "cliente"}, soy ${quote.createdByName || "tu ejecutivo de ventas"} del área de ventas de Tubería y Válvulas del Norte.`,
+  "",
+  `Te comparto la cotización ${quote.quoteNumber || quote.quoteId} para tu revisión.`,
+  "",
+  "Quedo atento a tus comentarios o cualquier cambio que necesites.",
+].join("\n");
 
 const buildRecipientOptions = (
   client: SavedQuoteRecord["client"],
@@ -714,6 +726,7 @@ export const QuoteDetailPage = () => {
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfStyle, setPdfStyle] = useState<QuotePdfStyle>("CONTEMPORARY");
   const [pdfDescriptionMode, setPdfDescriptionMode] = useState<QuotePdfDescriptionMode>("CUSTOMER");
+  const [sendPdfDescriptionMode, setSendPdfDescriptionMode] = useState<QuotePdfDescriptionMode>("CUSTOMER");
   const [showSendModal, setShowSendModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
@@ -733,10 +746,13 @@ export const QuoteDetailPage = () => {
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("BOTH");
+  const [sendChannel, setSendChannel] = useState<"WHATSAPP" | "EMAIL" | "BOTH">("WHATSAPP");
   const [sendRecipientOptions, setSendRecipientOptions] = useState<SendRecipientOption[]>([]);
   const [selectedWhatsAppRecipientId, setSelectedWhatsAppRecipientId] = useState("");
   const [selectedEmailRecipientId, setSelectedEmailRecipientId] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendMessageTouched, setSendMessageTouched] = useState(false);
+  const [whatsAppWindowExpired, setWhatsAppWindowExpired] = useState(false);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipientsError, setRecipientsError] = useState("");
   const [orderGeneratedLocal, setOrderGeneratedLocal] = useState(false);
@@ -747,6 +763,7 @@ export const QuoteDetailPage = () => {
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
+  const customerChangeRequests = useQuoteCustomerChangeRequests(quoteId);
   const quoteAttachments = useQuoteAttachments(quoteId);
   const {
     data: purchaseRequisition,
@@ -764,6 +781,7 @@ export const QuoteDetailPage = () => {
   const generateOrder = useGenerateQuoteOrder();
   const downloadOrderFile = useDownloadQuoteOrderFile();
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
+  const sendQuoteWhatsApp = useSendQuoteWhatsApp();
   const registerErpQuote = useRegisterErpQuote();
   const updateProcurementReference = useUpdateQuoteProcurementReference();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
@@ -841,6 +859,7 @@ export const QuoteDetailPage = () => {
     generateOrder.isPending ||
     downloadOrderFile.isPending ||
     registerDeliveryAttempt.isPending ||
+    sendQuoteWhatsApp.isPending ||
     registerErpQuote.isPending ||
     updateProcurementReference.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
@@ -860,6 +879,51 @@ export const QuoteDetailPage = () => {
     () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
     [sendRecipientOptions, selectedEmailRecipientId]
   );
+  const sendIncludesWhatsApp = sendChannel !== "EMAIL";
+  const whatsAppWindow = useWhatsAppConversationWindow(
+    selectedWhatsAppRecipient?.whatsapp || "",
+    showSendModal && sendIncludesWhatsApp,
+  );
+  const isWhatsAppWindowActive = Boolean(whatsAppWindow.data?.active && !whatsAppWindowExpired);
+  const isTemplateMessageLocked = sendIncludesWhatsApp && (
+    !selectedWhatsAppRecipient
+    || whatsAppWindow.isPending
+    || whatsAppWindow.isError
+    || whatsAppWindow.data?.deliveryMode === "TEMPLATE"
+    || whatsAppWindowExpired
+  );
+
+  useEffect(() => {
+    const expiresAt = whatsAppWindow.data?.expiresAt;
+    if (!showSendModal || !sendIncludesWhatsApp || !expiresAt) {
+      setWhatsAppWindowExpired(false);
+      return;
+    }
+    const remainingMs = new Date(expiresAt).getTime() - Date.now();
+    if (remainingMs <= 0) {
+      setWhatsAppWindowExpired(true);
+      return;
+    }
+    setWhatsAppWindowExpired(false);
+    const timeoutId = window.setTimeout(() => setWhatsAppWindowExpired(true), remainingMs + 100);
+    return () => window.clearTimeout(timeoutId);
+  }, [sendIncludesWhatsApp, showSendModal, whatsAppWindow.data?.expiresAt]);
+
+  useEffect(() => {
+    if (!showSendModal || !quote || (sendMessageTouched && !isTemplateMessageLocked)) return;
+    const recipient = sendChannel === "EMAIL"
+      ? selectedEmailRecipient
+      : selectedWhatsAppRecipient || selectedEmailRecipient;
+    setSendMessage(buildDeliveryMessage(quote, recipient?.name));
+  }, [
+    quote,
+    isTemplateMessageLocked,
+    selectedEmailRecipient,
+    selectedWhatsAppRecipient,
+    sendChannel,
+    sendMessageTouched,
+    showSendModal,
+  ]);
 
   useEffect(() => {
     if (!showSendModal) return;
@@ -1315,27 +1379,27 @@ export const QuoteDetailPage = () => {
     });
   };
 
-  const buildWhatsAppUrl = (recipient: string): string => {
-    const digits = recipient.replace(/\D/g, "");
-    const message = `Hola, comparto la cotización ${quote.quoteNumber || quote.quoteId}.`;
-    return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-  };
-
-  const buildMailToUrl = (recipient: string): string => {
+  const buildMailToUrl = (recipient: string, message: string): string => {
     const email = recipient || "";
     const subject = `Cotización ${quote.quoteNumber || quote.quoteId}`;
-    const body = `Hola,\n\nTe comparto la cotización ${quote.quoteNumber || quote.quoteId}.\n\nSaludos.`;
-    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
   };
 
   const handleSendQuote = async () => {
+    const deliveryMessage = sendMessage.trim();
+    if (!deliveryMessage) {
+      notifier.warning("Escribe el mensaje que se enviará al cliente.");
+      return;
+    }
+
     await runActionWithToast({
-      loadingMessage: "Registrando envío de cotización...",
+      loadingMessage: "Preparando y enviando la cotización...",
       action: async () => {
         const channels =
           sendChannel === "BOTH" ? (["WHATSAPP", "EMAIL"] as const) : ([sendChannel] as const);
 
         const results: boolean[] = [];
+        let pdfFile: File | null = null;
 
         for (const channel of channels) {
           const recipient =
@@ -1352,17 +1416,30 @@ export const QuoteDetailPage = () => {
             continue;
           }
 
-          const url = channel === "WHATSAPP" ? buildWhatsAppUrl(recipient) : buildMailToUrl(recipient);
-          window.open(url, "_blank", "noopener,noreferrer");
+          if (channel === "WHATSAPP") {
+            const printable = printableRef.current;
+            if (!printable) throw new Error("No se pudo preparar la cotización para enviar.");
+            pdfFile ??= await createQuotePdfFile(printable, quote.quoteNumber || quote.quoteId);
+            const response = await sendQuoteWhatsApp.mutateAsync({
+              quoteId: quote.quoteId,
+              contactId: selectedWhatsAppRecipient?.id === "__base__"
+                ? undefined
+                : selectedWhatsAppRecipient?.id,
+              message: deliveryMessage,
+              file: pdfFile,
+            });
+            results.push(response.ok);
+            if (!response.ok) notifier.error(response.message);
+            continue;
+          }
+
+          window.open(buildMailToUrl(recipient, deliveryMessage), "_blank", "noopener,noreferrer");
 
           const response = await registerDeliveryAttempt.mutateAsync({
             quoteId: quote.quoteId,
             channel,
             recipient,
-            note:
-              channel === "WHATSAPP"
-                ? "Quote sent manually via WhatsApp from frontend."
-                : "Quote sent manually via email from frontend.",
+            note: deliveryMessage,
           });
 
           results.push(response.ok);
@@ -1374,8 +1451,10 @@ export const QuoteDetailPage = () => {
         return { anySuccess: results.some(Boolean) };
       },
       isSuccess: (result) => result.anySuccess,
-      successMessage: "Envío registrado correctamente.",
-      errorMessage: "No se pudo registrar el envío.",
+      successMessage: sendChannel === "WHATSAPP"
+        ? "Cotización enviada por WhatsApp."
+        : "Envío procesado correctamente.",
+      errorMessage: "No se pudo enviar la cotización.",
       onSuccess: async () => {
         setShowSendModal(false);
         await refetch();
@@ -1421,90 +1500,8 @@ export const QuoteDetailPage = () => {
         if (!printable) {
           throw new Error("No se pudo preparar la cotización para descargar.");
         }
-
-        const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-
-        if ("fonts" in document) {
-          await document.fonts.ready;
-        }
-        await waitForImages(printable);
-
-        const rootRect = printable.getBoundingClientRect();
-        const rowBreaksDom = Array.from(printable.querySelectorAll("tbody tr"))
-          .map((row) => (row as HTMLElement).getBoundingClientRect().top - rootRect.top)
-          .filter((top) => Number.isFinite(top) && top > 0)
-          .sort((a, b) => a - b);
-
-        const canvas = await html2canvas(printable, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          windowWidth: printable.scrollWidth,
-          windowHeight: printable.scrollHeight,
-        });
-
-        const pdf = new jsPDF({
-          orientation: "portrait",
-          unit: "pt",
-          format: "letter",
-        });
-
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const marginTop = 26;
-        const marginBottom = 20;
-        const marginX = 18;
-        const contentWidth = pageWidth - marginX * 2;
-        const contentHeight = pdf.internal.pageSize.getHeight() - marginTop - marginBottom;
-        const imageHeight = (canvas.height * contentWidth) / canvas.width;
-        const domToPdfFactor = imageHeight / Math.max(printable.scrollHeight, 1);
-        const rowBreaksPdf = rowBreaksDom.map((value) => value * domToPdfFactor);
-        const pxPerPdfUnit = canvas.height / Math.max(imageHeight, 1);
-
-        let currentOffset = 0;
-        const minChunkHeight = 130;
-        let pageIndex = 0;
-
-        while (currentOffset < imageHeight - 0.5) {
-          const tentativeEnd = Math.min(currentOffset + contentHeight, imageHeight);
-          const candidates = rowBreaksPdf.filter(
-            (value) => value > currentOffset + minChunkHeight && value <= tentativeEnd - 4
-          );
-          const nextOffset = candidates.length > 0 ? candidates[candidates.length - 1] : tentativeEnd;
-          const safeNextOffset = nextOffset > currentOffset + 4 ? nextOffset : tentativeEnd;
-          const chunkHeightPdf = safeNextOffset - currentOffset;
-          if (chunkHeightPdf <= 0) {
-            break;
-          }
-
-          if (pageIndex > 0) {
-            pdf.addPage("letter", "portrait");
-          }
-
-          const sourceY = Math.floor(currentOffset * pxPerPdfUnit);
-          const sourceHeight = Math.max(1, Math.ceil(chunkHeightPdf * pxPerPdfUnit));
-          const pageCanvas = document.createElement("canvas");
-          pageCanvas.width = canvas.width;
-          pageCanvas.height = sourceHeight;
-          const pageContext = pageCanvas.getContext("2d");
-          if (!pageContext) {
-            throw new Error("No se pudo preparar el contexto de imagen para PDF.");
-          }
-
-          pageContext.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
-          const pageImageData = pageCanvas.toDataURL("image/jpeg", 0.96);
-          const renderedHeight = sourceHeight / pxPerPdfUnit;
-          pdf.addImage(pageImageData, "JPEG", marginX, marginTop, contentWidth, renderedHeight, undefined, "FAST");
-
-          currentOffset = safeNextOffset;
-          pageIndex += 1;
-        }
-
-        const safeFileName = `${quote.quoteNumber || quote.quoteId}`
-          .replace(/[^a-zA-Z0-9_-]/g, "_")
-          .replace(/_+/g, "_")
-          .replace(/^_|_$/g, "");
-
-        pdf.save(`${safeFileName || "cotizacion"}.pdf`);
+        const file = await createQuotePdfFile(printable, quote.quoteNumber || quote.quoteId);
+        downloadQuotePdfFile(file);
         return true;
       },
       isSuccess: (result) => Boolean(result),
@@ -1648,7 +1645,11 @@ export const QuoteDetailPage = () => {
 
           {canSendQuote && (
             <button
-              onClick={() => setShowSendModal(true)}
+              onClick={() => {
+                setSendMessageTouched(false);
+                setSendPdfDescriptionMode("CUSTOMER");
+                setShowSendModal(true);
+              }}
               disabled={isActionLocked}
               className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
@@ -1757,6 +1758,35 @@ export const QuoteDetailPage = () => {
               ? ` Archivada por ${quote.archivedByUser.firstName} ${quote.archivedByUser.lastName}.`
               : ""}
           </p>
+        </div>
+      )}
+
+      {(customerChangeRequests.data?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-md border border-sky-300 bg-sky-50 p-4">
+          <div className="flex items-start gap-3">
+            <MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-sky-950">Solicitudes del cliente por WhatsApp</p>
+              <p className="mt-0.5 text-xs text-sky-800">
+                Revisa estos cambios antes de crear una nueva versión de la cotización.
+              </p>
+              <div className="mt-3 space-y-2">
+                {customerChangeRequests.data?.map((request) => (
+                  <div key={request.id} className="rounded-md border border-sky-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase text-sky-700">
+                        {request.status === "OPEN" ? "Pendiente" : request.status.replaceAll("_", " ")}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {new Date(request.createdAt).toLocaleString("es-MX")} · {request.requestedByPhone}
+                      </span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{request.requestedChanges}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2586,7 +2616,7 @@ export const QuoteDetailPage = () => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Enviar cotización</h3>
                 <p className="text-xs text-gray-500">
-                  Selecciona el canal. Se registrará el envío automáticamente en la cotización.
+                  WhatsApp enviará el PDF mostrado con el nombre del vendedor responsable.
                 </p>
               </div>
               <button
@@ -2705,6 +2735,79 @@ export const QuoteDetailPage = () => {
               )}
             </div>
 
+            <div className="mt-4">
+              <p className="mb-1.5 text-xs font-semibold text-gray-700">Descripción incluida en el PDF</p>
+              <div className="grid grid-cols-3 rounded-md border border-gray-300 bg-gray-50 p-1">
+                {([
+                  ["ERP", "ERP"],
+                  ["CUSTOMER", "Cliente"],
+                  ["BOTH", "Ambas"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSendPdfDescriptionMode(value)}
+                    disabled={isActionLocked}
+                    className={`rounded px-3 py-2 text-xs font-semibold transition ${
+                      sendPdfDescriptionMode === value
+                        ? "bg-slate-800 text-white"
+                        : "text-gray-600 hover:bg-white"
+                    } ${disabledActionClass}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                {sendPdfDescriptionMode === "ERP"
+                  ? "El cliente recibirá únicamente la descripción vinculada al ERP."
+                  : sendPdfDescriptionMode === "CUSTOMER"
+                    ? "El cliente recibirá únicamente la descripción de su solicitud."
+                    : "La descripción del cliente aparecerá debajo de la descripción ERP."}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="quote-delivery-message" className="text-xs font-semibold text-gray-700">
+                  Mensaje para el cliente
+                </label>
+                <span className="text-[11px] text-gray-500">{sendMessage.length}/1500</span>
+              </div>
+              <textarea
+                id="quote-delivery-message"
+                value={sendMessage}
+                onChange={(event) => {
+                  setSendMessage(event.target.value);
+                  setSendMessageTouched(true);
+                }}
+                disabled={isActionLocked}
+                readOnly={isTemplateMessageLocked}
+                rows={6}
+                maxLength={1500}
+                placeholder="Escribe el mensaje que recibirá el cliente..."
+                className={`mt-1 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 ${isTemplateMessageLocked ? "cursor-not-allowed bg-gray-100" : "bg-white"}`}
+              />
+              <p className="mt-1 text-[11px] text-gray-500">
+                {isTemplateMessageLocked
+                  ? "El mensaje está definido por la plantilla aprobada de WhatsApp y no puede modificarse."
+                  : sendChannel === "BOTH"
+                    ? "Este mismo mensaje se utilizará para WhatsApp y correo."
+                    : `Este mensaje se enviará por ${sendChannel === "WHATSAPP" ? "WhatsApp" : "correo"} y puede modificarse antes de enviarlo.`}
+              </p>
+              {sendIncludesWhatsApp && selectedWhatsAppRecipient && (
+                <p className={`mt-1 text-[11px] font-semibold ${isWhatsAppWindowActive ? "text-emerald-700" : "text-amber-700"}`}>
+                  {whatsAppWindow.isPending
+                    ? "Validando la ventana de conversación de WhatsApp..."
+                    : whatsAppWindow.isError
+                      ? "No se pudo validar la ventana; por seguridad se utilizará la plantilla."
+                      : isWhatsAppWindowActive && whatsAppWindow.data?.expiresAt
+                        ? `Mensaje directo disponible hasta ${new Date(whatsAppWindow.data.expiresAt).toLocaleString("es-MX")}.`
+                        : "La ventana de 24 horas está cerrada; se utilizará la plantilla aprobada."}
+                </p>
+              )}
+            </div>
+
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -2717,7 +2820,7 @@ export const QuoteDetailPage = () => {
               <button
                 type="button"
                 onClick={handleSendQuote}
-                disabled={isActionLocked}
+                disabled={isActionLocked || !sendMessage.trim()}
                 className={`rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 ${disabledActionClass}`}
               >
                 {isActionLocked ? "Procesando..." : "Confirmar envío"}
@@ -2836,7 +2939,7 @@ export const QuoteDetailPage = () => {
           contactName={contactName}
           deliverySummary={deliverySummary}
           pdfStyle={pdfStyle}
-          descriptionMode={pdfDescriptionMode}
+          descriptionMode={showSendModal ? sendPdfDescriptionMode : pdfDescriptionMode}
           className="bg-white text-gray-900"
         />
       </div>

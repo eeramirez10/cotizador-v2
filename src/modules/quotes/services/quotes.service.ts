@@ -845,7 +845,29 @@ const advanceQuoteApproval = async (quoteId: string): Promise<boolean> => {
   return true;
 };
 
+export interface QuoteCustomerChangeRequest {
+  id: string;
+  quoteId: string;
+  requestedByPhone: string;
+  requestedChanges: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CANCELLED";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class QuotesService {
+  static async listCustomerChangeRequests(quoteId: string): Promise<QuoteCustomerChangeRequest[]> {
+    try {
+      const { data } = await coreHttpClient.get<QuoteCustomerChangeRequest[]>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/customer-change-requests`,
+        { headers: requireAuthHeaders() },
+      );
+      return data;
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudieron consultar las solicitudes del cliente."));
+    }
+  }
+
   static async updateProcurementReference(
     quoteId: string,
     itemId: string,
@@ -1220,6 +1242,46 @@ export class QuotesService {
     } catch (error) {
       const message = mapAxiosErrorMessage(error, "No se pudo registrar el envío de la cotización.");
       return { ok: false, message };
+    }
+  }
+
+  static async sendWhatsApp(
+    quoteId: string,
+    payload: { contactId?: string; message: string; file: File }
+  ): Promise<{
+    ok: boolean;
+    message: string;
+    providerMessageId?: string;
+    recipient?: string;
+    sellerName?: string;
+    deliveryMode?: "FREE_FORM" | "TEMPLATE";
+  }> {
+    try {
+      const form = new FormData();
+      form.append("file", payload.file, payload.file.name);
+      if (payload.contactId) form.append("contactId", payload.contactId);
+      form.append("message", payload.message);
+      const { data } = await coreHttpClient.post<{
+        providerMessageId: string;
+        recipient: string;
+        sellerName: string;
+        deliveryMode: "FREE_FORM" | "TEMPLATE";
+      }>(`/api/quotes/${quoteId}/deliveries/whatsapp`, form, {
+        headers: requireAuthHeaders(),
+      });
+      return {
+        ok: true,
+        message: "Cotización enviada por WhatsApp.",
+        providerMessageId: data.providerMessageId,
+        recipient: data.recipient,
+        sellerName: data.sellerName,
+        deliveryMode: data.deliveryMode,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: mapAxiosErrorMessage(error, "No se pudo enviar la cotización por WhatsApp."),
+      };
     }
   }
 }
