@@ -68,8 +68,8 @@ export const appRouter = createBrowserRouter([
         loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "WhatsApp" },
         lazy: async () => {
-          const { WhatsAppInboxPage } = await import("../pages/whatsapp/whatsapp-inbox.page");
-          return { Component: WhatsAppInboxPage };
+          const { WhatsAppInboxFeaturePage } = await import("../pages/whatsapp/whatsapp-inbox-feature.page");
+          return { Component: WhatsAppInboxFeaturePage };
         },
       },
       {

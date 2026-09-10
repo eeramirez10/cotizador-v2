@@ -26,7 +26,9 @@ export const SideBar = () => {
   const canApproveQuotes = quoteInternalApprovalEnabled && (role === "admin" || role === "manager");
   const canAccessProcurement = role === "admin" || role === "manager" || role === "seller" || role === "purchasing";
   const canAccessCommercial = role !== "purchasing";
-  const canAccessWhatsApp = role === "admin" || role === "manager" || role === "seller";
+  const whatsappInboxEnabled = capabilities.data?.whatsAppInboxEnabled === true;
+  const canAccessWhatsApp = whatsappInboxEnabled
+    && (role === "admin" || role === "manager" || role === "seller");
   const whatsappUnread = useWhatsAppUnreadCount(canAccessWhatsApp);
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
