@@ -96,13 +96,20 @@ export class WhatsAppInboxService {
     }
   }
 
-  static async messages(conversationId: string, cursor?: string): Promise<WhatsAppMessagePage> {
+  static async messages(
+    conversationId: string,
+    options: { cursor?: string; after?: string; pageSize?: number } = {},
+  ): Promise<WhatsAppMessagePage> {
     try {
       const { data } = await coreHttpClient.get<WhatsAppMessagePage>(
         `/api/whatsapp/${encodeURIComponent(conversationId)}/messages`,
         {
           headers: headers(),
-          params: { cursor: cursor || undefined, pageSize: 60 },
+          params: {
+            cursor: options.cursor || undefined,
+            after: options.after || undefined,
+            pageSize: options.pageSize || 60,
+          },
         },
       );
       return data;
