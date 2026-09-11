@@ -20,6 +20,7 @@ import { PurchaseRequisitionsPage } from "../pages/procurement/purchase-requisit
 import { ProductProcurementPage } from "../pages/products/product-procurement.page";
 import { SuppliersPage } from "../pages/suppliers/suppliers.page";
 import { ErpWarehousesPage } from "../pages/erp-warehouses/erp-warehouses.page";
+import { ReportSubscriptionsPage } from "../pages/reports/report-subscriptions.page";
 
 export const appRouter = createBrowserRouter([
   {
@@ -141,6 +142,12 @@ export const appRouter = createBrowserRouter([
         loader: requireRolesLoader(["admin"]),
         handle: { title: "Almacenes ERP" },
         Component: ErpWarehousesPage,
+      },
+      {
+        path: "report-subscriptions",
+        loader: requireRolesLoader(["admin"]),
+        handle: { title: "Reportes programados" },
+        Component: ReportSubscriptionsPage,
       },
       {
         path: "users",
