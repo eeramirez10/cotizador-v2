@@ -3,6 +3,7 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 
 export type WhatsAppConversationMode = "AI" | "HUMAN";
+export type WhatsAppLeadStatus = "NEW" | "COLLECTING_INFORMATION" | "PENDING_ASSIGNMENT" | "ASSIGNED" | "CONVERTED" | "DISCARDED";
 export type WhatsAppMessageStatus = "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "RECEIVED";
 
 export interface WhatsAppQuoteContext {
@@ -11,8 +12,26 @@ export interface WhatsAppQuoteContext {
   status: string;
 }
 
+export interface WhatsAppRelatedQuote extends WhatsAppQuoteContext {
+  currency: "MXN" | "USD";
+  total: number;
+  revisionNumber: number;
+  rootQuoteId: string | null;
+  previousVersionId: string | null;
+  sellerName: string;
+  createdAt: string;
+  updatedAt: string;
+  isCurrent: boolean;
+}
+
+export interface WhatsAppRelatedQuoteList {
+  items: WhatsAppRelatedQuote[];
+  total: number;
+}
+
 export interface WhatsAppInboxConversation {
   id: string;
+  participantType: "CUSTOMER" | "INTERNAL_USER" | "UNKNOWN";
   participantPhone: string;
   customerId: string | null;
   customerName: string;
@@ -20,6 +39,23 @@ export interface WhatsAppInboxConversation {
   contactName: string | null;
   sellerName: string | null;
   quote: WhatsAppQuoteContext | null;
+  lead: {
+    id: string;
+    status: WhatsAppLeadStatus;
+    contactName: string | null;
+    companyName: string | null;
+    email: string | null;
+    location: string | null;
+    requestSummary: string | null;
+    assignedSellerId: string | null;
+    assignedSellerName: string | null;
+    assignedBranchId: string | null;
+    assignedBranchName: string | null;
+    assignedAt: string | null;
+    customerId: string | null;
+    convertedByUserId: string | null;
+    convertedAt: string | null;
+  } | null;
   mode: WhatsAppConversationMode;
   handledByName: string | null;
   lastMessage: string;
@@ -40,6 +76,20 @@ export interface WhatsAppInboxMessage {
   occurredAt: string;
   quote: WhatsAppQuoteContext | null;
   fileAssetId: string | null;
+  attachments: WhatsAppInboundAttachment[];
+}
+
+export interface WhatsAppInboundAttachment {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  quoteExtractedAt: string | null;
+  quoteExtractionCount: number;
+  quoteExtractedByUserId: string | null;
+  quoteExtractedByName: string | null;
+  lastQuoteDraftId: string | null;
 }
 
 export interface WhatsAppConversationPage {
@@ -68,6 +118,44 @@ const mapError = (error: unknown, fallback: string): Error => {
 };
 
 export class WhatsAppInboxService {
+  static async markAttachmentQuoteExtracted(
+    attachmentId: string,
+    clientDraftId: string,
+  ): Promise<WhatsAppInboundAttachment> {
+    try {
+      const { data } = await coreHttpClient.post<WhatsAppInboundAttachment>(
+        `/api/whatsapp/attachments/${encodeURIComponent(attachmentId)}/quote-extractions`,
+        { clientDraftId },
+        { headers: headers() },
+      );
+      return data;
+    } catch (error) {
+      throw mapError(error, "No se pudo registrar que el archivo fue procesado.");
+    }
+  }
+
+  static async attachmentBlob(attachmentId: string): Promise<Blob> {
+    try {
+      const response = await coreHttpClient.get<Blob>(
+        `/api/whatsapp/attachments/${encodeURIComponent(attachmentId)}/download`,
+        { headers: headers(), responseType: "blob" },
+      );
+      return response.data;
+    } catch (error) {
+      throw mapError(error, "No se pudo abrir el archivo recibido por WhatsApp.");
+    }
+  }
+
+  static async downloadAttachment(attachment: WhatsAppInboundAttachment): Promise<void> {
+    const blob = await this.attachmentBlob(attachment.id);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = attachment.originalName;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
+
   static async list(params: { query?: string; cursor?: string; pageSize?: number } = {}): Promise<WhatsAppConversationPage> {
     try {
       const { data } = await coreHttpClient.get<WhatsAppConversationPage>("/api/whatsapp", {
@@ -118,6 +206,18 @@ export class WhatsAppInboxService {
     }
   }
 
+  static async quotes(conversationId: string): Promise<WhatsAppRelatedQuoteList> {
+    try {
+      const { data } = await coreHttpClient.get<WhatsAppRelatedQuoteList>(
+        `/api/whatsapp/${encodeURIComponent(conversationId)}/quotes`,
+        { headers: headers() },
+      );
+      return data;
+    } catch (error) {
+      throw mapError(error, "No se pudieron cargar las cotizaciones de la conversación.");
+    }
+  }
+
   static async send(conversationId: string, body: string, clientMessageId: string): Promise<void> {
     try {
       await coreHttpClient.post(
@@ -152,6 +252,36 @@ export class WhatsAppInboxService {
       return data;
     } catch (error) {
       throw mapError(error, "No se pudo cambiar el modo de atención.");
+    }
+  }
+
+  static async assignLead(conversationId: string, sellerId: string): Promise<WhatsAppInboxConversation> {
+    try {
+      const { data } = await coreHttpClient.patch<WhatsAppInboxConversation>(
+        `/api/whatsapp/${encodeURIComponent(conversationId)}/lead-assignment`,
+        { sellerId },
+        { headers: headers() },
+      );
+      return data;
+    } catch (error) {
+      throw mapError(error, "No se pudo asignar el prospecto.");
+    }
+  }
+
+  static async convertLead(
+    conversationId: string,
+    customerId: string,
+    customerContactId: string | null,
+  ): Promise<WhatsAppInboxConversation> {
+    try {
+      const { data } = await coreHttpClient.patch<WhatsAppInboxConversation>(
+        `/api/whatsapp/${encodeURIComponent(conversationId)}/lead-conversion`,
+        { customerId, customerContactId },
+        { headers: headers() },
+      );
+      return data;
+    } catch (error) {
+      throw mapError(error, "No se pudo convertir el prospecto en cliente.");
     }
   }
 }

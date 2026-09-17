@@ -6,21 +6,35 @@ import {
   chatMessageClasses,
   chatMessageListClasses,
 } from "@mui/x-chat";
-import { Avatar, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@mui/material";
+import { Avatar, Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, Paper, Stack, Typography } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import type { ChatMessage } from "@mui/x-chat-headless";
-import { Bot, Clock3, ExternalLink, Headphones, MessageCircleMore, ShieldCheck } from "lucide-react";
+import { Bot, Building2, ChevronRight, Clock3, ExternalLink, FilePlus2, FileText, Headphones, History, Mail, MapPin, MessageCircleMore, ShieldCheck, UserPlus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink } from "react-router";
+import { NavLink, useNavigate } from "react-router";
+import { CustomersService } from "../../modules/clients/services/customers.service";
+import type { Client, ClientInput } from "../../modules/clients/types/client.types";
+import { emptyCustomerContact } from "../../modules/clients/utils/customer-contact-form";
+import { clientWithSelectedContact } from "../../modules/clients/utils/customer-contact-selection";
 import { MuiWhatsAppChatAdapter } from "../../modules/whatsapp/adapters/mui-whatsapp-chat.adapter";
 import type { WhatsAppRealtimeStatus } from "../../modules/whatsapp/services/whatsapp-realtime.service";
+import { WhatsAppQuoteExtractionService } from "../../modules/whatsapp/services/whatsapp-quote-extraction.service";
 import {
   WhatsAppInboxService,
   type WhatsAppInboxConversation,
+  type WhatsAppInboundAttachment,
   type WhatsAppConversationMode,
+  type WhatsAppRelatedQuote,
 } from "../../modules/whatsapp/services/whatsapp-inbox.service";
 import { notifier } from "../../shared/notifications/notifier";
+import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
 import { useAuthStore } from "../../store/auth/auth.store";
+import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
+import { AssignWhatsAppLeadModal } from "./assign-whatsapp-lead.modal";
+import { WhatsAppFileMessagePart } from "./whatsapp-file-message-part";
+import { FilePreviewModal } from "../../shared/components/file-preview/file-preview.modal";
+import type { ManagedUser } from "../../modules/users/services/users.service";
+import { ConfirmWhatsAppQuoteExtractionModal } from "./confirm-whatsapp-quote-extraction.modal";
 
 const chatTheme = createTheme({
   palette: {
@@ -55,8 +69,88 @@ const isWindowActive = (lastInboundAt: string | null, now: number): boolean =>
 const initials = (value: string): string =>
   value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
+const leadStatusLabel: Record<string, string> = {
+  NEW: "Prospecto nuevo",
+  COLLECTING_INFORMATION: "Recopilando información",
+  PENDING_ASSIGNMENT: "Pendiente de asignación",
+  ASSIGNED: "Prospecto asignado",
+  CONVERTED: "Convertido en cliente",
+  DISCARDED: "Prospecto descartado",
+};
+
+const quoteStatusLabel: Record<string, string> = {
+  DRAFT: "Borrador",
+  PENDING: "Pendiente",
+  PENDING_APPROVAL: "Pendiente de aprobación",
+  CHANGES_REQUESTED: "Cambios solicitados",
+  QUOTED: "Cotizada",
+  APPROVED: "Aprobada por el cliente",
+  REJECTED: "Rechazada",
+  CANCELLED: "Cancelada",
+  SUPERSEDED: "Reemplazada",
+};
+
+const quoteStatusStyle: Record<string, { backgroundColor: string; color: string }> = {
+  DRAFT: { backgroundColor: "#f1f5f9", color: "#475569" },
+  PENDING: { backgroundColor: "#fff7cc", color: "#7c5b00" },
+  PENDING_APPROVAL: { backgroundColor: "#fff7cc", color: "#7c5b00" },
+  CHANGES_REQUESTED: { backgroundColor: "#ffedd5", color: "#9a3412" },
+  QUOTED: { backgroundColor: "#dbeafe", color: "#1d4ed8" },
+  APPROVED: { backgroundColor: "#dcfce7", color: "#047857" },
+  REJECTED: { backgroundColor: "#fee2e2", color: "#b91c1c" },
+  CANCELLED: { backgroundColor: "#f1f5f9", color: "#64748b" },
+  SUPERSEDED: { backgroundColor: "#f1f5f9", color: "#64748b" },
+};
+
+const quoteSections = [
+  { key: "IN_PROGRESS", label: "En proceso", statuses: ["DRAFT", "PENDING", "PENDING_APPROVAL", "CHANGES_REQUESTED"] },
+  { key: "QUOTED", label: "Cotizadas", statuses: ["QUOTED"] },
+  { key: "APPROVED", label: "Aprobadas", statuses: ["APPROVED"] },
+  { key: "CLOSED", label: "Cerradas", statuses: ["REJECTED", "CANCELLED", "SUPERSEDED"] },
+] as const;
+
+const formatQuoteTotal = (quote: WhatsAppRelatedQuote): string =>
+  new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: quote.currency,
+    minimumFractionDigits: 2,
+  }).format(quote.total);
+
+const formatQuoteDate = (value: string): string =>
+  new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+
+interface RelatedQuoteFamily {
+  primary: WhatsAppRelatedQuote;
+  versions: WhatsAppRelatedQuote[];
+}
+
+const groupRelatedQuotes = (quotes: WhatsAppRelatedQuote[]): RelatedQuoteFamily[] => {
+  const families = new Map<string, WhatsAppRelatedQuote[]>();
+  quotes.forEach((quote) => {
+    const key = quote.rootQuoteId || quote.id;
+    families.set(key, [...(families.get(key) || []), quote]);
+  });
+  return [...families.values()].map((versions) => {
+    const sorted = [...versions].sort((left, right) =>
+      Number(right.isCurrent) - Number(left.isCurrent)
+      || right.revisionNumber - left.revisionNumber
+      || Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    return { primary: sorted[0], versions: sorted };
+  }).sort((left, right) =>
+    Number(right.primary.isCurrent) - Number(left.primary.isCurrent)
+    || Date.parse(right.primary.updatedAt) - Date.parse(left.primary.updatedAt));
+};
+
 export const WhatsAppInboxPage = () => {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const quoteDraft = useManualQuoteStore((state) => state.draft);
+  const clearQuoteDraft = useManualQuoteStore((state) => state.clearDraft);
+  const initializeQuoteDraft = useManualQuoteStore((state) => state.initializeDraft);
+  const setQuoteClient = useManualQuoteStore((state) => state.setClient);
+  const setQuoteSourceChannel = useManualQuoteStore((state) => state.setSourceChannel);
+  const setQuoteWhatsAppLeadId = useManualQuoteStore((state) => state.setWhatsAppLeadId);
+  const setItemsFromExtraction = useManualQuoteStore((state) => state.setItemsFromExtraction);
   const displayName = `${user?.name || ""} ${user?.lastname || ""}`.trim() || "Usuario Tuvansa";
   const [conversationData, setConversationData] = useState<WhatsAppInboxConversation[]>([]);
   const [activeId, setActiveId] = useState<string>();
@@ -65,6 +159,18 @@ export const WhatsAppInboxPage = () => {
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStatus, setRealtimeStatus] = useState<WhatsAppRealtimeStatus>("connecting");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [assignLeadOpen, setAssignLeadOpen] = useState(false);
+  const [assigningLead, setAssigningLead] = useState(false);
+  const [convertLeadOpen, setConvertLeadOpen] = useState(false);
+  const [convertingLead, setConvertingLead] = useState(false);
+  const [quotesDrawerOpen, setQuotesDrawerOpen] = useState(false);
+  const [prospectDrawerOpen, setProspectDrawerOpen] = useState(false);
+  const [relatedQuotes, setRelatedQuotes] = useState<WhatsAppRelatedQuote[]>([]);
+  const [relatedQuotesLoading, setRelatedQuotesLoading] = useState(false);
+  const [relatedQuotesConversationId, setRelatedQuotesConversationId] = useState<string>();
+  const [previewAttachment, setPreviewAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [quoteExtractionAttachment, setQuoteExtractionAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [generatingQuoteAttachmentId, setGeneratingQuoteAttachmentId] = useState<string | null>(null);
   const activeIdRef = useRef<string | undefined>(undefined);
 
   const handleConversationData = useCallback((items: WhatsAppInboxConversation[]) => {
@@ -116,8 +222,230 @@ export const WhatsAppInboxPage = () => {
     if (updated) setSelected(updated);
   }, [activeId, conversationData]);
 
+  useEffect(() => {
+    setQuotesDrawerOpen(false);
+    setProspectDrawerOpen(false);
+    setRelatedQuotes([]);
+    setRelatedQuotesConversationId(undefined);
+    setPreviewAttachment(null);
+    setQuoteExtractionAttachment(null);
+  }, [activeId]);
+
+  const relatedQuoteFamilies = useMemo(() => groupRelatedQuotes(relatedQuotes), [relatedQuotes]);
+
+  const openRelatedQuotes = async () => {
+    if (!selected) return;
+    setQuotesDrawerOpen(true);
+    if (relatedQuotesConversationId === selected.id) return;
+    setRelatedQuotesLoading(true);
+    try {
+      const result = await WhatsAppInboxService.quotes(selected.id);
+      setRelatedQuotes(result.items);
+      setRelatedQuotesConversationId(selected.id);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudieron cargar las cotizaciones.");
+    } finally {
+      setRelatedQuotesLoading(false);
+    }
+  };
+
+  const generateQuoteFromAttachment = async (attachment: WhatsAppInboundAttachment) => {
+    if (!selected || generatingQuoteAttachmentId) return;
+    if (user?.role?.toLowerCase() !== "seller") {
+      notifier.warning("Solo los vendedores pueden generar cotizaciones.");
+      return;
+    }
+    if (hasActiveQuoteDraft()) {
+      notifier.warning("Tienes una cotización en proceso. Guárdala o descártala antes de generar otra desde WhatsApp.");
+      return;
+    }
+
+    setGeneratingQuoteAttachmentId(attachment.id);
+    const toastId = notifier.loading(`Extrayendo partidas de ${attachment.originalName}...`);
+    try {
+      let customer: Client | null = null;
+      if (selected.customerId) {
+        const loaded = await CustomersService.getById(selected.customerId);
+        const contact = loaded.contacts?.find((item) => item.id === selected.contactId)
+          || loaded.contacts?.find((item) => item.isPrimary)
+          || loaded.contacts?.[0];
+        customer = clientWithSelectedContact(loaded, contact);
+      }
+
+      clearQuoteDraft();
+      initializeQuoteDraft(user);
+      setQuoteSourceChannel("AI_ASSISTANT");
+      if (selected.lead?.id) setQuoteWhatsAppLeadId(selected.lead.id);
+      if (customer) setQuoteClient(customer);
+
+      const draftId = useManualQuoteStore.getState().draft.id;
+      const result = await WhatsAppQuoteExtractionService.extract(
+        attachment,
+        draftId,
+      );
+
+      try {
+        const updatedAttachment = await WhatsAppInboxService.markAttachmentQuoteExtracted(
+          attachment.id,
+          draftId,
+        );
+        adapter.updateAttachment(updatedAttachment);
+      } catch (trackingError) {
+        notifier.warning(
+          trackingError instanceof Error
+            ? trackingError.message
+            : "Las partidas se extrajeron, pero no se pudo actualizar el estado del archivo.",
+        );
+      }
+
+      setItemsFromExtraction(result.items);
+      if (toastId !== undefined) {
+        notifier.update(toastId, "success", `Se cargaron ${result.items.length} partidas en la cotización.`);
+      } else {
+        notifier.success(`Se cargaron ${result.items.length} partidas en la cotización.`);
+      }
+      setQuoteExtractionAttachment(null);
+      navigate("/cotizador/sistema");
+    } catch (error) {
+      clearQuoteDraft();
+      initializeQuoteDraft(user);
+      const message = error instanceof Error ? error.message : "No se pudo generar la cotización desde el archivo.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+    } finally {
+      setGeneratingQuoteAttachmentId(null);
+    }
+  };
+
   const windowActive = isWindowActive(selected?.lastInboundAt || null, now);
   const canReply = Boolean(selected && selected.mode === "HUMAN" && windowActive);
+  const canAssignLead = Boolean(
+    selected?.lead
+    && ["admin", "manager"].includes(user?.role?.toLowerCase() || ""),
+  );
+  const canConvertLead = Boolean(
+    selected?.lead
+    && user?.role?.toLowerCase() === "seller"
+    && selected.lead.assignedSellerId === user.id
+    && selected.lead.status !== "DISCARDED",
+  );
+
+  const leadCustomerInitialValues = useMemo<Partial<ClientInput> | undefined>(() => {
+    if (!selected?.lead) return undefined;
+    const fullName = selected.lead.contactName?.trim() || "";
+    const [name = "", ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
+    const contact = emptyCustomerContact(true);
+    contact.name = fullName;
+    contact.email = selected.lead.email || "";
+    contact.mobile = selected.participantPhone;
+    contact.label = "Prospecto WhatsApp";
+    return {
+      name,
+      lastname: lastNameParts.join(" "),
+      companyName: selected.lead.companyName || "",
+      email: selected.lead.email || "",
+      whatsappPhone: selected.participantPhone,
+      billingCity: selected.lead.location || "",
+      billingCountry: "MÉXICO",
+      profileStatus: "PROSPECT",
+      notes: selected.lead.requestSummary || "",
+      contacts: [contact],
+    };
+  }, [selected]);
+
+  const hasActiveQuoteDraft = (): boolean => Boolean(
+    quoteDraft.savedQuoteId
+    || quoteDraft.client
+    || quoteDraft.items.length > 0
+    || quoteDraft.sourceChannel !== "UNSPECIFIED",
+  );
+
+  const openQuoteForLead = (client: Client, leadId: string) => {
+    if (hasActiveQuoteDraft() && quoteDraft.whatsappLeadId !== leadId) {
+      notifier.warning("Tienes una cotización en proceso. Guárdala o descártala antes de iniciar la del prospecto.");
+      return;
+    }
+    if (quoteDraft.whatsappLeadId === leadId) {
+      navigate("/cotizador/sistema");
+      return;
+    }
+    clearQuoteDraft();
+    initializeQuoteDraft(user);
+    setQuoteClient(client);
+    setQuoteSourceChannel("AI_ASSISTANT");
+    setQuoteWhatsAppLeadId(leadId);
+    navigate("/cotizador/sistema");
+  };
+
+  const loadConvertedLeadCustomer = async () => {
+    if (!selected?.lead?.customerId || convertingLead) return;
+    setConvertingLead(true);
+    const toastId = notifier.loading("Preparando cotización del prospecto...");
+    try {
+      const customer = await CustomersService.getById(selected.lead.customerId);
+      const contact = customer.contacts?.find((item) => item.id === selected.contactId)
+        || customer.contacts?.find((item) => item.isPrimary)
+        || customer.contacts?.[0];
+      openQuoteForLead(clientWithSelectedContact(customer, contact), selected.lead.id);
+      if (toastId !== undefined) notifier.update(toastId, "success", "Cliente y prospecto listos para cotizar.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo preparar la cotización.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+    } finally {
+      setConvertingLead(false);
+    }
+  };
+
+  const convertLeadAndOpenQuote = async (client: Client) => {
+    if (!selected?.lead || convertingLead) return;
+    setConvertingLead(true);
+    const toastId = notifier.loading("Vinculando prospecto con el cliente...");
+    try {
+      const updated = await WhatsAppInboxService.convertLead(
+        selected.id,
+        client.id,
+        client.selectedContactId || null,
+      );
+      adapter.updateConversation(updated);
+      setSelected(updated);
+      setConvertLeadOpen(false);
+      const customer = await CustomersService.getById(client.id);
+      const contact = customer.contacts?.find((item) => item.id === updated.contactId)
+        || customer.contacts?.find((item) => item.id === client.selectedContactId)
+        || customer.contacts?.find((item) => item.isPrimary)
+        || customer.contacts?.[0];
+      if (toastId !== undefined) notifier.update(toastId, "success", "Prospecto convertido en cliente.");
+      else notifier.success("Prospecto convertido en cliente.");
+      openQuoteForLead(clientWithSelectedContact(customer, contact), selected.lead.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo vincular el prospecto.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+    } finally {
+      setConvertingLead(false);
+    }
+  };
+
+  const assignLead = async (seller: ManagedUser) => {
+    if (!selected || assigningLead) return;
+    setAssigningLead(true);
+    const toastId = notifier.loading(`Asignando prospecto a ${seller.fullName}...`);
+    try {
+      const updated = await WhatsAppInboxService.assignLead(selected.id, seller.id);
+      adapter.updateConversation(updated);
+      setSelected(updated);
+      if (toastId !== undefined) notifier.update(toastId, "success", `Prospecto asignado a ${seller.fullName}.`);
+      else notifier.success(`Prospecto asignado a ${seller.fullName}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo asignar el prospecto.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+      throw error;
+    } finally {
+      setAssigningLead(false);
+    }
+  };
 
   const changeMode = async (mode: WhatsAppConversationMode) => {
     if (!selected || changingMode) return;
@@ -230,6 +558,63 @@ export const WhatsAppInboxPage = () => {
                   {selected.quote.quoteNumber}
                 </Button>
               )}
+              {selected.lead && (
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Building2 size={15} />}
+                  onClick={() => setProspectDrawerOpen(true)}
+                  sx={{ color: "#6b5200", borderColor: "#e5b900", bgcolor: "#fffbea" }}
+                >
+                  Datos del prospecto
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                startIcon={<History size={15} />}
+                onClick={() => void openRelatedQuotes()}
+                sx={{ color: "#334155", borderColor: "#cbd5e1", bgcolor: "#ffffff" }}
+              >
+                Cotizaciones{relatedQuotesConversationId === selected.id ? ` (${relatedQuoteFamilies.length})` : ""}
+              </Button>
+              {canAssignLead && (
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  disabled={assigningLead}
+                  onClick={() => setAssignLeadOpen(true)}
+                  startIcon={assigningLead ? <CircularProgress size={14} color="inherit" /> : <UserPlus size={15} />}
+                  sx={{ borderColor: "#e5b900", bgcolor: "#fffbea", color: "#6b5200" }}
+                >
+                  {selected.lead?.assignedSellerId ? "Reasignar vendedor" : "Asignar vendedor"}
+                </Button>
+              )}
+              {canConvertLead && (
+                <Button
+                  type="button"
+                  size="small"
+                  variant="contained"
+                  color="secondary"
+                  disabled={convertingLead}
+                  onClick={() => {
+                    if (hasActiveQuoteDraft() && quoteDraft.whatsappLeadId !== selected.lead?.id) {
+                      notifier.warning("Tienes una cotización en proceso. Guárdala o descártala antes de iniciar la del prospecto.");
+                      return;
+                    }
+                    if (selected.lead?.customerId) void loadConvertedLeadCustomer();
+                    else setConvertLeadOpen(true);
+                  }}
+                  startIcon={convertingLead ? <CircularProgress size={14} color="inherit" /> : <FilePlus2 size={15} />}
+                  sx={{ bgcolor: "#fcce01", color: "#111827", "&:hover": { bgcolor: "#e8bd00" } }}
+                >
+                  {selected.lead?.customerId ? "Crear cotización" : "Vincular cliente y cotizar"}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="small"
@@ -282,6 +667,13 @@ export const WhatsAppInboxPage = () => {
                 {selected.sellerName ? ` · Vendedor: ${selected.sellerName}` : ""}
               </Typography>
             </Box>
+            {selected.lead && (
+              <Chip
+                size="small"
+                label={leadStatusLabel[selected.lead.status] || selected.lead.status}
+                sx={{ bgcolor: selected.lead.status === "ASSIGNED" ? "#ecfdf5" : "#fff7cc", color: selected.lead.status === "ASSIGNED" ? "#047857" : "#7c5b00" }}
+              />
+            )}
             <Chip
               size="small"
               icon={selected.mode === "AI" ? <Bot size={14} /> : <Headphones size={14} />}
@@ -299,6 +691,32 @@ export const WhatsAppInboxPage = () => {
         <Box sx={{ minHeight: 0, flex: 1 }}>
           <ChatBox
             adapter={adapter}
+            partRenderers={{
+              file: ({ part }) => {
+                const attachment = adapter.getAttachment(part.url);
+                const supportedForExtraction = attachment
+                  ? WhatsAppQuoteExtractionService.supports(attachment)
+                  : false;
+                const sellerCanGenerate = user?.role?.toLowerCase() === "seller";
+                return attachment
+                  ? (
+                      <WhatsAppFileMessagePart
+                        attachment={attachment}
+                        onOpen={() => setPreviewAttachment(attachment)}
+                        onGenerateQuote={sellerCanGenerate && supportedForExtraction
+                          ? () => setQuoteExtractionAttachment(attachment)
+                          : undefined}
+                        generateQuoteDisabledReason={!supportedForExtraction
+                          ? "Disponible para PDF, XLS o XLSX"
+                          : !sellerCanGenerate
+                            ? "Solo vendedores"
+                            : undefined}
+                        generating={generatingQuoteAttachmentId === attachment.id}
+                      />
+                    )
+                  : null;
+              },
+            }}
             messages={messages}
             onMessagesChange={setMessages}
             currentUser={{ id: user?.id || "current-user", displayName, role: "user" }}
@@ -468,6 +886,242 @@ export const WhatsAppInboxPage = () => {
             }}
           />
         </Box>
+        <AssignWhatsAppLeadModal
+          open={assignLeadOpen}
+          currentSellerId={selected?.lead?.assignedSellerId || null}
+          onClose={() => setAssignLeadOpen(false)}
+          onAssign={assignLead}
+        />
+        <FilePreviewModal
+          file={previewAttachment}
+          onClose={() => setPreviewAttachment(null)}
+          getBlob={(file) => WhatsAppInboxService.attachmentBlob(file.id)}
+          downloadFile={(file) => WhatsAppInboxService.downloadAttachment(file as WhatsAppInboundAttachment)}
+        />
+        <ConfirmWhatsAppQuoteExtractionModal
+          attachment={quoteExtractionAttachment}
+          processing={Boolean(generatingQuoteAttachmentId)}
+          onClose={() => setQuoteExtractionAttachment(null)}
+          onConfirm={() => {
+            if (quoteExtractionAttachment) void generateQuoteFromAttachment(quoteExtractionAttachment);
+          }}
+        />
+        <SelectClientModal
+          open={convertLeadOpen}
+          initialSearch={selected?.lead?.companyName || selected?.lead?.contactName || ""}
+          localInitialValues={leadCustomerInitialValues}
+          onClose={() => setConvertLeadOpen(false)}
+          onSelect={(client) => void convertLeadAndOpenQuote(client)}
+        />
+        <Drawer
+          anchor="right"
+          open={prospectDrawerOpen && Boolean(selected?.lead)}
+          onClose={() => setProspectDrawerOpen(false)}
+          slotProps={{ backdrop: { sx: { backgroundColor: "rgba(15, 23, 42, 0.28)" } } }}
+          PaperProps={{
+            sx: {
+              width: { xs: "100%", sm: 420 },
+              maxWidth: "100vw",
+              bgcolor: "#f8fafc",
+            },
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 2 }}>
+            <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+              <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: "#fcce01", color: "#172033" }}>
+                <Building2 size={19} />
+              </Avatar>
+              <Box minWidth={0}>
+                <Typography variant="subtitle1" fontWeight={800}>Datos del prospecto</Typography>
+                <Typography variant="caption" color="text.secondary" noWrap component="p">
+                  {selected?.lead?.contactName || selected?.contactName || selected?.participantPhone || "Conversación seleccionada"}
+                </Typography>
+              </Box>
+            </Stack>
+            <IconButton aria-label="Cerrar datos del prospecto" onClick={() => setProspectDrawerOpen(false)}>
+              <X size={19} />
+            </IconButton>
+          </Box>
+          <Divider />
+          {selected?.lead && (
+            <Box sx={{ p: 2.5, overflowY: "auto", flex: 1 }}>
+              <Stack spacing={2}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                  <Typography variant="overline" fontWeight={800} color="text.secondary">Estado</Typography>
+                  <Chip
+                    size="small"
+                    label={leadStatusLabel[selected.lead.status] || selected.lead.status}
+                    sx={{
+                      bgcolor: selected.lead.status === "ASSIGNED" || selected.lead.status === "CONVERTED" ? "#ecfdf5" : "#fff7cc",
+                      color: selected.lead.status === "ASSIGNED" || selected.lead.status === "CONVERTED" ? "#047857" : "#7c5b00",
+                    }}
+                  />
+                </Stack>
+
+                <Paper variant="outlined" sx={{ p: 2, borderColor: "#dbe2ea", bgcolor: "#ffffff" }}>
+                  <Typography variant="overline" fontWeight={800} color="text.secondary">Contacto</Typography>
+                  <Typography variant="body1" fontWeight={800} sx={{ mt: 0.5 }}>
+                    {selected.lead.contactName || selected.contactName || "Nombre pendiente"}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                    {selected.lead.companyName || "Empresa no indicada"}
+                  </Typography>
+                  <Divider sx={{ my: 1.5 }} />
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <MessageCircleMore size={15} color="#64748b" />
+                      <Typography variant="body2">{selected.participantPhone}</Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Mail size={15} color="#64748b" />
+                      <Typography variant="body2" color={selected.lead.email ? "text.primary" : "text.secondary"} sx={{ overflowWrap: "anywhere" }}>
+                        {selected.lead.email || "Correo pendiente"}
+                      </Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={1} alignItems="flex-start">
+                      <MapPin size={15} color="#64748b" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <Typography variant="body2" color={selected.lead.location ? "text.primary" : "text.secondary"}>
+                        {selected.lead.location || "Ubicación pendiente"}
+                      </Typography>
+                    </Stack>
+                  </Stack>
+                </Paper>
+
+                <Paper variant="outlined" sx={{ p: 2, borderColor: "#dbe2ea", bgcolor: "#ffffff" }}>
+                  <Stack direction="row" spacing={0.8} alignItems="center">
+                    <FileText size={16} color="#8a6a00" />
+                    <Typography variant="overline" fontWeight={800} color="text.secondary">Solicitud</Typography>
+                  </Stack>
+                  <Typography variant="body2" sx={{ mt: 1, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>
+                    {selected.lead.requestSummary || "La IA todavía está recopilando los materiales requeridos."}
+                  </Typography>
+                </Paper>
+
+                <Paper variant="outlined" sx={{ p: 2, borderColor: "#dbe2ea", bgcolor: "#ffffff" }}>
+                  <Typography variant="overline" fontWeight={800} color="text.secondary">Asignación</Typography>
+                  <Stack spacing={1.1} sx={{ mt: 1 }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Vendedor</Typography>
+                      <Typography variant="body2" fontWeight={700}>{selected.lead.assignedSellerName || "Sin vendedor asignado"}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Sucursal</Typography>
+                      <Typography variant="body2" fontWeight={700}>{selected.lead.assignedBranchName || "Sin sucursal asignada"}</Typography>
+                    </Box>
+                  </Stack>
+                </Paper>
+              </Stack>
+            </Box>
+          )}
+        </Drawer>
+        <Drawer
+          anchor="right"
+          open={quotesDrawerOpen}
+          onClose={() => setQuotesDrawerOpen(false)}
+          slotProps={{ backdrop: { sx: { backgroundColor: "rgba(15, 23, 42, 0.28)" } } }}
+          PaperProps={{
+            sx: {
+              width: { xs: "100%", sm: 440 },
+              maxWidth: "100vw",
+              bgcolor: "#f8fafc",
+            },
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 2 }}>
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: "#fcce01", color: "#172033" }}>
+                <FileText size={19} />
+              </Avatar>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={800}>Cotizaciones relacionadas</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {selected?.customerName || selected?.contactName || "Conversación seleccionada"}
+                </Typography>
+              </Box>
+            </Stack>
+            <IconButton aria-label="Cerrar historial" onClick={() => setQuotesDrawerOpen(false)}>
+              <X size={19} />
+            </IconButton>
+          </Box>
+          <Divider />
+          <Box sx={{ px: 2.5, py: 2, overflowY: "auto", flex: 1 }}>
+            {relatedQuotesLoading ? (
+              <Stack alignItems="center" justifyContent="center" spacing={1.25} sx={{ minHeight: 240 }}>
+                <CircularProgress size={28} sx={{ color: "#d4a900" }} />
+                <Typography variant="body2" color="text.secondary">Cargando cotizaciones...</Typography>
+              </Stack>
+            ) : relatedQuoteFamilies.length === 0 ? (
+              <Paper variant="outlined" sx={{ p: 3, textAlign: "center", borderStyle: "dashed", bgcolor: "#ffffff" }}>
+                <FileText size={28} color="#94a3b8" />
+                <Typography variant="body2" fontWeight={700} sx={{ mt: 1 }}>Aún no hay cotizaciones relacionadas</Typography>
+                <Typography variant="caption" color="text.secondary">Las cotizaciones del cliente aparecerán aquí.</Typography>
+              </Paper>
+            ) : (
+              <Stack spacing={2.25}>
+                {quoteSections.map((section) => {
+                  const families = relatedQuoteFamilies.filter(({ primary }) => section.statuses.includes(primary.status as never));
+                  if (families.length === 0) return null;
+                  return (
+                    <Box key={section.key}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                        <Typography variant="overline" fontWeight={800} color="text.secondary">{section.label}</Typography>
+                        <Chip size="small" label={families.length} sx={{ height: 22, bgcolor: "#e2e8f0", color: "#475569" }} />
+                      </Stack>
+                      <Stack spacing={1}>
+                        {families.map(({ primary, versions }) => (
+                          <Paper key={primary.rootQuoteId || primary.id} variant="outlined" sx={{ overflow: "hidden", bgcolor: "#ffffff", borderColor: primary.isCurrent ? "#e5b900" : "#dbe2ea" }}>
+                            <Button
+                              component={NavLink}
+                              to={`/quotes/${primary.id}`}
+                              onClick={() => setQuotesDrawerOpen(false)}
+                              fullWidth
+                              sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1, px: 1.5, py: 1.4, color: "#172033", textAlign: "left" }}
+                            >
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                                  <Typography variant="body2" fontWeight={800}>{primary.quoteNumber}</Typography>
+                                  {primary.isCurrent && <Chip size="small" label="Actual" sx={{ height: 20, bgcolor: "#fff3a3", color: "#6b5200" }} />}
+                                  <Chip size="small" label={quoteStatusLabel[primary.status] || primary.status} sx={{ height: 20, ...(quoteStatusStyle[primary.status] || quoteStatusStyle.DRAFT) }} />
+                                </Stack>
+                                <Typography variant="body2" fontWeight={800} sx={{ mt: 0.75 }}>{formatQuoteTotal(primary)}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {formatQuoteDate(primary.updatedAt)} · {primary.sellerName}
+                                  {versions.length > 1 ? ` · ${versions.length} versiones` : ""}
+                                </Typography>
+                              </Box>
+                              <ChevronRight size={18} color="#64748b" />
+                            </Button>
+                            {versions.length > 1 && (
+                              <Box sx={{ borderTop: "1px solid #edf1f5", px: 1.5, py: 1, bgcolor: "#fbfcfd" }}>
+                                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                                  {versions.map((version) => (
+                                    <Button
+                                      key={version.id}
+                                      component={NavLink}
+                                      to={`/quotes/${version.id}`}
+                                      onClick={() => setQuotesDrawerOpen(false)}
+                                      size="small"
+                                      variant={version.id === primary.id ? "contained" : "outlined"}
+                                      sx={version.id === primary.id
+                                        ? { minWidth: 0, bgcolor: "#172033", color: "#ffffff", "&:hover": { bgcolor: "#273449" } }
+                                        : { minWidth: 0, color: "#475569", borderColor: "#cbd5e1" }}
+                                    >
+                                      R{String(version.revisionNumber).padStart(2, "0")}
+                                    </Button>
+                                  ))}
+                                </Stack>
+                              </Box>
+                            )}
+                          </Paper>
+                        ))}
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Box>
+        </Drawer>
       </Paper>
     </ThemeProvider>
   );

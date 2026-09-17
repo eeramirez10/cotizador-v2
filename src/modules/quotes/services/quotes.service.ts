@@ -72,6 +72,7 @@ export interface SavedQuoteRecord {
   commercialConditions: string | null;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  whatsappLeadId: string | null;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
   originalQuoteDate: string;
   rejectionReason: QuoteRejectionReason | null;
@@ -263,6 +264,7 @@ interface ApiQuote {
   erpQuoteRegisteredAt: string | null;
   erpQuoteRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
   sourceChannel: QuoteSourceChannel;
+  whatsappLeadId: string | null;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
   originalQuoteDate: string | null;
   rejectionReason: QuoteRejectionReason | null;
@@ -513,6 +515,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     commercialConditions: apiQuote.commercialConditions || null,
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
+    whatsappLeadId: apiQuote.whatsappLeadId || null,
     captureMethod: apiQuote.captureMethod || "SYSTEM",
     originalQuoteDate: apiQuote.originalQuoteDate || "",
     rejectionReason: apiQuote.rejectionReason || null,
@@ -1004,6 +1007,7 @@ export class QuotesService {
         validityDays: draft.validityDays,
         origin,
         sourceChannel: draft.sourceChannel,
+        whatsappLeadId: draft.whatsappLeadId,
         captureMethod: draft.captureMethod,
         originalQuoteDate: draft.captureMethod === "EXCEL_IMPORT" ? draft.originalQuoteDate : null,
         providedByUserId: draft.providedBy?.id ?? null,

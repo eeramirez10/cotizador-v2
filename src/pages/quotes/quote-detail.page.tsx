@@ -508,7 +508,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           </table>
         </section>
 
-        <section className="mt-4 flex items-start justify-between gap-8 border-t-2 pt-4" style={{ borderColor: line }}>
+        <section data-pdf-keep-together className="mt-4 flex items-start justify-between gap-8 border-t-2 pt-4" style={{ borderColor: line }}>
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: muted }}>Total de la propuesta</p>
             <p className="mt-1 text-[24px] font-bold" style={{ color: ink }}>{formatCurrency(quote.total, quote.currency)}</p>
@@ -524,7 +524,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           </div>
         </section>
 
-        <section className="mt-5 border-l-[4px] px-4 py-3" style={{ borderColor: brand, backgroundColor: brandSoft }}>
+        <section data-pdf-keep-together className="mt-5 border-l-[4px] px-4 py-3" style={{ borderColor: brand, backgroundColor: brandSoft }}>
           <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: ink }}>Condiciones comerciales</p>
           <div className="mt-2 grid grid-cols-2 gap-x-6 text-[7px] leading-3" style={{ color: muted }}>
             <ol className="list-decimal space-y-1 pl-3">
@@ -536,7 +536,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           </div>
         </section>
 
-        <footer className="mt-6 border-t-2 px-1 pt-3 text-[8px]" style={{ borderColor: brand, color: muted }}>
+        <footer data-pdf-keep-together className="mt-6 border-t-2 px-1 pt-3 text-[8px]" style={{ borderColor: brand, color: muted }}>
           <div className="flex items-end justify-between gap-6">
             <div><p className="font-bold" style={{ color: ink }}>Tubería y Válvulas del Norte SA de CV</p><p>{quote.branchName || "Sucursal"}</p></div>
             <div className="text-center"><p>{quote.branchName || "Sucursal"}</p><p>{quote.paymentTerms || "CONTADO"}</p></div>
@@ -679,7 +679,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
         </div>
       </section>
 
-      <section className="mt-4 flex justify-end">
+      <section data-pdf-keep-together className="mt-4 flex justify-end">
         <div className="w-full max-w-[300px] space-y-1 rounded-md border border-gray-200 p-3 text-sm">
           <div className="flex items-center justify-between">
             <span>Subtotal</span>
@@ -696,14 +696,14 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
         </div>
       </section>
 
-      <section className="mt-4 rounded-md border border-gray-200 p-3">
+      <section data-pdf-keep-together className="mt-4 rounded-md border border-gray-200 p-3">
         <p className="text-[11px] font-semibold uppercase text-gray-500">Condiciones comerciales</p>
         <ol className="mt-1 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-700">
           {getCommercialConditions(quote).map((condition) => <li key={condition}>{condition}</li>)}
         </ol>
       </section>
 
-      <footer className="mt-6 border-t border-gray-200 pt-3 text-[11px] text-gray-500">
+      <footer data-pdf-keep-together className="mt-6 border-t border-gray-200 pt-3 text-[11px] text-gray-500">
         <div className="flex items-center justify-between">
           <p>Esta es una vista previa del diseño PDF de cotización.</p>
           <p>Página 1/1</p>

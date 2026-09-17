@@ -1,7 +1,7 @@
 import { Loader2, Search, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
-import type { Client } from "../../../modules/clients/types/client.types";
+import type { Client, ClientInput } from "../../../modules/clients/types/client.types";
 import type { CustomerContact } from "../../../modules/clients/types/customer-contact.types";
 import { CustomerContactsService } from "../../../modules/clients/services/customer-contacts.service";
 import type { ErpCustomer } from "../../../modules/clients/types/erp-customer.types";
@@ -17,6 +17,8 @@ interface SelectClientModalProps {
   open: boolean;
   onClose: () => void;
   onSelect: (client: Client) => void;
+  initialSearch?: string;
+  localInitialValues?: Partial<ClientInput>;
 }
 
 type SearchMode = "core" | "erp";
@@ -25,7 +27,13 @@ const hasMissingContactData = (erpCustomer: ErpCustomer): boolean => {
   return !erpCustomerHasDeliveryChannel(erpCustomer);
 };
 
-export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModalProps) => {
+export const SelectClientModal = ({
+  open,
+  onClose,
+  onSelect,
+  initialSearch = "",
+  localInitialValues,
+}: SelectClientModalProps) => {
   const clients = useClientsStore((state) => state.clients);
   const loadingCore = useClientsStore((state) => state.loading);
   const loadClients = useClientsStore((state) => state.loadClients);
@@ -43,6 +51,11 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
   const debouncedTerm = useDebouncedValue(term, 300);
   const erpEnabled = open && mode === "erp" && debouncedTerm.trim().length >= 2;
   const { data: erpCustomers = [], isLoading: loadingErp, error: erpError } = useErpCustomerSearch(debouncedTerm, erpEnabled);
+
+  useEffect(() => {
+    if (!open) return;
+    setTerm(initialSearch);
+  }, [initialSearch, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -338,6 +351,7 @@ export const SelectClientModal = ({ open, onClose, onSelect }: SelectClientModal
         <ErpCustomerOnboardingModal
           initialMode="LOCAL"
           allowErpSearch={false}
+          initialValues={localInitialValues}
           onClose={() => setLocalCustomerModalOpen(false)}
           onImported={(client) => {
             setLocalCustomerModalOpen(false);

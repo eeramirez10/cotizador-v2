@@ -229,6 +229,14 @@ const requireAuthHeaders = (): Record<string, string> => {
 };
 
 export class CustomersService {
+  static async getById(customerId: string): Promise<Client> {
+    const { data } = await coreHttpClient.get<ApiCustomer>(
+      `/api/customers/${encodeURIComponent(customerId)}`,
+      { headers: requireAuthHeaders() },
+    );
+    return mapApiCustomer(data);
+  }
+
   static async list(params?: {
     search?: string;
     pageSize?: number;

@@ -140,6 +140,7 @@ export interface ManualQuoteDraft {
   commercialConditions: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  whatsappLeadId: string | null;
   captureMethod: QuoteCaptureMethod;
   originalQuoteDate: string;
   providedBy: QuoteProvider | null;
@@ -171,6 +172,7 @@ interface StoredQuote {
   commercialConditions: string;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  whatsappLeadId: string | null;
   captureMethod: QuoteCaptureMethod;
   originalQuoteDate: string;
   providedBy: QuoteProvider | null;
@@ -210,6 +212,7 @@ interface HydrateQuoteInput {
   commercialConditions: string | null;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
+  whatsappLeadId: string | null;
   captureMethod: QuoteCaptureMethod;
   originalQuoteDate: string;
   providedBy?: QuoteProvider | null;
@@ -227,6 +230,7 @@ interface ManualQuoteState {
   setCommercialConditions: (commercialConditions: string) => void;
   setValidityDays: (validityDays: number) => void;
   setSourceChannel: (sourceChannel: QuoteSourceChannel) => void;
+  setWhatsAppLeadId: (whatsappLeadId: string | null) => void;
   setOriginalQuoteDate: (originalQuoteDate: string) => void;
   setProvidedBy: (providedBy: QuoteProvider | null) => void;
   addProductFromErp: (product: ErpProduct) => void;
@@ -315,6 +319,7 @@ const newDraft = (): ManualQuoteDraft => ({
   commercialConditions: "",
   validityDays: 0,
   sourceChannel: "UNSPECIFIED",
+  whatsappLeadId: null,
   captureMethod: "SYSTEM",
   originalQuoteDate: "",
   providedBy: null,
@@ -632,6 +637,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       draft: {
         ...state.draft,
         sourceChannel,
+      },
+    })),
+
+  setWhatsAppLeadId: (whatsappLeadId) =>
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        whatsappLeadId,
       },
     })),
 
@@ -1060,6 +1073,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           commercialConditions: quote.commercialConditions || "",
           validityDays: quote.validityDays,
           sourceChannel: quote.sourceChannel || "UNSPECIFIED",
+          whatsappLeadId: quote.whatsappLeadId || null,
           captureMethod: quote.captureMethod || "SYSTEM",
           originalQuoteDate: quote.originalQuoteDate || "",
           providedBy: quote.providedBy || null,
@@ -1140,6 +1154,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         commercialConditions: stored.commercialConditions || "",
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         sourceChannel: stored.sourceChannel || "UNSPECIFIED",
+        whatsappLeadId: stored.whatsappLeadId || null,
         captureMethod: stored.captureMethod || "SYSTEM",
         originalQuoteDate: stored.originalQuoteDate || "",
         providedBy: stored.providedBy || null,
@@ -1190,6 +1205,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       commercialConditions: state.draft.commercialConditions,
       validityDays: state.draft.validityDays,
       sourceChannel: state.draft.sourceChannel,
+      whatsappLeadId: state.draft.whatsappLeadId,
       captureMethod: state.draft.captureMethod,
       originalQuoteDate: state.draft.originalQuoteDate,
       providedBy: state.draft.providedBy,

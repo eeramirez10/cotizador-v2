@@ -9,6 +9,7 @@ import type {
 import {
   WhatsAppInboxService,
   type WhatsAppInboxConversation,
+  type WhatsAppInboundAttachment,
   type WhatsAppInboxMessage,
 } from "../services/whatsapp-inbox.service";
 import {
@@ -32,6 +33,7 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   private readonly knownMessageIds = new Set<string>();
   private readonly messageFingerprints = new Map<string, string>();
   private readonly messagesByConversation = new Map<string, ChatMessage[]>();
+  private readonly attachmentsByMessage = new Map<string, WhatsAppInboundAttachment[]>();
   private readonly conversations = new Map<string, WhatsAppInboxConversation>();
   private currentQuery = "";
   private realtimeClient: WhatsAppRealtimeClient | null = null;
@@ -139,6 +141,29 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
 
   getConversation(conversationId?: string): WhatsAppInboxConversation | undefined {
     return conversationId ? this.conversations.get(conversationId) : undefined;
+  }
+
+  getMessageAttachments(messageId: string): WhatsAppInboundAttachment[] {
+    return this.attachmentsByMessage.get(messageId) || [];
+  }
+
+  getAttachment(attachmentId: string): WhatsAppInboundAttachment | undefined {
+    for (const attachments of this.attachmentsByMessage.values()) {
+      const attachment = attachments.find((candidate) => candidate.id === attachmentId);
+      if (attachment) return attachment;
+    }
+    return undefined;
+  }
+
+  updateAttachment(updated: WhatsAppInboundAttachment): void {
+    for (const [messageId, attachments] of this.attachmentsByMessage.entries()) {
+      if (!attachments.some((attachment) => attachment.id === updated.id)) continue;
+      this.attachmentsByMessage.set(
+        messageId,
+        attachments.map((attachment) => attachment.id === updated.id ? updated : attachment),
+      );
+      return;
+    }
   }
 
   private storeConversations(items: WhatsAppInboxConversation[]): void {
@@ -329,6 +354,7 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   }
 
   private mapMessage(item: WhatsAppInboxMessage): ChatMessage {
+    this.attachmentsByMessage.set(item.id, item.attachments || []);
     const outbound = item.direction === "OUTBOUND";
     const conversation = this.conversations.get(item.conversationId);
     const authorName = outbound
@@ -338,12 +364,21 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
           ? item.authorName || this.currentUser.displayName
           : item.authorName || "Tuvansa"
       : conversation?.contactName || conversation?.customerName || item.authorName || "Cliente";
+    const parts: ChatMessage["parts"] = [
+      { type: "text", text: item.body },
+      ...(item.attachments || []).map((attachment) => ({
+        type: "file" as const,
+        mediaType: attachment.mimeType,
+        url: attachment.id,
+        filename: attachment.originalName,
+      })),
+    ];
 
     return {
       id: item.id,
       conversationId: item.conversationId,
       role: outbound ? "user" : "assistant",
-      parts: [{ type: "text", text: item.body }],
+      parts,
       createdAt: item.occurredAt,
       status: item.status === "FAILED"
         ? "error"
@@ -361,6 +396,15 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   }
 
   private fingerprint(message: ChatMessage): string {
-    return JSON.stringify([message.status, message.updatedAt, message.parts]);
+    return JSON.stringify([
+      message.status,
+      message.updatedAt,
+      message.parts,
+      this.getMessageAttachments(message.id).map((attachment) => [
+        attachment.id,
+        attachment.quoteExtractionCount,
+        attachment.quoteExtractedAt,
+      ]),
+    ]);
   }
 }

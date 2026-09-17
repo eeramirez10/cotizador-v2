@@ -10,6 +10,9 @@ export type WhatsAppRealtimeEventReason =
   | "MESSAGE_SENT"
   | "MESSAGE_STATUS_CHANGED"
   | "CONVERSATION_MODE_CHANGED"
+  | "LEAD_UPDATED"
+  | "LEAD_ASSIGNED"
+  | "LEAD_CONVERTED"
   | "QUOTE_SENT";
 
 export interface WhatsAppRealtimeEvent {
@@ -24,7 +27,7 @@ export interface WhatsAppRealtimeEvent {
   };
   conversation?: Partial<Pick<
     WhatsAppInboxConversation,
-    "mode" | "handledByName" | "lastMessage" | "lastMessageAt" | "lastInboundAt"
+    "mode" | "handledByName" | "lastMessage" | "lastMessageAt" | "lastInboundAt" | "sellerName" | "customerName" | "contactName" | "lead"
   >>;
 }
 

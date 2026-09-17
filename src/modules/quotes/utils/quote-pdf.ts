@@ -23,10 +23,15 @@ export const createQuotePdfFile = async (printable: HTMLElement, quoteNumber: st
   await waitForPdfImages(printable);
 
   const rootRect = printable.getBoundingClientRect();
-  const rowBreaksDom = Array.from(printable.querySelectorAll("tbody tr"))
-    .map((row) => (row as HTMLElement).getBoundingClientRect().top - rootRect.top)
-    .filter((top) => Number.isFinite(top) && top > 0)
-    .sort((left, right) => left - right);
+  const keepTogetherBlocksDom = Array.from(
+    printable.querySelectorAll("tbody tr, [data-pdf-keep-together]"),
+  )
+    .map((element) => {
+      const rect = (element as HTMLElement).getBoundingClientRect();
+      return { top: rect.top - rootRect.top, bottom: rect.bottom - rootRect.top };
+    })
+    .filter(({ top, bottom }) => Number.isFinite(top) && Number.isFinite(bottom) && bottom > top)
+    .sort((left, right) => left.top - right.top);
   const canvas = await html2canvas(printable, {
     scale: 2,
     useCORS: true,
@@ -43,17 +48,23 @@ export const createQuotePdfFile = async (printable: HTMLElement, quoteNumber: st
   const contentHeight = pdf.internal.pageSize.getHeight() - marginTop - marginBottom;
   const imageHeight = (canvas.height * contentWidth) / canvas.width;
   const domToPdfFactor = imageHeight / Math.max(printable.scrollHeight, 1);
-  const rowBreaksPdf = rowBreaksDom.map((value) => value * domToPdfFactor);
+  const keepTogetherBlocksPdf = keepTogetherBlocksDom.map(({ top, bottom }) => ({
+    top: top * domToPdfFactor,
+    bottom: bottom * domToPdfFactor,
+  }));
   const pxPerPdfUnit = canvas.height / Math.max(imageHeight, 1);
   let currentOffset = 0;
   let pageIndex = 0;
 
   while (currentOffset < imageHeight - 0.5) {
     const tentativeEnd = Math.min(currentOffset + contentHeight, imageHeight);
-    const candidates = rowBreaksPdf.filter(
-      (value) => value > currentOffset + 130 && value <= tentativeEnd - 4,
-    );
-    const nextOffset = candidates.length > 0 ? candidates[candidates.length - 1] : tentativeEnd;
+    const crossingBlock = keepTogetherBlocksPdf.find(({ top, bottom }) => (
+      top > currentOffset + 24
+      && top < tentativeEnd - 4
+      && bottom > tentativeEnd + 4
+      && bottom - top < contentHeight - 8
+    ));
+    const nextOffset = crossingBlock?.top ?? tentativeEnd;
     const safeNextOffset = nextOffset > currentOffset + 4 ? nextOffset : tentativeEnd;
     const chunkHeightPdf = safeNextOffset - currentOffset;
     if (chunkHeightPdf <= 0) break;
