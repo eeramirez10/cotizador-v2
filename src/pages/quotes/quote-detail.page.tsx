@@ -1792,14 +1792,14 @@ export const QuoteDetailPage = () => {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-sky-950">Solicitudes del cliente por WhatsApp</p>
               <p className="mt-0.5 text-xs text-sky-800">
-                Revisa estos cambios antes de crear una nueva versión de la cotización.
+                Revisa las solicitudes de información o cambios registradas por el cliente.
               </p>
               <div className="mt-3 space-y-2">
                 {customerChangeRequests.data?.map((request) => (
                   <div key={request.id} className="rounded-md border border-sky-200 bg-white p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold uppercase text-sky-700">
-                        {request.status === "OPEN" ? "Pendiente" : request.status.replaceAll("_", " ")}
+                        {request.requestType === "INFORMATION" ? "Información" : "Modificación"} · {request.status === "OPEN" ? "Pendiente" : request.status.replaceAll("_", " ")}
                       </span>
                       <span className="text-[11px] text-slate-500">
                         {new Date(request.createdAt).toLocaleString("es-MX")} · {request.requestedByPhone}

@@ -1,5 +1,10 @@
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import {
   Avatar,
   Badge,
@@ -57,7 +62,7 @@ export const NotificationsMenu = () => {
     <>
       <IconButton
         type="button"
-        aria-label={unreadCount > 0 ? `${unreadCount} mensajes sin leer` : "Notificaciones"}
+        aria-label={unreadCount > 0 ? `${unreadCount} notificaciones sin leer` : "Notificaciones"}
         aria-controls={open ? "app-notifications-menu" : undefined}
         aria-haspopup="true"
         aria-expanded={open ? "true" : undefined}
@@ -118,7 +123,7 @@ export const NotificationsMenu = () => {
               Notificaciones
             </Typography>
             <Typography variant="caption" sx={{ color: "#64748b" }}>
-              {unreadCount > 0 ? `${unreadCount} mensaje${unreadCount === 1 ? "" : "s"} sin leer` : "Todo está al día"}
+              {unreadCount > 0 ? `${unreadCount} notificación${unreadCount === 1 ? "" : "es"} sin leer` : "Todo está al día"}
             </Typography>
           </Box>
           {loading && <CircularProgress size={19} sx={{ color: "#d4a900" }} />}
@@ -136,13 +141,18 @@ export const NotificationsMenu = () => {
           <Box sx={{ px: 3, py: 4, textAlign: "center" }}>
             <NotificationsOutlinedIcon sx={{ fontSize: 32, color: "#94a3b8" }} />
             <Typography variant="body2" sx={{ mt: 1, color: "#64748b" }}>
-              Aún no tienes mensajes recientes.
+              Aún no tienes notificaciones recientes.
             </Typography>
           </Box>
         ) : (
           <List disablePadding sx={{ maxHeight: 380, overflowY: "auto" }}>
             {items.slice(0, 12).map((notification, index) => {
               const unread = notification.unreadCount > 0;
+              const accepted = notification.kind === "QUOTE_ACCEPTED";
+              const rejected = notification.kind === "QUOTE_REJECTED";
+              const quoteNotification = notification.source === "QUOTE";
+              const informationRequest = notification.kind === "CUSTOMER_INFORMATION_REQUESTED";
+              const changeRequest = notification.kind === "CUSTOMER_CHANGE_REQUESTED";
               return (
                 <Box key={notification.id}>
                   <ListItemButton
@@ -157,8 +167,18 @@ export const NotificationsMenu = () => {
                     }}
                   >
                     <ListItemAvatar sx={{ minWidth: 46, mt: 0.15 }}>
-                      <Avatar sx={{ width: 36, height: 36, bgcolor: "#e8f8ef", color: "#128c4a" }}>
-                        <WhatsAppIcon sx={{ fontSize: 19 }} />
+                      <Avatar sx={{
+                        width: 36,
+                        height: 36,
+                        bgcolor: !quoteNotification ? "#e8f8ef" : accepted ? "#e9f9ef" : rejected ? "#fff7dd" : informationRequest ? "#e0f2fe" : changeRequest ? "#ede9fe" : "#fff0f0",
+                        color: !quoteNotification ? "#128c4a" : accepted ? "#17864b" : rejected ? "#a16207" : informationRequest ? "#0369a1" : changeRequest ? "#6d28d9" : "#c43d3d",
+                      }}>
+                        {!quoteNotification && <WhatsAppIcon sx={{ fontSize: 19 }} />}
+                        {accepted && <CheckCircleOutlineIcon sx={{ fontSize: 20 }} />}
+                        {rejected && <ReportProblemOutlinedIcon sx={{ fontSize: 20 }} />}
+                        {notification.kind === "QUOTE_CANCELLED" && <CancelOutlinedIcon sx={{ fontSize: 20 }} />}
+                        {informationRequest && <InfoOutlinedIcon sx={{ fontSize: 20 }} />}
+                        {changeRequest && <EditNoteOutlinedIcon sx={{ fontSize: 21 }} />}
                       </Avatar>
                     </ListItemAvatar>
                     <ListItemText

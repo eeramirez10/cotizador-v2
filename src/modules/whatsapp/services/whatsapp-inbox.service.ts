@@ -46,7 +46,9 @@ export interface WhatsAppInboxConversation {
     companyName: string | null;
     email: string | null;
     location: string | null;
+    activeRequestId: string | null;
     requestSummary: string | null;
+    requestStatus: "COLLECTING" | "READY" | "ASSIGNED" | "CONVERTED" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "CLOSED" | null;
     assignedSellerId: string | null;
     assignedSellerName: string | null;
     assignedBranchId: string | null;

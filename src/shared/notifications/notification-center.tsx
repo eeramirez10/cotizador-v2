@@ -1,5 +1,8 @@
 import CloseIcon from "@mui/icons-material/Close";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
 import { Alert, Avatar, Box, Button, ButtonBase, CircularProgress, IconButton, Paper, Snackbar, Stack, Typography } from "@mui/material";
 import { useSyncExternalStore } from "react";
 import {
@@ -22,6 +25,12 @@ export const NotificationCenter = () => {
   };
 
   const whatsappMessage = active?.presentation?.variant === "whatsapp-message";
+  const quoteDecision = active?.presentation?.variant === "quote-decision";
+  const richNotification = whatsappMessage || quoteDecision;
+  const tone = active?.presentation?.tone || active?.level || "info";
+  const accentColor = quoteDecision
+    ? tone === "success" ? "#20a85b" : tone === "warning" ? "#d49b0b" : "#d84a4a"
+    : "#20c96b";
 
   return (
     <Snackbar
@@ -31,7 +40,7 @@ export const NotificationCenter = () => {
       onClose={close}
       anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
     >
-      {active && whatsappMessage ? (
+      {active && richNotification ? (
         <Paper
           role="alert"
           elevation={0}
@@ -46,7 +55,7 @@ export const NotificationCenter = () => {
             boxShadow: "0 18px 46px rgba(15, 23, 42, 0.18)",
           }}
         >
-          <Box sx={{ width: 4, flexShrink: 0, bgcolor: "#20c96b" }} />
+          <Box sx={{ width: 4, flexShrink: 0, bgcolor: accentColor }} />
           <ButtonBase
             onClick={() => {
               active.action?.onClick();
@@ -67,12 +76,15 @@ export const NotificationCenter = () => {
                 width: 46,
                 height: 46,
                 flexShrink: 0,
-                bgcolor: "#20c96b",
+                bgcolor: accentColor,
                 color: "#ffffff",
-                boxShadow: "0 8px 18px rgba(32, 201, 107, 0.28)",
+                boxShadow: `0 8px 18px ${accentColor}40`,
               }}
             >
-              <WhatsAppIcon sx={{ fontSize: 25 }} />
+              {whatsappMessage && <WhatsAppIcon sx={{ fontSize: 25 }} />}
+              {quoteDecision && tone === "success" && <CheckCircleOutlineIcon sx={{ fontSize: 25 }} />}
+              {quoteDecision && tone === "warning" && <ReportProblemOutlinedIcon sx={{ fontSize: 25 }} />}
+              {quoteDecision && tone === "error" && <CancelOutlinedIcon sx={{ fontSize: 25 }} />}
             </Avatar>
             <Box sx={{ minWidth: 0, flex: 1, pr: 10 }}>
               <Typography

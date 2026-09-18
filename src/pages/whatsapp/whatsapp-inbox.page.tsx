@@ -710,7 +710,7 @@ export const WhatsAppInboxPage = () => {
       billingCity: selected.lead.location || "",
       billingCountry: "MÉXICO",
       profileStatus: "PROSPECT",
-      notes: selected.lead.requestSummary || "",
+      notes: "",
       contacts: [contact],
     };
   }, [selected]);
@@ -1478,7 +1478,7 @@ export const WhatsAppInboxPage = () => {
                     <Typography variant="overline" fontWeight={800} color="text.secondary">Solicitud</Typography>
                   </Stack>
                   <Typography variant="body2" sx={{ mt: 1, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>
-                    {selected.lead.requestSummary || "La IA todavía está recopilando los materiales requeridos."}
+                    {selected.lead.requestSummary || "No hay una solicitud activa. La siguiente necesidad del cliente se registrará por separado."}
                   </Typography>
                 </Paper>
 

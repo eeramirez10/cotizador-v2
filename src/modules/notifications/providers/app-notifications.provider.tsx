@@ -19,12 +19,58 @@ const toNotification = (conversation: WhatsAppInboxConversation): AppNotificatio
   id: `whatsapp-${conversation.id}`,
   source: "WHATSAPP",
   sourceId: conversation.id,
+  kind: "MESSAGE",
   title: conversation.contactName || conversation.customerName || conversation.participantPhone,
   message: conversation.lastMessage || "Mensaje recibido",
   occurredAt: conversation.lastMessageAt,
   unreadCount: conversation.unreadCount,
   href: `/whatsapp?conversation=${encodeURIComponent(conversation.id)}`,
 });
+
+const quoteDecisionCopy = (status: "APPROVED" | "REJECTED" | "CANCELLED") => {
+  if (status === "APPROVED") {
+    return { kind: "QUOTE_ACCEPTED" as const, title: "Cotización aceptada", verb: "aceptó" };
+  }
+  if (status === "REJECTED") {
+    return { kind: "QUOTE_REJECTED" as const, title: "Cotización no aceptada", verb: "no aceptó" };
+  }
+  return { kind: "QUOTE_CANCELLED" as const, title: "Cotización cancelada", verb: "canceló" };
+};
+
+const toQuoteDecisionNotification = (event: WhatsAppRealtimeEvent): AppNotification | null => {
+  const quote = event.quoteDecision;
+  if (!quote) return null;
+  const copy = quoteDecisionCopy(quote.status);
+  const contact = quote.contactName?.trim() || quote.customerName?.trim() || "El cliente";
+  return {
+    id: `quote-decision-${quote.quoteId}-${quote.status}-${event.occurredAt}`,
+    source: "QUOTE",
+    sourceId: quote.quoteId,
+    kind: copy.kind,
+    title: copy.title,
+    message: `${contact} ${copy.verb} la cotización ${quote.quoteNumber}.`,
+    occurredAt: event.occurredAt,
+    unreadCount: 1,
+    href: `/quotes/${encodeURIComponent(quote.quoteId)}`,
+  };
+};
+
+const toCustomerRequestNotification = (event: WhatsAppRealtimeEvent): AppNotification | null => {
+  const request = event.customerRequest;
+  if (!request) return null;
+  const information = request.requestType === "INFORMATION";
+  return {
+    id: `customer-request-${request.requestId}`,
+    source: "QUOTE",
+    sourceId: request.quoteId,
+    kind: information ? "CUSTOMER_INFORMATION_REQUESTED" : "CUSTOMER_CHANGE_REQUESTED",
+    title: information ? "Solicitud de información" : "Solicitud de modificación",
+    message: `${request.quoteNumber}: ${request.detail}`,
+    occurredAt: event.occurredAt,
+    unreadCount: 1,
+    href: `/quotes/${encodeURIComponent(request.quoteId)}`,
+  };
+};
 
 const mergeConversation = (
   current: WhatsAppInboxConversation[],
@@ -42,6 +88,7 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
   const user = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
   const [conversations, setConversations] = useState<WhatsAppInboxConversation[]>([]);
+  const [quoteNotifications, setQuoteNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<WhatsAppRealtimeStatus>("disconnected");
   const role = (user?.role || "").trim().toLowerCase();
@@ -62,12 +109,74 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (!enabled) {
       setConversations([]);
+      setQuoteNotifications([]);
       setRealtimeStatus("disconnected");
       return undefined;
     }
 
     let active = true;
     const syncConversation = async (event: WhatsAppRealtimeEvent): Promise<void> => {
+      if (event.type === "QUOTE_CUSTOMER_DECISION") {
+        const notification = toQuoteDecisionNotification(event);
+        if (!notification) return;
+        setQuoteNotifications((current) => [
+          notification,
+          ...current.filter((item) => item.id !== notification.id),
+        ].slice(0, 20));
+        const level = event.quoteDecision?.status === "APPROVED"
+          ? "success"
+          : event.quoteDecision?.status === "REJECTED"
+            ? "warning"
+            : "error";
+        notifier[level](notification.message, {
+          id: notification.id,
+          durationMs: 8_000,
+          presentation: {
+            variant: "quote-decision",
+            title: notification.title,
+            occurredAt: event.occurredAt,
+            tone: level,
+          },
+          action: {
+            label: "Ver cotización",
+            onClick: () => {
+              setQuoteNotifications((current) => current.map((item) => item.id === notification.id
+                ? { ...item, unreadCount: 0 }
+                : item));
+              navigate(notification.href);
+            },
+          },
+        });
+        return;
+      }
+      if (event.type === "QUOTE_CUSTOMER_REQUEST") {
+        const notification = toCustomerRequestNotification(event);
+        if (!notification) return;
+        setQuoteNotifications((current) => [
+          notification,
+          ...current.filter((item) => item.id !== notification.id),
+        ].slice(0, 20));
+        notifier.info(notification.message, {
+          id: notification.id,
+          durationMs: 8_000,
+          presentation: {
+            variant: "quote-decision",
+            title: notification.title,
+            occurredAt: event.occurredAt,
+            tone: "info",
+          },
+          action: {
+            label: "Ver cotización",
+            onClick: () => {
+              setQuoteNotifications((current) => current.map((item) => item.id === notification.id
+                ? { ...item, unreadCount: 0 }
+                : item));
+              navigate(notification.href);
+            },
+          },
+        });
+        return;
+      }
       if (event.reason === "CONVERSATION_DELETED" || event.deleted) {
         setConversations((current) => current.filter(
           (conversation) => conversation.id !== event.conversationId,
@@ -160,14 +269,22 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
     };
   }, [enabled, navigate, refresh, user?.id]);
 
-  const items = useMemo(() => conversations.map(toNotification), [conversations]);
+  const items = useMemo(() => [
+    ...quoteNotifications,
+    ...conversations.map(toNotification),
+  ].sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt)), [conversations, quoteNotifications]);
   const unreadCount = useMemo(
-    () => conversations.reduce((total, conversation) => total + conversation.unreadCount, 0),
-    [conversations],
+    () => items.reduce((total, notification) => total + notification.unreadCount, 0),
+    [items],
   );
 
   const markRead = useCallback(async (notification: AppNotification): Promise<void> => {
-    if (notification.source !== "WHATSAPP") return;
+    if (notification.source === "QUOTE") {
+      setQuoteNotifications((current) => current.map((item) => item.id === notification.id
+        ? { ...item, unreadCount: 0 }
+        : item));
+      return;
+    }
     await WhatsAppInboxService.markRead(notification.sourceId);
   }, []);
 

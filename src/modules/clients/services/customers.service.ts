@@ -242,6 +242,7 @@ export class CustomersService {
     pageSize?: number;
     page?: number;
     source?: "LOCAL" | "ERP";
+    active?: "active" | "inactive" | "all";
   }): Promise<Client[]> {
     const { data } = await coreHttpClient.get<ApiCustomersListResponse>("/api/customers", {
       headers: requireAuthHeaders(),
@@ -250,6 +251,7 @@ export class CustomersService {
         pageSize: params?.pageSize ?? 100,
         search: params?.search?.trim() || undefined,
         source: params?.source,
+        active: params?.active === "active" ? true : params?.active === "inactive" ? false : params?.active,
       },
     });
 
@@ -278,5 +280,17 @@ export class CustomersService {
     await coreHttpClient.delete(`/api/customers/${customerId}`, {
       headers: requireAuthHeaders(),
     });
+  }
+
+  static async reactivate(customerId: string): Promise<void> {
+    await coreHttpClient.patch(`/api/customers/${customerId}/reactivate`, {}, {
+      headers: requireAuthHeaders(),
+    });
+  }
+
+  static async resetWhatsAppTestIdentity(customerId: string): Promise<void> {
+    await coreHttpClient.post(`/api/customers/${customerId}/reset-whatsapp-test`, {
+      confirmation: "REINICIAR",
+    }, { headers: requireAuthHeaders() });
   }
 }

@@ -5,9 +5,10 @@ export interface NotificationOptions {
   id?: NotificationId;
   durationMs?: number;
   presentation?: {
-    variant: "whatsapp-message";
+    variant: "whatsapp-message" | "quote-decision";
     title: string;
     occurredAt?: string;
+    tone?: "success" | "warning" | "error" | "info";
   };
   action?: {
     label: string;

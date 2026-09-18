@@ -853,6 +853,7 @@ export interface QuoteCustomerChangeRequest {
   quoteId: string;
   requestedByPhone: string;
   requestedChanges: string;
+  requestType: "INFORMATION" | "MODIFICATION";
   status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CANCELLED";
   createdAt: string;
   updatedAt: string;

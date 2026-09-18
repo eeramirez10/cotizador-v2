@@ -14,10 +14,37 @@ export type WhatsAppRealtimeEventReason =
   | "LEAD_ASSIGNED"
   | "LEAD_CONVERTED"
   | "QUOTE_SENT"
+  | "QUOTE_ACCEPTED"
+  | "QUOTE_REJECTED"
+  | "QUOTE_CANCELLED"
+  | "CUSTOMER_INFORMATION_REQUESTED"
+  | "CUSTOMER_CHANGE_REQUESTED"
   | "CONVERSATION_DELETED";
 
+export interface QuoteCustomerDecisionRealtimePayload {
+  quoteId: string;
+  quoteNumber: string;
+  status: "APPROVED" | "REJECTED" | "CANCELLED";
+  customerName: string;
+  contactName: string;
+  sellerId: string;
+  branchId: string;
+  currency: "MXN" | "USD";
+  total: number;
+}
+
+export interface QuoteCustomerRequestRealtimePayload {
+  requestId: string;
+  requestType: "INFORMATION" | "MODIFICATION";
+  quoteId: string;
+  quoteNumber: string;
+  sellerId: string;
+  branchId: string;
+  detail: string;
+}
+
 export interface WhatsAppRealtimeEvent {
-  type: "WHATSAPP_CONVERSATION_CHANGED";
+  type: "WHATSAPP_CONVERSATION_CHANGED" | "QUOTE_CUSTOMER_DECISION" | "QUOTE_CUSTOMER_REQUEST";
   conversationId: string;
   reason: WhatsAppRealtimeEventReason;
   occurredAt: string;
@@ -31,6 +58,8 @@ export interface WhatsAppRealtimeEvent {
     "mode" | "handledByName" | "lastMessage" | "lastMessageAt" | "lastInboundAt" | "sellerName" | "customerName" | "contactName" | "lead"
   >>;
   deleted?: boolean;
+  quoteDecision?: QuoteCustomerDecisionRealtimePayload;
+  customerRequest?: QuoteCustomerRequestRealtimePayload;
 }
 
 export type WhatsAppRealtimeStatus = "connecting" | "connected" | "disconnected";
@@ -122,7 +151,7 @@ export class WhatsAppRealtimeClient {
     try {
       const event = JSON.parse(payload) as Partial<WhatsAppRealtimeEvent>;
       if (
-        event.type === "WHATSAPP_CONVERSATION_CHANGED"
+        ["WHATSAPP_CONVERSATION_CHANGED", "QUOTE_CUSTOMER_DECISION", "QUOTE_CUSTOMER_REQUEST"].includes(event.type || "")
         && typeof event.conversationId === "string"
         && typeof event.reason === "string"
       ) {

@@ -2,10 +2,12 @@ import { AxiosError } from "axios";
 import {
   Building2,
   CircleOff,
+  FlaskConical,
   Loader2,
   Mail,
   MessageCircle,
   Pencil,
+  RotateCcw,
   Search,
   Store,
   UserPlus,
@@ -25,6 +27,7 @@ import { useAuthStore } from "../../store/auth/auth.store";
 import { useClientsStore } from "../../store/clients/clients.store";
 
 type SourceFilter = "ALL" | "LOCAL" | "ERP";
+type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 const ERP_FALLBACK_CONTACT_ID = "__erp_original_contact__";
 
 const EMPTY_FORM: ClientInput = {
@@ -119,7 +122,8 @@ const primaryContact = (client: Client) =>
 export const ClientsPage = () => {
   const actor = useAuthStore((state) => state.user);
   const role = (actor?.role || "").trim().toLowerCase();
-  const canDelete = role === "admin" || role === "manager";
+  const canManageStatus = role === "admin" || role === "manager";
+  const canResetWhatsAppTest = role === "admin" && import.meta.env.DEV;
 
   const clients = useClientsStore((state) => state.clients);
   const loading = useClientsStore((state) => state.loading);
@@ -127,26 +131,34 @@ export const ClientsPage = () => {
   const addClient = useClientsStore((state) => state.addClient);
   const updateClient = useClientsStore((state) => state.updateClient);
   const deleteClient = useClientsStore((state) => state.deleteClient);
+  const reactivateClient = useClientsStore((state) => state.reactivateClient);
+  const resetWhatsAppTestIdentity = useClientsStore((state) => state.resetWhatsAppTestIdentity);
 
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ACTIVE");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [form, setForm] = useState<ClientInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<Client | null>(null);
+  const [resettingWhatsApp, setResettingWhatsApp] = useState(false);
 
   useEffect(() => {
-    void loadClients().catch((error) => {
+    void loadClients({ active: canManageStatus ? "all" : "active" }).catch((error) => {
       notifier.error(error instanceof Error ? error.message : "No se pudieron cargar los clientes.");
     });
-  }, [loadClients]);
+  }, [canManageStatus, loadClients]);
 
   const filteredClients = useMemo(() => {
     const term = search.trim().toLowerCase();
     return clients.filter((client) => {
       if (sourceFilter !== "ALL" && client.source !== sourceFilter) return false;
+      if (statusFilter === "ACTIVE" && client.isActive === false) return false;
+      if (statusFilter === "INACTIVE" && client.isActive !== false) return false;
       if (!term) return true;
       return [
         client.companyName,
@@ -165,7 +177,7 @@ export const ClientsPage = () => {
         ]),
       ].some((value) => value?.toLowerCase().includes(term));
     });
-  }, [clients, search, sourceFilter]);
+  }, [clients, search, sourceFilter, statusFilter]);
 
   const metrics = useMemo(() => ({
     total: clients.length,
@@ -331,6 +343,40 @@ export const ClientsPage = () => {
     }
   };
 
+  const reactivate = async (client: Client) => {
+    const toast = notifier.loading("Reactivando cliente...");
+    try {
+      setReactivatingId(client.id);
+      await reactivateClient(client.id);
+      if (toast !== undefined) notifier.update(toast, "success", "Cliente reactivado.");
+      else notifier.success("Cliente reactivado.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo reactivar el cliente.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    } finally {
+      setReactivatingId(null);
+    }
+  };
+
+  const confirmWhatsAppTestReset = async () => {
+    if (!resetTarget) return;
+    const toast = notifier.loading("Reiniciando identidad de WhatsApp...");
+    try {
+      setResettingWhatsApp(true);
+      await resetWhatsAppTestIdentity(resetTarget.id);
+      if (toast !== undefined) notifier.update(toast, "success", "Prueba reiniciada. El próximo mensaje entrará como prospecto nuevo.");
+      else notifier.success("Prueba reiniciada. El próximo mensaje entrará como prospecto nuevo.");
+      setResetTarget(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo reiniciar la prueba de WhatsApp.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    } finally {
+      setResettingWhatsApp(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -361,6 +407,13 @@ export const ClientsPage = () => {
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por empresa, nombre, código, RFC, correo o teléfono..." className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" />
           </label>
           <Filter value={sourceFilter} onChange={(value) => setSourceFilter(value as SourceFilter)} />
+          {canManageStatus && (
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100">
+              <option value="ACTIVE">Activos</option>
+              <option value="INACTIVE">Desactivados</option>
+              <option value="ALL">Todos</option>
+            </select>
+          )}
         </div>
 
         <div className="max-h-[calc(100vh-340px)] min-h-80 overflow-auto">
@@ -380,9 +433,12 @@ export const ClientsPage = () => {
                 const email = contact?.email || client.email;
                 const whatsapp = contact?.mobile || client.whatsappPhone;
                 return (
-                  <tr key={client.id} className="hover:bg-amber-50/40">
+                  <tr key={client.id} className={`hover:bg-amber-50/40 ${client.isActive === false ? "bg-slate-50 opacity-75" : ""}`}>
                     <td className="px-4 py-3">
-                      <p className="max-w-64 truncate text-sm font-bold text-slate-900">{client.companyName || `${client.name} ${client.lastname}`}</p>
+                      <div className="flex max-w-64 items-center gap-2">
+                        <p className="truncate text-sm font-bold text-slate-900">{client.companyName || `${client.name} ${client.lastname}`}</p>
+                        {client.isActive === false && <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">Desactivado</span>}
+                      </div>
                       <p className="mt-1 text-[11px] text-slate-500">{client.code ? `Código ERP: ${client.code}` : `${client.name} ${client.lastname}`.trim()}</p>
                     </td>
                     <td className="px-4 py-3"><SourceBadge source={client.source || "LOCAL"} /></td>
@@ -400,12 +456,24 @@ export const ClientsPage = () => {
                     <td className="px-4 py-3 text-xs text-slate-600">{client.createdByName || "Sistema"}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        <button type="button" onClick={() => openClient(client)} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100" title={client.source === "ERP" ? "Editar contactos del cliente ERP" : "Editar cliente"}>
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        {canDelete && client.source !== "ERP" && (
+                        {client.isActive !== false && (
+                          <button type="button" onClick={() => openClient(client)} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100" title={client.source === "ERP" ? "Editar contactos del cliente ERP" : "Editar cliente"}>
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canManageStatus && client.isActive !== false && client.source !== "ERP" && (
                           <button type="button" onClick={() => setDeleteTarget(client)} className="rounded-md border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50" title="Desactivar cliente">
                             <CircleOff className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canManageStatus && client.isActive === false && (
+                          <button type="button" onClick={() => void reactivate(client)} disabled={reactivatingId === client.id} className="rounded-md border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50" title="Reactivar cliente">
+                            {reactivatingId === client.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                          </button>
+                        )}
+                        {canResetWhatsAppTest && (
+                          <button type="button" onClick={() => setResetTarget(client)} className="rounded-md border border-sky-200 p-1.5 text-sky-700 hover:bg-sky-50" title="Reiniciar prueba de WhatsApp">
+                            <FlaskConical className="h-4 w-4" />
                           </button>
                         )}
                       </div>
@@ -440,6 +508,7 @@ export const ClientsPage = () => {
         />
       )}
       {deleteTarget && <DeleteClientModal client={deleteTarget} busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />}
+      {resetTarget && <ResetWhatsAppTestModal client={resetTarget} busy={resettingWhatsApp} onClose={() => setResetTarget(null)} onConfirm={() => void confirmWhatsAppTestReset()} />}
     </div>
   );
 };
@@ -539,3 +608,27 @@ const TableMessage = ({ message, loading = false }: { message: string; loading?:
 const DeleteClientModal = ({ client, busy, onClose, onConfirm }: { client: Client; busy: boolean; onClose: () => void; onConfirm: () => void }) => (
   <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"><div className="flex gap-3"><span className="rounded-xl bg-rose-100 p-2 text-rose-700"><CircleOff className="h-5 w-5" /></span><div><h2 className="text-lg font-bold text-slate-950">Desactivar cliente</h2><p className="mt-2 text-sm text-slate-600">El cliente dejará de aparecer en nuevas selecciones, pero conservará su historial y cotizaciones.</p><p className="mt-3 text-sm font-bold text-slate-900">{client.companyName || `${client.name} ${client.lastname}`}</p></div></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onConfirm} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}Desactivar</button></div></div></div>
 );
+
+const ResetWhatsAppTestModal = ({ client, busy, onClose, onConfirm }: { client: Client; busy: boolean; onClose: () => void; onConfirm: () => void }) => {
+  const [confirmation, setConfirmation] = useState("");
+  const confirmed = confirmation.trim() === "REINICIAR";
+  return (
+    <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-950/75 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-2xl">
+        <header className="bg-slate-950 px-5 py-4 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-300">Solo desarrollo</p>
+          <h2 className="mt-1 text-lg font-bold">Reiniciar prueba de WhatsApp</h2>
+        </header>
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-slate-600">El próximo mensaje de <strong className="text-slate-900">{client.companyName || `${client.name} ${client.lastname}`}</strong> será tratado como un prospecto nuevo.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-rose-700">Se reinicia</p><ul className="mt-2 space-y-1 text-xs text-rose-900"><li>Conversación y mensajes</li><li>Archivos temporales no cotizados</li><li>Intentos de envío por WhatsApp</li><li>Cliente pasa a desactivado</li></ul></div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Se conserva</p><ul className="mt-2 space-y-1 text-xs text-emerald-900"><li>Cotizaciones y revisiones</li><li>Requisiciones de compra</li><li>Archivos ligados a cotizaciones</li><li>Auditoría del cliente</li></ul></div>
+          </div>
+          <label className="block"><span className="text-xs font-bold text-slate-700">Escribe REINICIAR para confirmar</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value.toUpperCase())} disabled={busy} autoFocus className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100" /></label>
+        </div>
+        <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4"><button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onConfirm} disabled={busy || !confirmed} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}Reiniciar prueba</button></footer>
+      </div>
+    </div>
+  );
+};

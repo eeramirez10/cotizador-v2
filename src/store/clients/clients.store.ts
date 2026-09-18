@@ -5,10 +5,12 @@ import type { Client, ClientInput } from "../../modules/clients/types/client.typ
 interface ClientsState {
   clients: Client[];
   loading: boolean;
-  loadClients: (params?: { search?: string }) => Promise<void>;
+  loadClients: (params?: { search?: string; active?: "active" | "inactive" | "all" }) => Promise<void>;
   addClient: (input: ClientInput) => Promise<Client>;
   updateClient: (clientId: string, input: ClientInput) => Promise<Client>;
   deleteClient: (clientId: string) => Promise<void>;
+  reactivateClient: (clientId: string) => Promise<void>;
+  resetWhatsAppTestIdentity: (clientId: string) => Promise<void>;
   getById: (clientId: string) => Client | undefined;
 }
 
@@ -24,6 +26,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         search: params?.search,
         page: 1,
         pageSize: 100,
+        active: params?.active,
       });
       set({ clients, loading: false });
     } catch (error) {
@@ -52,6 +55,20 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     await CustomersService.remove(clientId);
     set((state) => ({
       clients: state.clients.filter((client) => client.id !== clientId),
+    }));
+  },
+
+  reactivateClient: async (clientId) => {
+    await CustomersService.reactivate(clientId);
+    set((state) => ({
+      clients: state.clients.map((client) => client.id === clientId ? { ...client, isActive: true } : client),
+    }));
+  },
+
+  resetWhatsAppTestIdentity: async (clientId) => {
+    await CustomersService.resetWhatsAppTestIdentity(clientId);
+    set((state) => ({
+      clients: state.clients.map((client) => client.id === clientId ? { ...client, isActive: false } : client),
     }));
   },
 
