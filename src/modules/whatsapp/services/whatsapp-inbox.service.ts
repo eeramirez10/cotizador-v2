@@ -104,6 +104,15 @@ export interface WhatsAppMessagePage {
   hasMore: boolean;
 }
 
+export interface DeleteWhatsAppConversationResult {
+  conversationId: string;
+  deletedProspect: boolean;
+  deletedFileCount: number;
+  failedFileCount: number;
+  preservedQuoteCount: number;
+  preservedQuoteFileCount: number;
+}
+
 const headers = () => {
   const token = getAuthToken();
   if (!token) throw new Error("Sesión no válida. Inicia sesión nuevamente.");
@@ -118,6 +127,21 @@ const mapError = (error: unknown, fallback: string): Error => {
 };
 
 export class WhatsAppInboxService {
+  static async deleteConversation(conversationId: string): Promise<DeleteWhatsAppConversationResult> {
+    try {
+      const { data } = await coreHttpClient.delete<DeleteWhatsAppConversationResult>(
+        `/api/whatsapp/${encodeURIComponent(conversationId)}`,
+        { headers: headers() },
+      );
+      window.dispatchEvent(new CustomEvent("tuvansa:whatsapp-conversation-deleted", {
+        detail: { conversationId },
+      }));
+      return data;
+    } catch (error) {
+      throw mapError(error, "No se pudo eliminar la conversación.");
+    }
+  }
+
   static async markAttachmentQuoteExtracted(
     attachmentId: string,
     clientDraftId: string,
@@ -237,6 +261,9 @@ export class WhatsAppInboxService {
         {},
         { headers: headers() },
       );
+      window.dispatchEvent(new CustomEvent("tuvansa:whatsapp-conversation-read", {
+        detail: { conversationId },
+      }));
     } catch (error) {
       throw mapError(error, "No se pudo marcar la conversación como leída.");
     }

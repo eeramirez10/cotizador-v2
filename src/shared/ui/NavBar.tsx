@@ -1,7 +1,8 @@
-import { Bell, Search } from "lucide-react";
+import SearchIcon from "@mui/icons-material/Search";
 import type { FC } from "react";
 import { useMatches, type UIMatch } from "react-router";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { NotificationsMenu } from "../../modules/notifications/components/notifications-menu";
 
 type TitleHandle = {
   title?: string | ((match: UIMatch) => string);
@@ -35,9 +36,7 @@ export const NavBar = () => {
       </div>
 
       <div className="flex items-center space-x-4">
-        <button>
-          <Bell color="gray" />
-        </button>
+        <NotificationsMenu />
 
         <div className="relative">
           <input
@@ -45,7 +44,7 @@ export const NavBar = () => {
             className="w-full rounded-md border border-gray-200 p-1 pl-10 pr-4"
             placeholder="Buscar ..."
           />
-          <Search className="absolute left-3 top-1.5 text-gray-400" />
+          <SearchIcon className="absolute left-3 top-1.5 text-gray-400" fontSize="small" />
         </div>
       </div>
     </div>

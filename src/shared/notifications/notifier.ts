@@ -2,8 +2,17 @@ export type NotificationLevel = "success" | "error" | "warning" | "info";
 export type NotificationId = string | number;
 
 export interface NotificationOptions {
-  id?: string;
+  id?: NotificationId;
   durationMs?: number;
+  presentation?: {
+    variant: "whatsapp-message";
+    title: string;
+    occurredAt?: string;
+  };
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export interface NotificationAdapter {

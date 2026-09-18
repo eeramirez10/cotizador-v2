@@ -13,7 +13,8 @@ export type WhatsAppRealtimeEventReason =
   | "LEAD_UPDATED"
   | "LEAD_ASSIGNED"
   | "LEAD_CONVERTED"
-  | "QUOTE_SENT";
+  | "QUOTE_SENT"
+  | "CONVERSATION_DELETED";
 
 export interface WhatsAppRealtimeEvent {
   type: "WHATSAPP_CONVERSATION_CHANGED";
@@ -29,9 +30,23 @@ export interface WhatsAppRealtimeEvent {
     WhatsAppInboxConversation,
     "mode" | "handledByName" | "lastMessage" | "lastMessageAt" | "lastInboundAt" | "sellerName" | "customerName" | "contactName" | "lead"
   >>;
+  deleted?: boolean;
 }
 
 export type WhatsAppRealtimeStatus = "connecting" | "connected" | "disconnected";
+
+export const WHATSAPP_REALTIME_EVENT_NAME = "tuvansa:whatsapp-realtime";
+export const WHATSAPP_REALTIME_STATUS_EVENT_NAME = "tuvansa:whatsapp-realtime-status";
+export const WHATSAPP_REALTIME_RECONNECTED_EVENT_NAME = "tuvansa:whatsapp-realtime-reconnected";
+
+let currentRealtimeStatus: WhatsAppRealtimeStatus = "disconnected";
+
+export const getWhatsAppRealtimeStatus = (): WhatsAppRealtimeStatus => currentRealtimeStatus;
+
+const publishRealtimeStatus = (status: WhatsAppRealtimeStatus): void => {
+  currentRealtimeStatus = status;
+  window.dispatchEvent(new CustomEvent(WHATSAPP_REALTIME_STATUS_EVENT_NAME, { detail: status }));
+};
 
 interface WhatsAppRealtimeClientOptions {
   onEvent: (event: WhatsAppRealtimeEvent) => void;
@@ -53,7 +68,7 @@ export class WhatsAppRealtimeClient {
 
   start(): void {
     this.stopped = false;
-    this.options.onStatusChange?.("connecting");
+    this.updateStatus("connecting");
     this.connect();
   }
 
@@ -63,37 +78,41 @@ export class WhatsAppRealtimeClient {
     this.reconnectTimer = null;
     this.socket?.close(1000, "View closed");
     this.socket = null;
+    this.updateStatus("disconnected");
   }
 
   private connect(): void {
     if (this.stopped || this.socket) return;
     const token = getAuthToken();
     if (!token) {
-      this.options.onStatusChange?.("disconnected");
+      this.updateStatus("disconnected");
       return;
     }
 
     try {
-      this.options.onStatusChange?.("connecting");
+      this.updateStatus("connecting");
       const socket = new WebSocket(this.buildUrl(), ["tuvansa-realtime", `auth.${token}`]);
       this.socket = socket;
       socket.onopen = () => {
         const isReconnect = this.connectedOnce;
         this.connectedOnce = true;
         this.reconnectAttempts = 0;
-        this.options.onStatusChange?.("connected");
-        if (isReconnect) this.options.onReconnect();
+        this.updateStatus("connected");
+        if (isReconnect) {
+          window.dispatchEvent(new Event(WHATSAPP_REALTIME_RECONNECTED_EVENT_NAME));
+          this.options.onReconnect();
+        }
       };
       socket.onmessage = (message) => this.handleMessage(message.data);
       socket.onerror = () => socket.close();
       socket.onclose = () => {
         if (this.socket === socket) this.socket = null;
-        if (!this.stopped) this.options.onStatusChange?.("disconnected");
+        if (!this.stopped) this.updateStatus("disconnected");
         this.scheduleReconnect();
       };
     } catch {
       this.socket = null;
-      this.options.onStatusChange?.("disconnected");
+      this.updateStatus("disconnected");
       this.scheduleReconnect();
     }
   }
@@ -108,7 +127,7 @@ export class WhatsAppRealtimeClient {
         && typeof event.reason === "string"
       ) {
         const realtimeEvent = event as WhatsAppRealtimeEvent;
-        window.dispatchEvent(new CustomEvent("tuvansa:whatsapp-realtime", { detail: realtimeEvent }));
+        window.dispatchEvent(new CustomEvent(WHATSAPP_REALTIME_EVENT_NAME, { detail: realtimeEvent }));
         this.options.onEvent(realtimeEvent);
       }
     } catch {
@@ -133,5 +152,10 @@ export class WhatsAppRealtimeClient {
     url.search = "";
     url.hash = "";
     return url.toString();
+  }
+
+  private updateStatus(status: WhatsAppRealtimeStatus): void {
+    publishRealtimeStatus(status);
+    this.options.onStatusChange?.(status);
   }
 }

@@ -2,10 +2,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
 import { NotificationCenter } from "../shared/notifications/notification-center";
 import { configureNotifier } from "../shared/notifications/notifier";
-import { toastifyNotificationAdapter } from "../shared/notifications/toastify.adapter";
+import { muiNotificationAdapter } from "../shared/notifications/mui-notification.adapter";
 import { queryClient } from "./query-client";
 
-configureNotifier(toastifyNotificationAdapter);
+configureNotifier(muiNotificationAdapter);
 
 export const AppProviders = ({ children }: PropsWithChildren) => {
   return (

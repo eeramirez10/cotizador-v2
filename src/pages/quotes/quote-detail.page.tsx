@@ -254,7 +254,8 @@ const buildRecipientOptions = (
   };
 
   if (client) {
-    const baseName = `${client.name || ""} ${client.lastname || ""}`.trim();
+    const baseName = client.selectedContactName?.trim()
+      || `${client.name || ""} ${client.lastname || ""}`.trim();
     addOption({
       id: "__base__",
       name: baseName || client.companyName || "Contacto ERP",
@@ -283,13 +284,18 @@ const buildRecipientOptions = (
 
 const getDefaultRecipientId = (
   options: SendRecipientOption[],
-  channel: "WHATSAPP" | "EMAIL"
+  channel: "WHATSAPP" | "EMAIL",
+  preferredContactId?: string | null,
 ): string => {
   const candidates =
     channel === "WHATSAPP"
       ? options.filter((option) => option.whatsapp.trim())
       : options.filter((option) => option.email.trim());
   if (candidates.length === 0) return "";
+  const preferred = preferredContactId
+    ? candidates.find((option) => option.id === preferredContactId)
+    : undefined;
+  if (preferred) return preferred.id;
   return candidates.find((option) => option.isPrimary)?.id || candidates[0].id;
 };
 
@@ -941,16 +947,32 @@ export const QuoteDetailPage = () => {
         if (cancelled) return;
 
         setSendRecipientOptions(options);
-        setSelectedWhatsAppRecipientId(getDefaultRecipientId(options, "WHATSAPP"));
-        setSelectedEmailRecipientId(getDefaultRecipientId(options, "EMAIL"));
+        setSelectedWhatsAppRecipientId(getDefaultRecipientId(
+          options,
+          "WHATSAPP",
+          quote?.client?.selectedContactId,
+        ));
+        setSelectedEmailRecipientId(getDefaultRecipientId(
+          options,
+          "EMAIL",
+          quote?.client?.selectedContactId,
+        ));
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "No se pudieron cargar los contactos.";
         setRecipientsError(message);
         const options = buildRecipientOptions(quote?.client ?? null, []);
         setSendRecipientOptions(options);
-        setSelectedWhatsAppRecipientId(getDefaultRecipientId(options, "WHATSAPP"));
-        setSelectedEmailRecipientId(getDefaultRecipientId(options, "EMAIL"));
+        setSelectedWhatsAppRecipientId(getDefaultRecipientId(
+          options,
+          "WHATSAPP",
+          quote?.client?.selectedContactId,
+        ));
+        setSelectedEmailRecipientId(getDefaultRecipientId(
+          options,
+          "EMAIL",
+          quote?.client?.selectedContactId,
+        ));
       } finally {
         if (!cancelled) {
           setLoadingRecipients(false);
@@ -971,6 +993,8 @@ export const QuoteDetailPage = () => {
     quote?.client?.companyName,
     quote?.client?.email,
     quote?.client?.whatsappPhone,
+    quote?.client?.selectedContactId,
+    quote?.client?.selectedContactName,
   ]);
 
   if (isLoading) {

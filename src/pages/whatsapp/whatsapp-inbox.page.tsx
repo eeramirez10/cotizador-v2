@@ -1,17 +1,36 @@
 import {
   ChatBox,
+  ChatConversationList,
   chatBoxClasses,
   chatComposerClasses,
+  chatConversationClasses,
   chatConversationListClasses,
   chatMessageClasses,
   chatMessageListClasses,
 } from "@mui/x-chat";
-import { Avatar, Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton, Paper, Stack, Typography } from "@mui/material";
+import type { ChatConversationListProps } from "@mui/x-chat";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import BusinessIcon from "@mui/icons-material/Business";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import CloseIcon from "@mui/icons-material/Close";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import GppGoodOutlinedIcon from "@mui/icons-material/GppGoodOutlined";
+import HeadsetMicOutlinedIcon from "@mui/icons-material/HeadsetMicOutlined";
+import HistoryIcon from "@mui/icons-material/History";
+import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
+import NoteAddOutlinedIcon from "@mui/icons-material/NoteAddOutlined";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
+import SearchIcon from "@mui/icons-material/Search";
+import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import { Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer, IconButton, InputAdornment, ListItemIcon, Menu, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
-import type { ChatMessage } from "@mui/x-chat-headless";
-import { Bot, Building2, ChevronRight, Clock3, ExternalLink, FilePlus2, FileText, Headphones, History, Mail, MapPin, MessageCircleMore, ShieldCheck, UserPlus, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router";
+import type { ChatMessage, ConversationListItemAvatarProps } from "@mui/x-chat-headless";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, useNavigate, useSearchParams } from "react-router";
 import { CustomersService } from "../../modules/clients/services/customers.service";
 import type { Client, ClientInput } from "../../modules/clients/types/client.types";
 import { emptyCustomerContact } from "../../modules/clients/utils/customer-contact-form";
@@ -52,12 +71,12 @@ const chatTheme = createTheme({
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
-        root: { textTransform: "none", fontWeight: 700 },
+        root: { textTransform: "none", fontWeight: 600 },
       },
     },
     MuiChip: {
       styleOverrides: {
-        root: { fontWeight: 700 },
+        root: { fontWeight: 600 },
       },
     },
   },
@@ -68,6 +87,237 @@ const isWindowActive = (lastInboundAt: string | null, now: number): boolean =>
 
 const initials = (value: string): string =>
   value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+const ConversationInitialsAvatar = forwardRef<HTMLDivElement, ConversationListItemAvatarProps>(
+  function ConversationInitialsAvatar(props, ref) {
+    const participant = props.conversation.participants?.find((item) => item.role !== "user")
+      || props.conversation.participants?.[0];
+    const label = participant?.displayName || props.conversation.title || "Cliente";
+    return (
+      <Box
+        ref={ref}
+        className={props.className}
+        style={props.style}
+        aria-label={label}
+        sx={{
+          width: 40,
+          height: 40,
+          minWidth: 40,
+          p: 0.5,
+          display: "grid",
+          placeItems: "center",
+          borderRadius: "50%",
+          boxSizing: "border-box",
+          bgcolor: "#fcce01",
+          color: "#172033",
+          fontSize: "0.75rem",
+          fontWeight: 700,
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+      >
+        {initials(label)}
+      </Box>
+    );
+  },
+);
+
+type ConversationFilter = "ALL" | "UNREAD" | "PROSPECTS";
+
+interface WhatsAppConversationListPanelProps extends ChatConversationListProps {
+  searchValue?: string;
+  activeFilter?: ConversationFilter;
+  visibleConversationIds?: string[];
+  emptyLabel?: string;
+  canDeleteConversations?: boolean;
+  deletingConversationId?: string | null;
+  onSearchValueChange?: (value: string) => void;
+  onFilterChange?: (value: ConversationFilter) => void;
+  onDeleteConversation?: (conversationId: string) => void;
+}
+
+const WhatsAppConversationListPanel = forwardRef<HTMLDivElement, WhatsAppConversationListPanelProps>(
+  function WhatsAppConversationListPanel(
+    {
+      searchValue = "",
+      activeFilter = "ALL",
+      visibleConversationIds = [],
+      emptyLabel = "No hay conversaciones para mostrar.",
+      canDeleteConversations = false,
+      deletingConversationId = null,
+      onSearchValueChange,
+      onFilterChange,
+      onDeleteConversation,
+      sx,
+      slotProps,
+      ...listProps
+    },
+    ref,
+  ) {
+    const visibleIds = useMemo(() => new Set(visibleConversationIds), [visibleConversationIds]);
+    const hasVisibleConversations = visibleConversationIds.length > 0;
+    const [contextMenu, setContextMenu] = useState<{
+      conversationId: string;
+      mouseX: number;
+      mouseY: number;
+    } | null>(null);
+    const filters: Array<{ value: ConversationFilter; label: string }> = [
+      { value: "ALL", label: "Todos" },
+      { value: "UNREAD", label: "No leídos" },
+      { value: "PROSPECTS", label: "Prospectos" },
+    ];
+
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, bgcolor: "#ffffff" }}>
+        <Box sx={{ px: 2, pt: 1.75, pb: 1.25, borderBottom: "1px solid #eef1f5" }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
+            Mensajes
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            value={searchValue}
+            onChange={(event) => onSearchValueChange?.(event.target.value)}
+            placeholder="Buscar conversación"
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 17, color: "#64748b" }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 999,
+                bgcolor: "#f6f7f9",
+                fontSize: "0.82rem",
+                "& fieldset": { borderColor: "transparent" },
+                "&:hover fieldset": { borderColor: "#d8dee7" },
+                "&.Mui-focused fieldset": { borderColor: "#d4a900" },
+              },
+            }}
+          />
+          <Stack direction="row" spacing={0.75} sx={{ mt: 1.25 }}>
+            {filters.map((filter) => {
+              const selected = activeFilter === filter.value;
+              return (
+                <Button
+                  key={filter.value}
+                  type="button"
+                  size="small"
+                  variant={selected ? "contained" : "outlined"}
+                  onClick={() => onFilterChange?.(filter.value)}
+                  sx={{
+                    minWidth: 0,
+                    px: 1.25,
+                    borderRadius: 999,
+                    bgcolor: selected ? "#172033" : "#ffffff",
+                    color: selected ? "#ffffff" : "#475569",
+                    borderColor: selected ? "#172033" : "#d7dde5",
+                    fontSize: "0.72rem",
+                    "&:hover": {
+                      bgcolor: selected ? "#0f172a" : "#f8fafc",
+                      borderColor: selected ? "#0f172a" : "#c5cdd8",
+                    },
+                  }}
+                >
+                  {filter.label}
+                </Button>
+              );
+            })}
+          </Stack>
+        </Box>
+        <Box sx={{ position: "relative", flex: 1, minHeight: 0 }}>
+          <ChatConversationList
+            ref={ref}
+            {...listProps}
+            slotProps={{
+              ...slotProps,
+              item: (ownerState) => {
+                const inheritedProps = typeof slotProps?.item === "function"
+                  ? slotProps.item(ownerState)
+                  : slotProps?.item;
+                return {
+                  ...inheritedProps,
+                  onContextMenu: (event) => {
+                    inheritedProps?.onContextMenu?.(event);
+                    if (event.defaultPrevented || !canDeleteConversations) return;
+                    event.preventDefault();
+                    setContextMenu({
+                      conversationId: ownerState.conversation.id,
+                      mouseX: event.clientX + 2,
+                      mouseY: event.clientY - 6,
+                    });
+                  },
+                  style: {
+                    ...inheritedProps?.style,
+                    display: visibleIds.has(ownerState.conversation.id) ? undefined : "none",
+                  },
+                };
+              },
+            }}
+            sx={[
+              { height: "100%", minHeight: 0 },
+              ...(Array.isArray(sx) ? sx : [sx]),
+            ]}
+          />
+          {!hasVisibleConversations && (
+            <Stack
+              alignItems="center"
+              justifyContent="center"
+              spacing={0.5}
+              sx={{ position: "absolute", inset: 0, px: 3, textAlign: "center", pointerEvents: "none" }}
+            >
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                {emptyLabel}
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                Cambia el filtro para consultar otras conversaciones.
+              </Typography>
+            </Stack>
+          )}
+          {canDeleteConversations && (
+            <Menu
+              open={Boolean(contextMenu)}
+              onClose={() => setContextMenu(null)}
+              anchorReference="anchorPosition"
+              anchorPosition={contextMenu
+                ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+                : undefined}
+              slotProps={{
+                paper: {
+                  sx: {
+                    minWidth: 190,
+                    borderRadius: 2,
+                    boxShadow: "0 14px 34px rgba(15, 23, 42, 0.16)",
+                  },
+                },
+              }}
+            >
+              <MenuItem
+                disabled={!contextMenu || deletingConversationId === contextMenu.conversationId}
+                onClick={() => {
+                  if (!contextMenu) return;
+                  const conversationId = contextMenu.conversationId;
+                  setContextMenu(null);
+                  onDeleteConversation?.(conversationId);
+                }}
+                sx={{ color: "error.main", fontSize: "0.82rem" }}
+              >
+                <ListItemIcon sx={{ color: "error.main", minWidth: "32px !important" }}>
+                  <DeleteOutlineIcon fontSize="small" />
+                </ListItemIcon>
+                Eliminar conversación
+              </MenuItem>
+            </Menu>
+          )}
+        </Box>
+      </Box>
+    );
+  },
+);
 
 const leadStatusLabel: Record<string, string> = {
   NEW: "Prospecto nuevo",
@@ -143,6 +393,7 @@ const groupRelatedQuotes = (quotes: WhatsAppRelatedQuote[]): RelatedQuoteFamily[
 
 export const WhatsAppInboxPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const quoteDraft = useManualQuoteStore((state) => state.draft);
   const clearQuoteDraft = useManualQuoteStore((state) => state.clearDraft);
@@ -152,7 +403,10 @@ export const WhatsAppInboxPage = () => {
   const setQuoteWhatsAppLeadId = useManualQuoteStore((state) => state.setWhatsAppLeadId);
   const setItemsFromExtraction = useManualQuoteStore((state) => state.setItemsFromExtraction);
   const displayName = `${user?.name || ""} ${user?.lastname || ""}`.trim() || "Usuario Tuvansa";
+  const canDeleteConversations = user?.role?.trim().toLowerCase() === "admin";
   const [conversationData, setConversationData] = useState<WhatsAppInboxConversation[]>([]);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("ALL");
   const [activeId, setActiveId] = useState<string>();
   const [selected, setSelected] = useState<WhatsAppInboxConversation>();
   const [changingMode, setChangingMode] = useState(false);
@@ -170,8 +424,14 @@ export const WhatsAppInboxPage = () => {
   const [relatedQuotesConversationId, setRelatedQuotesConversationId] = useState<string>();
   const [previewAttachment, setPreviewAttachment] = useState<WhatsAppInboundAttachment | null>(null);
   const [quoteExtractionAttachment, setQuoteExtractionAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [pendingLinkAttachment, setPendingLinkAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [linkBeforeExtractionOpen, setLinkBeforeExtractionOpen] = useState(false);
   const [generatingQuoteAttachmentId, setGeneratingQuoteAttachmentId] = useState<string | null>(null);
+  const [deleteConversationId, setDeleteConversationId] = useState<string | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const activeIdRef = useRef<string | undefined>(undefined);
+  const lastConversationSearchRef = useRef("");
+  const markingReadRef = useRef(new Set<string>());
 
   const handleConversationData = useCallback((items: WhatsAppInboxConversation[]) => {
     setConversationData(items);
@@ -195,6 +455,82 @@ export const WhatsAppInboxPage = () => {
     [displayName, handleConversationData, handleMessageData, handleRealtimeStatus, user?.id],
   );
 
+  const markConversationRead = useCallback(async (
+    conversationId: string,
+    conversation?: WhatsAppInboxConversation,
+  ): Promise<void> => {
+    const current = conversation || adapter.getConversation(conversationId);
+    if (!current || current.unreadCount <= 0 || markingReadRef.current.has(conversationId)) return;
+    markingReadRef.current.add(conversationId);
+    try {
+      await adapter.markRead({ conversationId });
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo marcar la conversación como leída.");
+    } finally {
+      markingReadRef.current.delete(conversationId);
+    }
+  }, [adapter]);
+
+  useEffect(() => {
+    const requestedConversationId = searchParams.get("conversation")?.trim();
+    if (!requestedConversationId || activeIdRef.current === requestedConversationId) return;
+    void WhatsAppInboxService.get(requestedConversationId)
+      .then((conversation) => {
+        adapter.updateConversation(conversation);
+        activeIdRef.current = conversation.id;
+        setActiveId(conversation.id);
+        setSelected(conversation);
+        setMessages([]);
+        void markConversationRead(conversation.id, conversation);
+      })
+      .catch(() => undefined);
+  }, [adapter, markConversationRead, searchParams]);
+
+  useEffect(() => {
+    const query = conversationSearch.trim();
+    if (query === lastConversationSearchRef.current) return;
+    const timeout = window.setTimeout(() => {
+      lastConversationSearchRef.current = query;
+      void adapter.listConversations({ query }).catch((error) => {
+        notifier.error(error instanceof Error ? error.message : "No se pudieron buscar conversaciones.");
+      });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [adapter, conversationSearch]);
+
+  const chatConversations = useMemo(
+    () => conversationData.map((conversation) => adapter.toChatConversation(conversation)),
+    [adapter, conversationData],
+  );
+
+  const visibleConversationIds = useMemo(() => {
+    const query = conversationSearch.trim().toLocaleLowerCase("es-MX");
+    return conversationData
+      .filter((conversation) => {
+        if (conversationFilter === "UNREAD" && conversation.unreadCount === 0) return false;
+        if (conversationFilter === "PROSPECTS" && !conversation.lead) return false;
+        if (!query) return true;
+        return [
+          conversation.contactName,
+          conversation.customerName,
+          conversation.participantPhone,
+          conversation.lastMessage,
+          conversation.quote?.quoteNumber,
+        ].some((value) => value?.toLocaleLowerCase("es-MX").includes(query));
+      })
+      .map((conversation) => conversation.id);
+  }, [conversationData, conversationFilter, conversationSearch]);
+
+  const emptyConversationLabel = conversationFilter === "UNREAD"
+    ? "No hay conversaciones sin leer."
+    : conversationFilter === "PROSPECTS"
+      ? "No hay conversaciones de prospectos."
+      : "No hay conversaciones para mostrar.";
+
+  const deleteCandidate = deleteConversationId
+    ? conversationData.find((conversation) => conversation.id === deleteConversationId) || null
+    : null;
+
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(interval);
@@ -207,14 +543,18 @@ export const WhatsAppInboxPage = () => {
     }
     adapter.setActiveConversation(activeId);
     const cached = adapter.getConversation(activeId);
-    if (cached) setSelected(cached);
+    if (cached) {
+      setSelected(cached);
+      void markConversationRead(activeId, cached);
+    }
     void WhatsAppInboxService.get(activeId)
       .then((result) => {
         adapter.updateConversation(result);
         setSelected(result);
+        void markConversationRead(activeId, result);
       })
       .catch(() => undefined);
-  }, [activeId, adapter]);
+  }, [activeId, adapter, markConversationRead]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -229,6 +569,8 @@ export const WhatsAppInboxPage = () => {
     setRelatedQuotesConversationId(undefined);
     setPreviewAttachment(null);
     setQuoteExtractionAttachment(null);
+    setPendingLinkAttachment(null);
+    setLinkBeforeExtractionOpen(false);
   }, [activeId]);
 
   const relatedQuoteFamilies = useMemo(() => groupRelatedQuotes(relatedQuotes), [relatedQuotes]);
@@ -249,7 +591,10 @@ export const WhatsAppInboxPage = () => {
     }
   };
 
-  const generateQuoteFromAttachment = async (attachment: WhatsAppInboundAttachment) => {
+  const generateQuoteFromAttachment = async (
+    attachment: WhatsAppInboundAttachment,
+    linkedCustomer?: Client,
+  ) => {
     if (!selected || generatingQuoteAttachmentId) return;
     if (user?.role?.toLowerCase() !== "seller") {
       notifier.warning("Solo los vendedores pueden generar cotizaciones.");
@@ -263,9 +608,10 @@ export const WhatsAppInboxPage = () => {
     setGeneratingQuoteAttachmentId(attachment.id);
     const toastId = notifier.loading(`Extrayendo partidas de ${attachment.originalName}...`);
     try {
-      let customer: Client | null = null;
-      if (selected.customerId) {
-        const loaded = await CustomersService.getById(selected.customerId);
+      let customer: Client | null = linkedCustomer || null;
+      const linkedCustomerId = selected.customerId || selected.lead?.customerId;
+      if (!customer && linkedCustomerId) {
+        const loaded = await CustomersService.getById(linkedCustomerId);
         const contact = loaded.contacts?.find((item) => item.id === selected.contactId)
           || loaded.contacts?.find((item) => item.isPrimary)
           || loaded.contacts?.[0];
@@ -315,6 +661,22 @@ export const WhatsAppInboxPage = () => {
     } finally {
       setGeneratingQuoteAttachmentId(null);
     }
+  };
+
+  const requestQuoteExtraction = (attachment: WhatsAppInboundAttachment): void => {
+    if (!selected) return;
+    const linkedCustomerId = selected.customerId || selected.lead?.customerId;
+    if (linkedCustomerId) {
+      void generateQuoteFromAttachment(attachment);
+      return;
+    }
+    if (!selected.lead) {
+      notifier.warning("La conversación no tiene un prospecto que se pueda vincular.");
+      return;
+    }
+    setQuoteExtractionAttachment(null);
+    setPendingLinkAttachment(attachment);
+    setLinkBeforeExtractionOpen(true);
   };
 
   const windowActive = isWindowActive(selected?.lastInboundAt || null, now);
@@ -399,6 +761,7 @@ export const WhatsAppInboxPage = () => {
 
   const convertLeadAndOpenQuote = async (client: Client) => {
     if (!selected?.lead || convertingLead) return;
+    const attachmentToProcess = pendingLinkAttachment;
     setConvertingLead(true);
     const toastId = notifier.loading("Vinculando prospecto con el cliente...");
     try {
@@ -415,9 +778,17 @@ export const WhatsAppInboxPage = () => {
         || customer.contacts?.find((item) => item.id === client.selectedContactId)
         || customer.contacts?.find((item) => item.isPrimary)
         || customer.contacts?.[0];
-      if (toastId !== undefined) notifier.update(toastId, "success", "Prospecto convertido en cliente.");
-      else notifier.success("Prospecto convertido en cliente.");
-      openQuoteForLead(clientWithSelectedContact(customer, contact), selected.lead.id);
+      const linkedClient = clientWithSelectedContact(customer, contact);
+      setPendingLinkAttachment(null);
+      if (attachmentToProcess) {
+        if (toastId !== undefined) notifier.update(toastId, "success", "Cliente vinculado. Iniciando extracción del archivo...");
+        else notifier.success("Cliente vinculado. Iniciando extracción del archivo...");
+        await generateQuoteFromAttachment(attachmentToProcess, linkedClient);
+      } else {
+        if (toastId !== undefined) notifier.update(toastId, "success", "Prospecto convertido en cliente.");
+        else notifier.success("Prospecto convertido en cliente.");
+        openQuoteForLead(linkedClient, selected.lead.id);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo vincular el prospecto.";
       if (toastId !== undefined) notifier.update(toastId, "error", message);
@@ -469,6 +840,44 @@ export const WhatsAppInboxPage = () => {
     }
   };
 
+  const deleteConversation = async (): Promise<void> => {
+    if (!canDeleteConversations || !deleteCandidate || deletingConversationId) return;
+    const conversationId = deleteCandidate.id;
+    setDeletingConversationId(conversationId);
+    const toastId = notifier.loading("Eliminando conversación y archivos temporales...");
+    try {
+      const result = await WhatsAppInboxService.deleteConversation(conversationId);
+      adapter.removeConversation(conversationId);
+      if (activeIdRef.current === conversationId) {
+        activeIdRef.current = undefined;
+        adapter.setActiveConversation(undefined);
+        setActiveId(undefined);
+        setSelected(undefined);
+        setMessages([]);
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("conversation");
+        setSearchParams(nextParams, { replace: true });
+      }
+      setDeleteConversationId(null);
+      const preserved = result.preservedQuoteCount > 0
+        ? ` Se conservaron ${result.preservedQuoteCount} cotización${result.preservedQuoteCount === 1 ? "" : "es"}.`
+        : "";
+      const message = result.failedFileCount > 0
+        ? `La conversación se eliminó, pero ${result.failedFileCount} archivo${result.failedFileCount === 1 ? "" : "s"} no se pudieron limpiar.${preserved}`
+        : `Conversación eliminada.${preserved}`;
+      if (toastId !== undefined) {
+        notifier.update(toastId, result.failedFileCount > 0 ? "warning" : "success", message);
+      } else if (result.failedFileCount > 0) notifier.warning(message);
+      else notifier.success(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar la conversación.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+    } finally {
+      setDeletingConversationId(null);
+    }
+  };
+
   return (
     <ThemeProvider theme={chatTheme}>
       <Paper
@@ -506,10 +915,10 @@ export const WhatsAppInboxPage = () => {
               variant="rounded"
               sx={{ width: 42, height: 42, bgcolor: "secondary.main", color: "#111827" }}
             >
-              <MessageCircleMore size={21} />
+              <WhatsAppIcon sx={{ fontSize: 21 }} />
             </Avatar>
             <Box>
-              <Typography variant="subtitle1" fontWeight={800} lineHeight={1.2}>
+              <Typography variant="subtitle1" fontWeight={700} lineHeight={1.2}>
                 Mensajes de WhatsApp
               </Typography>
               <Stack direction="row" alignItems="center" spacing={0.75}>
@@ -536,7 +945,7 @@ export const WhatsAppInboxPage = () => {
             <Stack direction="row" flexWrap="wrap" alignItems="center" gap={1}>
               <Chip
                 size="small"
-                icon={<Clock3 size={15} />}
+                icon={<AccessTimeIcon sx={{ fontSize: 15 }} />}
                 label={windowActive ? "Ventana de 24 h activa" : "Fuera de ventana de 24 h"}
                 sx={{
                   bgcolor: windowActive ? "#ecfdf5" : "#f1f5f9",
@@ -552,7 +961,7 @@ export const WhatsAppInboxPage = () => {
                   to={`/quotes/${selected.quote.id}`}
                   size="small"
                   variant="outlined"
-                  endIcon={<ExternalLink size={15} />}
+                  endIcon={<OpenInNewIcon sx={{ fontSize: 15 }} />}
                   sx={{ color: "#334155", borderColor: "#cbd5e1", bgcolor: "#ffffff" }}
                 >
                   {selected.quote.quoteNumber}
@@ -563,7 +972,7 @@ export const WhatsAppInboxPage = () => {
                   type="button"
                   size="small"
                   variant="outlined"
-                  startIcon={<Building2 size={15} />}
+                  startIcon={<BusinessIcon sx={{ fontSize: 15 }} />}
                   onClick={() => setProspectDrawerOpen(true)}
                   sx={{ color: "#6b5200", borderColor: "#e5b900", bgcolor: "#fffbea" }}
                 >
@@ -574,7 +983,7 @@ export const WhatsAppInboxPage = () => {
                 type="button"
                 size="small"
                 variant="outlined"
-                startIcon={<History size={15} />}
+                startIcon={<HistoryIcon sx={{ fontSize: 15 }} />}
                 onClick={() => void openRelatedQuotes()}
                 sx={{ color: "#334155", borderColor: "#cbd5e1", bgcolor: "#ffffff" }}
               >
@@ -588,7 +997,7 @@ export const WhatsAppInboxPage = () => {
                   color="secondary"
                   disabled={assigningLead}
                   onClick={() => setAssignLeadOpen(true)}
-                  startIcon={assigningLead ? <CircularProgress size={14} color="inherit" /> : <UserPlus size={15} />}
+                  startIcon={assigningLead ? <CircularProgress size={14} color="inherit" /> : <PersonAddAlt1Icon sx={{ fontSize: 15 }} />}
                   sx={{ borderColor: "#e5b900", bgcolor: "#fffbea", color: "#6b5200" }}
                 >
                   {selected.lead?.assignedSellerId ? "Reasignar vendedor" : "Asignar vendedor"}
@@ -609,7 +1018,7 @@ export const WhatsAppInboxPage = () => {
                     if (selected.lead?.customerId) void loadConvertedLeadCustomer();
                     else setConvertLeadOpen(true);
                   }}
-                  startIcon={convertingLead ? <CircularProgress size={14} color="inherit" /> : <FilePlus2 size={15} />}
+                  startIcon={convertingLead ? <CircularProgress size={14} color="inherit" /> : <NoteAddOutlinedIcon sx={{ fontSize: 15 }} />}
                   sx={{ bgcolor: "#fcce01", color: "#111827", "&:hover": { bgcolor: "#e8bd00" } }}
                 >
                   {selected.lead?.customerId ? "Crear cotización" : "Vincular cliente y cotizar"}
@@ -625,8 +1034,8 @@ export const WhatsAppInboxPage = () => {
                 startIcon={changingMode
                   ? <CircularProgress size={14} color="inherit" />
                   : selected.mode === "AI"
-                    ? <Headphones size={15} />
-                    : <Bot size={15} />}
+                    ? <HeadsetMicOutlinedIcon sx={{ fontSize: 15 }} />
+                    : <SmartToyOutlinedIcon sx={{ fontSize: 15 }} />}
                 sx={selected.mode === "HUMAN" ? { borderColor: "#e5b900", bgcolor: "#fffbea" } : undefined}
               >
                 {selected.mode === "AI" ? "Tomar conversación" : "Devolver a la IA"}
@@ -634,63 +1043,19 @@ export const WhatsAppInboxPage = () => {
             </Stack>
           ) : (
             <Stack direction="row" alignItems="center" spacing={0.75} color="text.secondary">
-              <ShieldCheck size={17} color="#d4a900" />
-              <Typography variant="caption" fontWeight={600}>
+              <GppGoodOutlinedIcon sx={{ fontSize: 17, color: "#d4a900" }} />
+              <Typography variant="caption" fontWeight={500}>
                 Selecciona una conversación para consultar su contexto.
               </Typography>
             </Stack>
           )}
         </Box>
 
-        {selected && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1.25,
-              px: { xs: 2, md: 2.5 },
-              py: 1,
-              borderBottom: "1px solid",
-              borderColor: "#e8edf3",
-              bgcolor: "#ffffff",
-            }}
-          >
-            <Avatar sx={{ width: 36, height: 36, bgcolor: "#172033", fontSize: 12, fontWeight: 800 }}>
-              {initials(selected.contactName || selected.customerName)}
-            </Avatar>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="body2" fontWeight={800} noWrap>
-                {selected.contactName || selected.customerName}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap component="p">
-                {selected.customerName} · {selected.participantPhone}
-                {selected.sellerName ? ` · Vendedor: ${selected.sellerName}` : ""}
-              </Typography>
-            </Box>
-            {selected.lead && (
-              <Chip
-                size="small"
-                label={leadStatusLabel[selected.lead.status] || selected.lead.status}
-                sx={{ bgcolor: selected.lead.status === "ASSIGNED" ? "#ecfdf5" : "#fff7cc", color: selected.lead.status === "ASSIGNED" ? "#047857" : "#7c5b00" }}
-              />
-            )}
-            <Chip
-              size="small"
-              icon={selected.mode === "AI" ? <Bot size={14} /> : <Headphones size={14} />}
-              label={selected.mode === "AI" ? "Atiende IA" : `Atiende ${selected.handledByName || "usuario"}`}
-              sx={{
-                flexShrink: 0,
-                bgcolor: selected.mode === "AI" ? "#eff6ff" : "#fff7cc",
-                color: selected.mode === "AI" ? "#1d4ed8" : "#7c5b00",
-                "& .MuiChip-icon": { color: "inherit" },
-              }}
-            />
-          </Box>
-        )}
-
         <Box sx={{ minHeight: 0, flex: 1 }}>
           <ChatBox
             adapter={adapter}
+            conversations={chatConversations}
+            activeConversationId={activeId}
             partRenderers={{
               file: ({ part }) => {
                 const attachment = adapter.getAttachment(part.url);
@@ -729,13 +1094,14 @@ export const WhatsAppInboxPage = () => {
               activeIdRef.current = conversationId;
               setActiveId(conversationId);
               if (changedConversation) setMessages([]);
+              if (conversationId) void markConversationRead(conversationId);
             }}
             onError={(error) => notifier.error(error.message || "No se pudo completar la acción en WhatsApp.")}
             variant="default"
             density="compact"
             features={{
               conversationList: true,
-              conversationHeader: false,
+              conversationHeader: true,
               dateDivider: true,
               unreadMarker: true,
               attachments: false,
@@ -758,8 +1124,24 @@ export const WhatsAppInboxPage = () => {
               messageAuthorUserLabel: "Tuvansa",
               loadingLabel: "Cargando conversaciones...",
             }}
-            slots={{ composerAttachButton: null, messageAvatar: null }}
+            slots={{
+              conversationList: WhatsAppConversationListPanel,
+              composerAttachButton: null,
+              messageAvatar: null,
+            }}
             slotProps={{
+              conversationList: {
+                slots: { itemAvatar: ConversationInitialsAvatar },
+                searchValue: conversationSearch,
+                activeFilter: conversationFilter,
+                visibleConversationIds,
+                emptyLabel: emptyConversationLabel,
+                canDeleteConversations,
+                deletingConversationId,
+                onSearchValueChange: setConversationSearch,
+                onFilterChange: setConversationFilter,
+                onDeleteConversation: canDeleteConversations ? setDeleteConversationId : undefined,
+              } as WhatsAppConversationListPanelProps,
               messageGroup: {
                 groupKey: (message) => `${message.author?.id || message.role}:${message.author?.displayName || ""}`,
               },
@@ -776,16 +1158,22 @@ export const WhatsAppInboxPage = () => {
               minHeight: 0,
               [`& .${chatBoxClasses.layout}`]: { height: "100%", backgroundColor: "#f8fafc" },
               [`& .${chatBoxClasses.conversationsPane}`]: {
-                "--ChatBox-conversationListWidth": "330px",
+                "--ChatBox-conversationListWidth": "320px",
                 borderRight: "1px solid #e2e8f0",
                 backgroundColor: "#ffffff",
               },
               [`& .${chatBoxClasses.threadPane}`]: {
-                backgroundColor: "#f4f1eb",
-                backgroundImage:
-                  "radial-gradient(circle at 12px 12px, rgba(100,116,139,0.055) 1px, transparent 1.2px)",
-                backgroundSize: "24px 24px",
+                backgroundColor: "#ffffff",
               },
+              [`& .${chatConversationClasses.header}`]: {
+                minHeight: 64,
+                px: 2,
+                py: 1.15,
+                borderBottom: "1px solid #e5e7eb",
+                backgroundColor: "#ffffff",
+              },
+              [`& .${chatConversationClasses.title}`]: { color: "#172033", fontWeight: 650 },
+              [`& .${chatConversationClasses.subtitle}`]: { color: "#7b8492", fontSize: "0.74rem" },
               [`& .${chatConversationListClasses.root}`]: { bgcolor: "#ffffff" },
               [`& .${chatConversationListClasses.scroller}`]: { px: 0.5, py: 0.75 },
               [`& .${chatConversationListClasses.item}`]: {
@@ -793,25 +1181,28 @@ export const WhatsAppInboxPage = () => {
                 margin: "3px 6px",
                 width: "calc(100% - 12px)",
                 minHeight: 68,
-                transition: "background-color 140ms ease, transform 140ms ease",
-                "&:hover": { backgroundColor: "#f8fafc", transform: "translateX(2px)" },
+                transition: "background-color 140ms ease",
+                [`&:not(.${chatConversationListClasses.itemSelected}):hover`]: {
+                  backgroundColor: "#f8fafc",
+                },
               },
               [`& .${chatConversationListClasses.itemSelected}`]: {
-                backgroundColor: "#fff6bf !important",
-                boxShadow: "inset 3px 0 0 #fcce01",
+                backgroundColor: "#f1f3f5 !important",
+                boxShadow: "none",
+                transform: "none",
               },
               [`& .${chatConversationListClasses.itemAvatar}`]: {
-                bgcolor: "#172033",
-                color: "#ffffff",
-                fontWeight: 800,
+                bgcolor: "#fcce01",
+                color: "#172033",
+                fontWeight: 700,
               },
-              [`& .${chatConversationListClasses.itemTitle}`]: { color: "#172033", fontWeight: 800 },
+              [`& .${chatConversationListClasses.itemTitle}`]: { color: "#172033", fontWeight: 650 },
               [`& .${chatConversationListClasses.itemPreview}`]: { color: "#64748b" },
               [`& .${chatConversationListClasses.itemUnreadBadge}`]: {
                 backgroundColor: "#fcce01",
                 color: "#111827",
               },
-              [`& .${chatMessageListClasses.scroller}`]: { px: { xs: 1.25, md: 3 }, py: 2 },
+              [`& .${chatMessageListClasses.scroller}`]: { px: { xs: 1.25, md: 2.5 }, py: 1.5 },
               [`& .${chatMessageListClasses.content}`]: { gap: 0.75 },
               [`& .${chatMessageClasses.root}`]: { maxWidth: "100%" },
               [`& .${chatMessageClasses.content}`]: { maxWidth: { xs: "86%", md: "72%" } },
@@ -852,7 +1243,7 @@ export const WhatsAppInboxPage = () => {
                 px: 1.25,
                 py: 0.35,
                 color: "#64748b",
-                fontWeight: 700,
+                fontWeight: 600,
               },
               [`& .${chatComposerClasses.root}`]: {
                 borderTop: "1px solid #e2e8f0",
@@ -886,6 +1277,51 @@ export const WhatsAppInboxPage = () => {
             }}
           />
         </Box>
+        <Dialog
+          open={Boolean(deleteCandidate)}
+          onClose={() => { if (!deletingConversationId) setDeleteConversationId(null); }}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>Eliminar conversación</DialogTitle>
+          <DialogContent>
+            <Stack spacing={1.25}>
+              <Typography variant="body2">
+                ¿Deseas eliminar permanentemente el chat con <strong>{deleteCandidate?.contactName || deleteCandidate?.customerName}</strong>?
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Se eliminarán sus mensajes y archivos temporales. El cliente, sus contactos, las cotizaciones y los documentos usados para generarlas se conservarán.
+              </Typography>
+              {deleteCandidate?.lead && !deleteCandidate.lead.customerId && (
+                <Typography variant="body2" color="warning.dark">
+                  Como es un prospecto sin convertir, también se eliminarán sus datos provisionales y asignaciones.
+                </Typography>
+              )}
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button
+              type="button"
+              variant="outlined"
+              disabled={Boolean(deletingConversationId)}
+              onClick={() => setDeleteConversationId(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              color="error"
+              variant="contained"
+              disabled={Boolean(deletingConversationId)}
+              onClick={() => void deleteConversation()}
+              startIcon={deletingConversationId
+                ? <CircularProgress size={15} color="inherit" />
+                : <DeleteOutlineIcon />}
+            >
+              Eliminar conversación
+            </Button>
+          </DialogActions>
+        </Dialog>
         <AssignWhatsAppLeadModal
           open={assignLeadOpen}
           currentSellerId={selected?.lead?.assignedSellerId || null}
@@ -903,14 +1339,63 @@ export const WhatsAppInboxPage = () => {
           processing={Boolean(generatingQuoteAttachmentId)}
           onClose={() => setQuoteExtractionAttachment(null)}
           onConfirm={() => {
-            if (quoteExtractionAttachment) void generateQuoteFromAttachment(quoteExtractionAttachment);
+            if (quoteExtractionAttachment) requestQuoteExtraction(quoteExtractionAttachment);
           }}
         />
+        <Dialog
+          open={linkBeforeExtractionOpen && Boolean(pendingLinkAttachment)}
+          onClose={() => {
+            setLinkBeforeExtractionOpen(false);
+            setPendingLinkAttachment(null);
+          }}
+          fullWidth
+          maxWidth="xs"
+          PaperProps={{ sx: { borderRadius: 2.5 } }}
+        >
+          <DialogTitle sx={{ pb: 1 }}>Vincular prospecto antes de cotizar</DialogTitle>
+          <DialogContent>
+            <Stack spacing={1.25}>
+              <Typography variant="body2">
+                Este contacto todavía no está vinculado con un cliente. ¿Deseas vincularlo antes de procesar <strong>{pendingLinkAttachment?.originalName}</strong>?
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Así el borrador conservará el cliente, su contacto y las partidas extraídas del archivo.
+              </Typography>
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button
+              type="button"
+              color="inherit"
+              onClick={() => {
+                setLinkBeforeExtractionOpen(false);
+                setPendingLinkAttachment(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="contained"
+              startIcon={<PersonAddAlt1Icon />}
+              onClick={() => {
+                setLinkBeforeExtractionOpen(false);
+                setConvertLeadOpen(true);
+              }}
+              sx={{ bgcolor: "#172033", "&:hover": { bgcolor: "#0f172a" } }}
+            >
+              Vincular cliente
+            </Button>
+          </DialogActions>
+        </Dialog>
         <SelectClientModal
           open={convertLeadOpen}
           initialSearch={selected?.lead?.companyName || selected?.lead?.contactName || ""}
           localInitialValues={leadCustomerInitialValues}
-          onClose={() => setConvertLeadOpen(false)}
+          onClose={() => {
+            setConvertLeadOpen(false);
+            setPendingLinkAttachment(null);
+          }}
           onSelect={(client) => void convertLeadAndOpenQuote(client)}
         />
         <Drawer
@@ -929,7 +1414,7 @@ export const WhatsAppInboxPage = () => {
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 2 }}>
             <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
               <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: "#fcce01", color: "#172033" }}>
-                <Building2 size={19} />
+                <BusinessIcon sx={{ fontSize: 19 }} />
               </Avatar>
               <Box minWidth={0}>
                 <Typography variant="subtitle1" fontWeight={800}>Datos del prospecto</Typography>
@@ -939,7 +1424,7 @@ export const WhatsAppInboxPage = () => {
               </Box>
             </Stack>
             <IconButton aria-label="Cerrar datos del prospecto" onClick={() => setProspectDrawerOpen(false)}>
-              <X size={19} />
+              <CloseIcon sx={{ fontSize: 19 }} />
             </IconButton>
           </Box>
           <Divider />
@@ -969,17 +1454,17 @@ export const WhatsAppInboxPage = () => {
                   <Divider sx={{ my: 1.5 }} />
                   <Stack spacing={1}>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <MessageCircleMore size={15} color="#64748b" />
+                      <WhatsAppIcon sx={{ fontSize: 15, color: "#64748b" }} />
                       <Typography variant="body2">{selected.participantPhone}</Typography>
                     </Stack>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Mail size={15} color="#64748b" />
+                      <MailOutlineIcon sx={{ fontSize: 15, color: "#64748b" }} />
                       <Typography variant="body2" color={selected.lead.email ? "text.primary" : "text.secondary"} sx={{ overflowWrap: "anywhere" }}>
                         {selected.lead.email || "Correo pendiente"}
                       </Typography>
                     </Stack>
                     <Stack direction="row" spacing={1} alignItems="flex-start">
-                      <MapPin size={15} color="#64748b" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <LocationOnOutlinedIcon sx={{ fontSize: 15, color: "#64748b", mt: "2px", flexShrink: 0 }} />
                       <Typography variant="body2" color={selected.lead.location ? "text.primary" : "text.secondary"}>
                         {selected.lead.location || "Ubicación pendiente"}
                       </Typography>
@@ -989,7 +1474,7 @@ export const WhatsAppInboxPage = () => {
 
                 <Paper variant="outlined" sx={{ p: 2, borderColor: "#dbe2ea", bgcolor: "#ffffff" }}>
                   <Stack direction="row" spacing={0.8} alignItems="center">
-                    <FileText size={16} color="#8a6a00" />
+                    <DescriptionOutlinedIcon sx={{ fontSize: 16, color: "#8a6a00" }} />
                     <Typography variant="overline" fontWeight={800} color="text.secondary">Solicitud</Typography>
                   </Stack>
                   <Typography variant="body2" sx={{ mt: 1, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>
@@ -1030,7 +1515,7 @@ export const WhatsAppInboxPage = () => {
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 2 }}>
             <Stack direction="row" spacing={1.25} alignItems="center">
               <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: "#fcce01", color: "#172033" }}>
-                <FileText size={19} />
+                <DescriptionOutlinedIcon sx={{ fontSize: 19 }} />
               </Avatar>
               <Box>
                 <Typography variant="subtitle1" fontWeight={800}>Cotizaciones relacionadas</Typography>
@@ -1040,7 +1525,7 @@ export const WhatsAppInboxPage = () => {
               </Box>
             </Stack>
             <IconButton aria-label="Cerrar historial" onClick={() => setQuotesDrawerOpen(false)}>
-              <X size={19} />
+              <CloseIcon sx={{ fontSize: 19 }} />
             </IconButton>
           </Box>
           <Divider />
@@ -1052,7 +1537,7 @@ export const WhatsAppInboxPage = () => {
               </Stack>
             ) : relatedQuoteFamilies.length === 0 ? (
               <Paper variant="outlined" sx={{ p: 3, textAlign: "center", borderStyle: "dashed", bgcolor: "#ffffff" }}>
-                <FileText size={28} color="#94a3b8" />
+                <DescriptionOutlinedIcon sx={{ fontSize: 28, color: "#94a3b8" }} />
                 <Typography variant="body2" fontWeight={700} sx={{ mt: 1 }}>Aún no hay cotizaciones relacionadas</Typography>
                 <Typography variant="caption" color="text.secondary">Las cotizaciones del cliente aparecerán aquí.</Typography>
               </Paper>
@@ -1089,7 +1574,7 @@ export const WhatsAppInboxPage = () => {
                                   {versions.length > 1 ? ` · ${versions.length} versiones` : ""}
                                 </Typography>
                               </Box>
-                              <ChevronRight size={18} color="#64748b" />
+                              <ChevronRightIcon sx={{ fontSize: 18, color: "#64748b" }} />
                             </Button>
                             {versions.length > 1 && (
                               <Box sx={{ borderTop: "1px solid #edf1f5", px: 1.5, py: 1, bgcolor: "#fbfcfd" }}>

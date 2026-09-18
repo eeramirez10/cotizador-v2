@@ -13,7 +13,10 @@ import {
   type WhatsAppInboxMessage,
 } from "../services/whatsapp-inbox.service";
 import {
-  WhatsAppRealtimeClient,
+  getWhatsAppRealtimeStatus,
+  WHATSAPP_REALTIME_EVENT_NAME,
+  WHATSAPP_REALTIME_RECONNECTED_EVENT_NAME,
+  WHATSAPP_REALTIME_STATUS_EVENT_NAME,
   type WhatsAppRealtimeEvent,
   type WhatsAppRealtimeStatus,
 } from "../services/whatsapp-realtime.service";
@@ -36,7 +39,6 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   private readonly attachmentsByMessage = new Map<string, WhatsAppInboundAttachment[]>();
   private readonly conversations = new Map<string, WhatsAppInboxConversation>();
   private currentQuery = "";
-  private realtimeClient: WhatsAppRealtimeClient | null = null;
   private syncQueue: Promise<void> = Promise.resolve();
   private readonly currentUser: { id: string; displayName: string };
   private readonly onConversationData: (items: WhatsAppInboxConversation[]) => void;
@@ -116,17 +118,28 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   }
 
   subscribe(input: { onEvent: (event: ChatRealtimeEvent) => void }): () => void {
-    this.realtimeClient?.stop();
-    const client = new WhatsAppRealtimeClient({
-      onEvent: (event) => this.enqueueSync(() => this.syncRealtimeEvent(event, input.onEvent)),
-      onReconnect: () => this.enqueueSync(() => this.recoverRealtimeState(input.onEvent)),
-      onStatusChange: this.onRealtimeStatusChange,
-    });
-    this.realtimeClient = client;
-    client.start();
+    const handleEvent = (rawEvent: Event): void => {
+      const event = (rawEvent as CustomEvent<WhatsAppRealtimeEvent>).detail;
+      if (event?.type !== "WHATSAPP_CONVERSATION_CHANGED") return;
+      this.enqueueSync(() => this.syncRealtimeEvent(event, input.onEvent));
+    };
+    const handleReconnect = (): void => {
+      this.enqueueSync(() => this.recoverRealtimeState(input.onEvent));
+    };
+    const handleStatus = (rawEvent: Event): void => {
+      this.onRealtimeStatusChange(
+        (rawEvent as CustomEvent<WhatsAppRealtimeStatus>).detail,
+      );
+    };
+
+    this.onRealtimeStatusChange(getWhatsAppRealtimeStatus());
+    window.addEventListener(WHATSAPP_REALTIME_EVENT_NAME, handleEvent);
+    window.addEventListener(WHATSAPP_REALTIME_RECONNECTED_EVENT_NAME, handleReconnect);
+    window.addEventListener(WHATSAPP_REALTIME_STATUS_EVENT_NAME, handleStatus);
     return () => {
-      client.stop();
-      if (this.realtimeClient === client) this.realtimeClient = null;
+      window.removeEventListener(WHATSAPP_REALTIME_EVENT_NAME, handleEvent);
+      window.removeEventListener(WHATSAPP_REALTIME_RECONNECTED_EVENT_NAME, handleReconnect);
+      window.removeEventListener(WHATSAPP_REALTIME_STATUS_EVENT_NAME, handleStatus);
     };
   }
 
@@ -139,8 +152,28 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
     this.notifyConversationData();
   }
 
+  removeConversation(conversationId: string): void {
+    const messages = this.messagesByConversation.get(conversationId) || [];
+    messages.forEach((message) => {
+      this.knownMessageIds.delete(message.id);
+      this.messageFingerprints.delete(message.id);
+      this.attachmentsByMessage.delete(message.id);
+    });
+    this.messagesByConversation.delete(conversationId);
+    this.conversations.delete(conversationId);
+    if (this.activeConversationId === conversationId) {
+      this.activeConversationId = undefined;
+      this.onMessageData(conversationId, []);
+    }
+    this.notifyConversationData();
+  }
+
   getConversation(conversationId?: string): WhatsAppInboxConversation | undefined {
     return conversationId ? this.conversations.get(conversationId) : undefined;
+  }
+
+  toChatConversation(conversation: WhatsAppInboxConversation): ChatConversation {
+    return this.mapConversation(conversation);
   }
 
   getMessageAttachments(messageId: string): WhatsAppInboundAttachment[] {
@@ -187,6 +220,11 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
     event: WhatsAppRealtimeEvent,
     emit: (event: ChatRealtimeEvent) => void,
   ): Promise<void> {
+    if (event.reason === "CONVERSATION_DELETED" || event.deleted) {
+      this.removeConversation(event.conversationId);
+      emit({ type: "conversation-removed", conversationId: event.conversationId });
+      return;
+    }
     if (!this.conversations.has(event.conversationId)) {
       await this.syncConversation(event.conversationId, emit);
     } else if (event.conversation || event.message) {
@@ -195,6 +233,12 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
 
     if (event.message) {
       this.applyMessage(event.message, emit);
+      if (
+        event.message.direction === "INBOUND"
+        && this.activeConversationId === event.conversationId
+      ) {
+        await this.markRead({ conversationId: event.conversationId });
+      }
       return;
     }
     if (event.messagePatch) this.applyMessagePatch(event.conversationId, event.messagePatch, emit);
@@ -333,7 +377,7 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
   private mapConversation(item: WhatsAppInboxConversation): ChatConversation {
     return {
       id: item.id,
-      title: item.customerName,
+      title: item.contactName || item.customerName,
       subtitle: item.lastMessage,
       unreadCount: item.unreadCount,
       readState: item.unreadCount > 0 ? "unread" : "read",

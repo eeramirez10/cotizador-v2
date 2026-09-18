@@ -4,7 +4,7 @@ import { Form, NavLink, useLocation } from "react-router";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
-import { useWhatsAppUnreadCount } from "../../queries/whatsapp/use-whatsapp-unread-count";
+import { useAppNotifications } from "../../modules/notifications/context/app-notifications.context";
 
 export const SideBar = () => {
   const open = useUiStore((state) => state.open);
@@ -12,6 +12,7 @@ export const SideBar = () => {
 
   const user = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
+  const appNotifications = useAppNotifications();
   const location = useLocation();
   const role = (user?.role || "").trim().toLowerCase();
   const canGenerateQuotes = role === "seller";
@@ -29,7 +30,6 @@ export const SideBar = () => {
   const whatsappInboxEnabled = capabilities.data?.whatsAppInboxEnabled === true;
   const canAccessWhatsApp = whatsappInboxEnabled
     && (role === "admin" || role === "manager" || role === "seller");
-  const whatsappUnread = useWhatsAppUnreadCount(canAccessWhatsApp);
 
   const navBase = "flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-gray-100";
   const active = "bg-gray-100 text-gray-900";
@@ -43,7 +43,7 @@ export const SideBar = () => {
       name: "WhatsApp",
       to: "/whatsapp",
       icon: <MessageCircleMore />,
-      badge: whatsappUnread.data || 0,
+      badge: appNotifications.unreadCount,
     }] : []),
     ...(canApproveQuotes ? [{ name: "Aprobar cotizaciones", to: "/quote-approvals", icon: <ShieldCheck /> }] : []),
     ...(canAccessCommercial ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
