@@ -1,4 +1,5 @@
 import { Eye, EyeOff, Loader2, Pencil, Search, UserCheck, UserMinus, UserPlus, Warehouse, X } from "lucide-react";
+import { FormControlLabel, Switch } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -34,6 +35,7 @@ interface UserFormState {
   branchCode: string;
   phone: string;
   erpUserCode: string;
+  whatsappInboxEnabled: boolean;
 }
 
 const EMPTY_FORM: UserFormState = {
@@ -46,6 +48,7 @@ const EMPTY_FORM: UserFormState = {
   branchCode: "",
   phone: "",
   erpUserCode: "",
+  whatsappInboxEnabled: true,
 };
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -101,6 +104,7 @@ const mapUserToForm = (user: ManagedUser): UserFormState => ({
   branchCode: normalizeBranchCode(user.branch.code),
   phone: user.phone || "",
   erpUserCode: user.erpUserCode || "",
+  whatsappInboxEnabled: user.whatsappInboxEnabled,
 });
 
 export const UsersPage = () => {
@@ -249,6 +253,7 @@ export const UsersPage = () => {
             branchCode: branchCodeToUse,
             phone: form.phone || null,
             erpUserCode: form.erpUserCode || null,
+            whatsappInboxEnabled: form.whatsappInboxEnabled,
             password: form.password.trim() || undefined,
           },
         });
@@ -269,6 +274,7 @@ export const UsersPage = () => {
           branchCode: branchCodeToUse,
           phone: form.phone || null,
           erpUserCode: form.erpUserCode || null,
+          whatsappInboxEnabled: form.whatsappInboxEnabled,
         });
 
         setLastChangedBy((state) => ({
@@ -389,6 +395,7 @@ export const UsersPage = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Rol</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Sucursal</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Estado</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">WhatsApp</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Ultimo cambio por</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">Acciones</th>
               </tr>
@@ -396,7 +403,7 @@ export const UsersPage = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {usersQuery.isFetching && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-3 py-10 text-center text-sm text-gray-500">
                     Cargando usuarios...
                   </td>
                 </tr>
@@ -404,7 +411,7 @@ export const UsersPage = () => {
 
               {!usersQuery.isFetching && users.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-3 py-10 text-center text-sm text-gray-500">
                     No hay usuarios para mostrar.
                   </td>
                 </tr>
@@ -428,6 +435,15 @@ export const UsersPage = () => {
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">Activo</span>
                     ) : (
                       <span className="rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700">Desactivado</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {user.role === "PURCHASING" ? (
+                      <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-500">No aplica</span>
+                    ) : user.whatsappInboxEnabled ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">Habilitado</span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">Sin acceso</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-700">{lastChangedBy[user.id] || "-"}</td>
@@ -705,6 +721,35 @@ export const UsersPage = () => {
                     Sucursal asignada: <strong>{actorBranchLabel}</strong>
                   </div>
                 )}
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={form.role !== "PURCHASING" && form.whatsappInboxEnabled}
+                        disabled={form.role === "PURCHASING"}
+                        onChange={(_, checked) => setForm((prev) => ({
+                          ...prev,
+                          whatsappInboxEnabled: checked,
+                        }))}
+                        sx={{
+                          "& .MuiSwitch-switchBase.Mui-checked": { color: "#182235" },
+                          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
+                            bgcolor: "#fcce01",
+                            opacity: 1,
+                          },
+                        }}
+                      />
+                    )}
+                    label="Habilitar bandeja de WhatsApp"
+                    slotProps={{ typography: { fontSize: 13, fontWeight: 700, color: "#374151" } }}
+                  />
+                  <p className="pl-12 text-[11px] leading-4 text-gray-500">
+                    {form.role === "PURCHASING"
+                      ? "El rol de Compras no tiene acceso a la bandeja de WhatsApp."
+                      : "Permite consultar conversaciones, recibir notificaciones y responder desde el sistema."}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-4 flex justify-end gap-2 border-t border-gray-200 pt-3">

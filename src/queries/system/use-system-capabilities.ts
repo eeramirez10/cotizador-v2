@@ -6,6 +6,6 @@ export const systemCapabilitiesKey = ["system", "capabilities"] as const;
 export const useSystemCapabilities = () => useQuery({
   queryKey: systemCapabilitiesKey,
   queryFn: SystemCapabilitiesService.get,
-  staleTime: 5 * 60 * 1000,
+  staleTime: 30_000,
   retry: 1,
 });

@@ -53,6 +53,7 @@ import { AssignWhatsAppLeadModal } from "./assign-whatsapp-lead.modal";
 import { WhatsAppFileMessagePart } from "./whatsapp-file-message-part";
 import { FilePreviewModal } from "../../shared/components/file-preview/file-preview.modal";
 import type { ManagedUser } from "../../modules/users/services/users.service";
+import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { ConfirmWhatsAppQuoteExtractionModal } from "./confirm-whatsapp-quote-extraction.modal";
 
 const chatTheme = createTheme({
@@ -84,6 +85,13 @@ const chatTheme = createTheme({
 
 const isWindowActive = (lastInboundAt: string | null, now: number): boolean =>
   Boolean(lastInboundAt && Date.parse(lastInboundAt) + 24 * 60 * 60 * 1000 > now);
+
+const formatRemainingTime = (milliseconds: number): string => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
 
 const initials = (value: string): string =>
   value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
@@ -392,6 +400,8 @@ const groupRelatedQuotes = (quotes: WhatsAppRelatedQuote[]): RelatedQuoteFamily[
 };
 
 export const WhatsAppInboxPage = () => {
+  const capabilities = useSystemCapabilities();
+  const humanTakeoverMinutes = capabilities.data?.whatsAppHumanTakeoverMinutes ?? 15;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
@@ -411,6 +421,7 @@ export const WhatsAppInboxPage = () => {
   const [selected, setSelected] = useState<WhatsAppInboxConversation>();
   const [changingMode, setChangingMode] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const warnedHumanControlRef = useRef<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<WhatsAppRealtimeStatus>("connecting");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assignLeadOpen, setAssignLeadOpen] = useState(false);
@@ -532,7 +543,7 @@ export const WhatsAppInboxPage = () => {
     : null;
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 60_000);
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -561,6 +572,25 @@ export const WhatsAppInboxPage = () => {
     const updated = conversationData.find((item) => item.id === activeId);
     if (updated) setSelected(updated);
   }, [activeId, conversationData]);
+
+  const humanControlExpiresAt = selected?.humanControlExpiresAt
+    ? Date.parse(selected.humanControlExpiresAt)
+    : 0;
+  const humanControlRemainingMs = Math.max(0, humanControlExpiresAt - now);
+  const humanControlExpired = Boolean(selected?.mode === "HUMAN" && humanControlRemainingMs <= 0);
+  const isHumanController = Boolean(
+    selected?.mode === "HUMAN"
+    && selected.handledByUserId === user?.id
+    && humanControlRemainingMs > 0,
+  );
+
+  useEffect(() => {
+    if (!selected || !isHumanController || humanControlRemainingMs > 2 * 60_000) return;
+    const warningKey = `${selected.id}:${selected.humanControlExpiresAt}`;
+    if (warnedHumanControlRef.current === warningKey) return;
+    warnedHumanControlRef.current = warningKey;
+    notifier.warning("El control humano vencerá en menos de 2 minutos. Extiéndelo si necesitas continuar.");
+  }, [humanControlRemainingMs, isHumanController, selected]);
 
   useEffect(() => {
     setQuotesDrawerOpen(false);
@@ -680,7 +710,13 @@ export const WhatsAppInboxPage = () => {
   };
 
   const windowActive = isWindowActive(selected?.lastInboundAt || null, now);
-  const canReply = Boolean(selected && selected.mode === "HUMAN" && windowActive);
+  const canReply = Boolean(selected && isHumanController && windowActive);
+  const canManageHumanControl = Boolean(
+    selected?.mode === "AI"
+    || humanControlExpired
+    || isHumanController
+    || ["admin", "manager"].includes(user?.role?.toLowerCase() || ""),
+  );
   const canAssignLead = Boolean(
     selected?.lead
     && ["admin", "manager"].includes(user?.role?.toLowerCase() || ""),
@@ -820,14 +856,17 @@ export const WhatsAppInboxPage = () => {
 
   const changeMode = async (mode: WhatsAppConversationMode) => {
     if (!selected || changingMode) return;
+    const extending = mode === "HUMAN" && selected.mode === "HUMAN" && !humanControlExpired;
     setChangingMode(true);
-    const toastId = notifier.loading(mode === "HUMAN" ? "Tomando conversación..." : "Activando asistente...");
+    const toastId = notifier.loading(
+      extending ? "Extendiendo control humano..." : mode === "HUMAN" ? "Tomando conversación..." : "Activando asistente...",
+    );
     try {
       const updated = await WhatsAppInboxService.setMode(selected.id, mode);
       adapter.updateConversation(updated);
       setSelected(updated);
       const message = mode === "HUMAN"
-        ? "Ahora puedes responder manualmente."
+        ? extending ? "Control humano extendido." : "Ahora puedes responder manualmente."
         : "El asistente de IA atenderá los siguientes mensajes.";
       if (toastId !== undefined) notifier.update(toastId, "success", message);
       else notifier.success(message);
@@ -1024,21 +1063,48 @@ export const WhatsAppInboxPage = () => {
                   {selected.lead?.customerId ? "Crear cotización" : "Vincular cliente y cotizar"}
                 </Button>
               )}
+              {selected.mode === "HUMAN" && !humanControlExpired && (
+                <Chip
+                  size="small"
+                  icon={<AccessTimeIcon sx={{ fontSize: 15 }} />}
+                  label={`${selected.handledByName || "Control humano"} · ${formatRemainingTime(humanControlRemainingMs)}`}
+                  color={humanControlRemainingMs <= 2 * 60_000 ? "warning" : "success"}
+                  variant="outlined"
+                  sx={{ fontVariantNumeric: "tabular-nums" }}
+                />
+              )}
+              {isHumanController && (
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  disabled={changingMode}
+                  onClick={() => void changeMode("HUMAN")}
+                  startIcon={<AccessTimeIcon sx={{ fontSize: 15 }} />}
+                >
+                  Extender {humanTakeoverMinutes} min
+                </Button>
+              )}
               <Button
                 type="button"
                 size="small"
-                variant={selected.mode === "AI" ? "contained" : "outlined"}
-                color={selected.mode === "AI" ? "primary" : "secondary"}
-                disabled={changingMode}
-                onClick={() => void changeMode(selected.mode === "AI" ? "HUMAN" : "AI")}
+                variant={selected.mode === "AI" || humanControlExpired ? "contained" : "outlined"}
+                color={selected.mode === "AI" || humanControlExpired ? "primary" : "secondary"}
+                disabled={changingMode || !canManageHumanControl}
+                onClick={() => void changeMode(selected.mode === "AI" || humanControlExpired ? "HUMAN" : "AI")}
                 startIcon={changingMode
                   ? <CircularProgress size={14} color="inherit" />
-                  : selected.mode === "AI"
+                  : selected.mode === "AI" || humanControlExpired
                     ? <HeadsetMicOutlinedIcon sx={{ fontSize: 15 }} />
                     : <SmartToyOutlinedIcon sx={{ fontSize: 15 }} />}
                 sx={selected.mode === "HUMAN" ? { borderColor: "#e5b900", bgcolor: "#fffbea" } : undefined}
               >
-                {selected.mode === "AI" ? "Tomar conversación" : "Devolver a la IA"}
+                {selected.mode === "AI"
+                  ? "Tomar conversación"
+                  : humanControlExpired
+                    ? "Retomar conversación"
+                    : "Devolver a la IA"}
               </Button>
             </Stack>
           ) : (

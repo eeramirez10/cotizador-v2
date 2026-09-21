@@ -1137,6 +1137,7 @@ export const QuoteDetailPage = () => {
     action,
     isSuccess,
     successMessage,
+    successLevel = "success",
     errorMessage,
     onSuccess,
   }: {
@@ -1144,6 +1145,7 @@ export const QuoteDetailPage = () => {
     action: () => Promise<T>;
     isSuccess?: (result: T) => boolean;
     successMessage?: string | ((result: T) => string);
+    successLevel?: "success" | "warning" | "info" | ((result: T) => "success" | "warning" | "info");
     errorMessage?: string | ((result: T) => string);
     onSuccess?: (result: T) => Promise<void> | void;
   }) => {
@@ -1171,11 +1173,12 @@ export const QuoteDetailPage = () => {
       }
 
       const resolvedSuccess = typeof successMessage === "function" ? successMessage(result) : successMessage;
+      const resolvedSuccessLevel = typeof successLevel === "function" ? successLevel(result) : successLevel;
       if (resolvedSuccess) {
         if (loadingToastId !== undefined) {
-          notifier.update(loadingToastId, "success", resolvedSuccess);
+          notifier.update(loadingToastId, resolvedSuccessLevel, resolvedSuccess);
         } else {
-          notifier.success(resolvedSuccess);
+          notifier[resolvedSuccessLevel](resolvedSuccess);
         }
       } else if (loadingToastId !== undefined) {
         notifier.dismiss(loadingToastId);
@@ -1422,7 +1425,11 @@ export const QuoteDetailPage = () => {
         const channels =
           sendChannel === "BOTH" ? (["WHATSAPP", "EMAIL"] as const) : ([sendChannel] as const);
 
-        const results: boolean[] = [];
+        const results: Array<{
+          ok: boolean;
+          message: string;
+          status?: "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+        }> = [];
         let pdfFile: File | null = null;
 
         for (const channel of channels) {
@@ -1431,12 +1438,12 @@ export const QuoteDetailPage = () => {
               ? selectedWhatsAppRecipient?.whatsapp || ""
               : selectedEmailRecipient?.email || "";
           if (!recipient.trim()) {
-            notifier.warning(
-              channel === "WHATSAPP"
+            results.push({
+              ok: false,
+              message: channel === "WHATSAPP"
                 ? "Selecciona un contacto con WhatsApp para enviar."
-                : "Selecciona un contacto con correo para enviar."
-            );
-            results.push(false);
+                : "Selecciona un contacto con correo para enviar.",
+            });
             continue;
           }
 
@@ -1452,8 +1459,7 @@ export const QuoteDetailPage = () => {
               message: deliveryMessage,
               file: pdfFile,
             });
-            results.push(response.ok);
-            if (!response.ok) notifier.error(response.message);
+            results.push(response);
             continue;
           }
 
@@ -1466,19 +1472,30 @@ export const QuoteDetailPage = () => {
             note: deliveryMessage,
           });
 
-          results.push(response.ok);
-          if (!response.ok) {
-            notifier.error(response.message);
-          }
+          results.push(response);
         }
 
-        return { anySuccess: results.some(Boolean) };
+        const successful = results.filter((result) => result.ok);
+        const failed = results.filter((result) => !result.ok);
+        const pending = successful.some((result) => result.status === "QUEUED" || result.status === "SENT");
+        return {
+          anySuccess: successful.length > 0,
+          level: failed.length > 0 ? "warning" as const : pending ? "info" as const : "success" as const,
+          message: successful.length === 0
+            ? failed[0]?.message || "No se pudo enviar la cotización."
+            : failed.length > 0
+              ? "Una parte del envío se procesó, pero otro canal presentó un error."
+              : pending
+                ? "Twilio recibió la cotización. La entrega del PDF está pendiente de confirmación."
+                : sendChannel === "WHATSAPP"
+                  ? "Cotización entregada a WhatsApp."
+                  : "Envío procesado correctamente.",
+        };
       },
       isSuccess: (result) => result.anySuccess,
-      successMessage: sendChannel === "WHATSAPP"
-        ? "Cotización enviada por WhatsApp."
-        : "Envío procesado correctamente.",
-      errorMessage: "No se pudo enviar la cotización.",
+      successMessage: (result) => result.message,
+      successLevel: (result) => result.level,
+      errorMessage: (result) => result.message,
       onSuccess: async () => {
         setShowSendModal(false);
         await refetch();

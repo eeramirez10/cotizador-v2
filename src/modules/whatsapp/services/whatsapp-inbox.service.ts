@@ -59,7 +59,10 @@ export interface WhatsAppInboxConversation {
     convertedAt: string | null;
   } | null;
   mode: WhatsAppConversationMode;
+  handledByUserId: string | null;
   handledByName: string | null;
+  humanControlExpiresAt: string | null;
+  humanLastActivityAt: string | null;
   lastMessage: string;
   lastMessageAt: string;
   lastInboundAt: string | null;

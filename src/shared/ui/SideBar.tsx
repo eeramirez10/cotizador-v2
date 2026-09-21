@@ -5,6 +5,7 @@ import { useAuthStore } from "../../store/auth/auth.store";
 import { useUiStore } from "../../store/ui/ui.store";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { useAppNotifications } from "../../modules/notifications/context/app-notifications.context";
+import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
 
 export const SideBar = () => {
   const open = useUiStore((state) => state.open);
@@ -56,6 +57,7 @@ export const SideBar = () => {
     ...(canAccessBranches ? [{ name: "Reportes programados", to: "/report-subscriptions", icon: <CalendarClock /> }] : []),
     ...(canAccessUsers ? [{ name: "Usuarios", to: "/users", icon: <Users /> }] : []),
     ...(canAccessCatalogs ? [{ name: "Catálogos", to: "/quote-catalogs", icon: <Settings2 /> }] : []),
+    ...(role === "admin" ? [{ name: "Configuración", to: "/settings", icon: <SettingsSuggestRoundedIcon fontSize="small" /> }] : []),
     { name: "Perfil", to: "/user", icon: <UserRound /> },
   ];
 

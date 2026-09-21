@@ -16,6 +16,7 @@ export interface User {
   phone: string;
   role: string;
   isActive: boolean;
+  whatsappInboxEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   branchId: string;

@@ -188,6 +188,25 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
         if (!active) return;
         setConversations((current) => mergeConversation(current, conversation));
 
+        if (event.reason === "MESSAGE_STATUS_CHANGED" && event.messagePatch?.status === "FAILED") {
+          const failureMessage = event.messagePatch.errorMessage
+            || "WhatsApp no pudo entregar el mensaje o descargar el archivo adjunto.";
+          notifier.error(failureMessage, {
+            id: `whatsapp-delivery-failed-${event.messagePatch.id}`,
+            durationMs: 12_000,
+            presentation: {
+              variant: "whatsapp-message",
+              title: "Falló el envío por WhatsApp",
+              occurredAt: event.occurredAt,
+              tone: "error",
+            },
+            action: {
+              label: "Abrir chat",
+              onClick: () => navigate(`/whatsapp?conversation=${encodeURIComponent(conversation.id)}`),
+            },
+          });
+        }
+
         const assignedLead = conversation.lead;
         const currentUserId = user?.id;
         if (

@@ -52,10 +52,11 @@ export interface WhatsAppRealtimeEvent {
   messagePatch?: {
     id: string;
     status: "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+    errorMessage?: string | null;
   };
   conversation?: Partial<Pick<
     WhatsAppInboxConversation,
-    "mode" | "handledByName" | "lastMessage" | "lastMessageAt" | "lastInboundAt" | "sellerName" | "customerName" | "contactName" | "lead"
+    "mode" | "handledByUserId" | "handledByName" | "humanControlExpiresAt" | "humanLastActivityAt" | "lastMessage" | "lastMessageAt" | "lastInboundAt" | "sellerName" | "customerName" | "contactName" | "lead"
   >>;
   deleted?: boolean;
   quoteDecision?: QuoteCustomerDecisionRealtimePayload;

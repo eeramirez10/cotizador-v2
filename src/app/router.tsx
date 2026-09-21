@@ -162,6 +162,15 @@ export const appRouter = createBrowserRouter([
         Component: QuoteCatalogsPage,
       },
       {
+        path: "settings",
+        loader: requireRolesLoader(["admin"]),
+        handle: { title: "Configuración del sistema" },
+        lazy: async () => {
+          const { SystemSettingsPage } = await import("../pages/settings/system-settings.page");
+          return { Component: SystemSettingsPage };
+        },
+      },
+      {
         path: "procurement",
         loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
         handle: { title: "Requisiciones de compra" },

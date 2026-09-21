@@ -6,6 +6,8 @@ export interface SystemCapabilities {
   requisitionInternalApprovalEnabled: boolean;
   sellerExcelImportEnabled: boolean;
   whatsAppInboxEnabled: boolean;
+  whatsAppAssistantEnabled: boolean;
+  whatsAppHumanTakeoverMinutes: number;
 }
 
 export class SystemCapabilitiesService {

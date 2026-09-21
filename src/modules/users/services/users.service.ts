@@ -14,6 +14,7 @@ export interface ManagedUser {
   role: UserRole;
   isActive: boolean;
   phone: string | null;
+  whatsappInboxEnabled: boolean;
   erpUserCode: string | null;
   branch: {
     id: string;
@@ -49,6 +50,7 @@ export interface CreateUserInput {
   branchCode: string;
   phone?: string | null;
   erpUserCode?: string | null;
+  whatsappInboxEnabled?: boolean;
 }
 
 export interface UpdateUserInput {
@@ -61,6 +63,7 @@ export interface UpdateUserInput {
   phone?: string | null;
   erpUserCode?: string | null;
   password?: string;
+  whatsappInboxEnabled?: boolean;
 }
 
 interface ApiPaginatedUsersResponse {
@@ -87,6 +90,7 @@ const mapApiUser = (raw: ManagedUser): ManagedUser => {
     ...raw,
     role: normalizeRole(raw.role),
     isActive: Boolean(raw.isActive),
+    whatsappInboxEnabled: raw.whatsappInboxEnabled !== false,
   };
 };
 
@@ -178,6 +182,7 @@ export class UsersService {
           branchCode: input.branchCode.trim().toUpperCase(),
           phone: input.phone?.trim() || null,
           erpUserCode: input.erpUserCode?.trim() || null,
+          whatsappInboxEnabled: input.whatsappInboxEnabled !== false,
         },
         {
           headers: requireAuthHeaders(),
@@ -203,6 +208,9 @@ export class UsersService {
           branchCode: input.branchCode.trim().toUpperCase(),
           phone: input.phone?.trim() || null,
           erpUserCode: input.erpUserCode?.trim() || null,
+          ...(typeof input.whatsappInboxEnabled === "boolean"
+            ? { whatsappInboxEnabled: input.whatsappInboxEnabled }
+            : {}),
           ...(input.password?.trim() ? { password: input.password.trim() } : {}),
         },
         {

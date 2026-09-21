@@ -6,6 +6,7 @@ import {
   type UpdateUserInput,
   UsersService,
 } from "../../modules/users/services/users.service";
+import { systemCapabilitiesKey } from "../system/use-system-capabilities";
 
 const usersKeys = {
   all: ["users"] as const,
@@ -52,6 +53,7 @@ export const useCreateUser = () => {
     mutationFn: (input: CreateUserInput) => UsersService.create(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: usersKeys.all, exact: false });
+      await queryClient.invalidateQueries({ queryKey: systemCapabilitiesKey });
     },
   });
 };
@@ -64,6 +66,7 @@ export const useUpdateUser = () => {
       UsersService.update(userId, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: usersKeys.all, exact: false });
+      await queryClient.invalidateQueries({ queryKey: systemCapabilitiesKey });
     },
   });
 };

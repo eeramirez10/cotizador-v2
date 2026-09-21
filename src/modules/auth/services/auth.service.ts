@@ -11,6 +11,7 @@ interface LoginResponse {
     email: string;
     role: string;
     isActive: boolean;
+    whatsappInboxEnabled: boolean;
     branchId: string;
     branchName: string;
     branchCode?: string;
@@ -29,6 +30,7 @@ interface MeResponse {
   email: string;
   role: string;
   isActive: boolean;
+  whatsappInboxEnabled: boolean;
   branchId: string;
   branchName: string;
   branchCode?: string;
@@ -70,6 +72,7 @@ const mapApiUser = (raw: LoginResponse["user"]): User => {
     phone: "",
     role: raw.role.toLowerCase(),
     isActive: raw.isActive,
+    whatsappInboxEnabled: raw.whatsappInboxEnabled !== false,
     createdAt: nowIso,
     updatedAt: nowIso,
     branchId,
@@ -123,6 +126,7 @@ export class AuthService {
         email: data.email,
         role: data.role,
         isActive: data.isActive,
+        whatsappInboxEnabled: data.whatsappInboxEnabled,
         branchId: data.branchId,
         branchName: data.branchName,
         branchCode: data.branchCode,

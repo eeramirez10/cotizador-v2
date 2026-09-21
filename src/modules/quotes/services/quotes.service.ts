@@ -1256,6 +1256,8 @@ export class QuotesService {
   ): Promise<{
     ok: boolean;
     message: string;
+    status?: "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+    errorMessage?: string | null;
     providerMessageId?: string;
     recipient?: string;
     sellerName?: string;
@@ -1268,6 +1270,8 @@ export class QuotesService {
       form.append("message", payload.message);
       const { data } = await coreHttpClient.post<{
         providerMessageId: string;
+        status: "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+        errorMessage: string | null;
         recipient: string;
         sellerName: string;
         deliveryMode: "FREE_FORM" | "TEMPLATE";
@@ -1275,8 +1279,14 @@ export class QuotesService {
         headers: requireAuthHeaders(),
       });
       return {
-        ok: true,
-        message: "Cotización enviada por WhatsApp.",
+        ok: data.status !== "FAILED",
+        message: data.status === "FAILED"
+          ? data.errorMessage || "WhatsApp rechazó el envío de la cotización."
+          : data.status === "QUEUED" || data.status === "SENT"
+            ? "Twilio recibió la cotización. La entrega del PDF está pendiente de confirmación."
+            : "Cotización entregada a WhatsApp.",
+        status: data.status,
+        errorMessage: data.errorMessage,
         providerMessageId: data.providerMessageId,
         recipient: data.recipient,
         sellerName: data.sellerName,
