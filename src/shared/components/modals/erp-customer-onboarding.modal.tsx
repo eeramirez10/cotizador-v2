@@ -15,6 +15,7 @@ import { notifier } from "../../notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../utils/contact-validation";
 import { PartyTextCompletionModal } from "./party-text-completion.modal";
 import { mergePartyIntoCustomer } from "../../../modules/ai/utils/party-data-form.mapper";
+import { SharedPhoneConfirmationCancelled } from "../../../modules/clients/services/shared-phone-confirmation";
 
 interface ErpCustomerOnboardingModalProps {
   onClose: () => void;
@@ -168,6 +169,10 @@ export const ErpCustomerOnboardingModal = ({
       else notifier.success("Cliente local creado y seleccionado.");
       onImported(created);
     } catch (error) {
+      if (error instanceof SharedPhoneConfirmationCancelled) {
+        if (toast !== undefined) notifier.dismiss(toast);
+        return;
+      }
       const message = error instanceof Error ? error.message : "No se pudo crear el cliente.";
       if (toast !== undefined) notifier.update(toast, "error", message);
       else notifier.error(message);

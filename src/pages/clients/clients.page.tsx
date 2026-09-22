@@ -29,6 +29,7 @@ import { Box, Paper, Tab, Tabs } from "@mui/material";
 import { AssignmentIndRounded } from "@mui/icons-material";
 import { CustomerOnboardingsPanel } from "./customer-onboardings.page";
 import { CustomerOnboardingsService } from "../../modules/clients/services/customer-onboardings.service";
+import { SharedPhoneConfirmationCancelled } from "../../modules/clients/services/shared-phone-confirmation";
 
 type SourceFilter = "ALL" | "LOCAL" | "ERP";
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -277,6 +278,10 @@ const ClientsDirectory = ({ onOpenFiscalOnboardings }: { onOpenFiscalOnboardings
         setSelectedClient(null);
         setForm(EMPTY_FORM);
       } catch (error) {
+        if (error instanceof SharedPhoneConfirmationCancelled) {
+          if (toast !== undefined) notifier.dismiss(toast);
+          return;
+        }
         const message = error instanceof Error ? error.message : "No se pudieron guardar los contactos.";
         if (toast !== undefined) notifier.update(toast, "error", message);
         else notifier.error(message);
@@ -320,6 +325,10 @@ const ClientsDirectory = ({ onOpenFiscalOnboardings }: { onOpenFiscalOnboardings
       setSelectedClient(null);
       setForm(EMPTY_FORM);
     } catch (error) {
+      if (error instanceof SharedPhoneConfirmationCancelled) {
+        if (toast !== undefined) notifier.dismiss(toast);
+        return;
+      }
       const message = error instanceof AxiosError
         ? String(error.response?.data?.error || "No se pudo guardar el cliente.")
         : error instanceof Error ? error.message : "No se pudo guardar el cliente.";

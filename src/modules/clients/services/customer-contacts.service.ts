@@ -1,6 +1,7 @@
 import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 import type { CustomerContact, CustomerContactInput } from "../types/customer-contact.types";
+import { withSharedPhoneConfirmation } from "./shared-phone-confirmation";
 
 interface ApiCustomerContact {
   id: string;
@@ -74,24 +75,24 @@ export class CustomerContactsService {
   }
 
   static async create(customerId: string, input: CustomerContactInput): Promise<CustomerContact> {
-    const { data } = await coreHttpClient.post<ApiCustomerContact>(
-      `/api/customers/${customerId}/contacts`,
-      toPayload(input),
-      {
-        headers: requireAuthHeaders(),
-      }
+    const { data } = await withSharedPhoneConfirmation((allowSharedPhone) =>
+      coreHttpClient.post<ApiCustomerContact>(
+        `/api/customers/${customerId}/contacts`,
+        { ...toPayload(input), allowSharedPhone },
+        { headers: requireAuthHeaders() },
+      )
     );
 
     return mapApiContact(data);
   }
 
   static async update(customerId: string, contactId: string, input: CustomerContactInput): Promise<CustomerContact> {
-    const { data } = await coreHttpClient.patch<ApiCustomerContact>(
-      `/api/customers/${customerId}/contacts/${contactId}`,
-      toPayload(input),
-      {
-        headers: requireAuthHeaders(),
-      }
+    const { data } = await withSharedPhoneConfirmation((allowSharedPhone) =>
+      coreHttpClient.patch<ApiCustomerContact>(
+        `/api/customers/${customerId}/contacts/${contactId}`,
+        { ...toPayload(input), allowSharedPhone },
+        { headers: requireAuthHeaders() },
+      )
     );
 
     return mapApiContact(data);

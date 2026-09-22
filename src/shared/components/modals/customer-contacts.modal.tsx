@@ -1,6 +1,7 @@
 import { LockKeyhole, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CustomerContactsService } from "../../../modules/clients/services/customer-contacts.service";
+import { SharedPhoneConfirmationCancelled } from "../../../modules/clients/services/shared-phone-confirmation";
 import type {
   CustomerContact,
   CustomerContactInput,
@@ -145,6 +146,7 @@ export const CustomerContactsModal = ({
       resetForm();
       emitChanged();
     } catch (error) {
+      if (error instanceof SharedPhoneConfirmationCancelled) return;
       const message =
         error instanceof Error ? error.message : "No se pudo guardar el contacto.";
       notifier.error(message);
