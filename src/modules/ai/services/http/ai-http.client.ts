@@ -1,6 +1,7 @@
 import axios from "axios";
 import { envs } from "../../../../config/envs";
 import { getAuthToken } from "../../../../store/auth/auth.store";
+import { handleCoreUnauthorizedError } from "../../../core/services/http/core-http.client";
 
 export const aiHttpClient = axios.create({
   baseURL: envs.AI_API_URL || undefined,
@@ -20,3 +21,11 @@ aiHttpClient.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+aiHttpClient.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (usesAuthenticatedCoreProxy) handleCoreUnauthorizedError(error);
+    return Promise.reject(error);
+  },
+);

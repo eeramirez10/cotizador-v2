@@ -2,6 +2,13 @@ import type { ErpProduct } from "../../products/types/erp-product.types";
 
 export type AiSimilarityConfidence = "high" | "medium" | "low";
 export type AiSimilarProductsEngine = "v2" | "semantic" | "legacy";
+export type ErpValidationStatus =
+  | "FOUND_WITH_COST"
+  | "FOUND_WITHOUT_COST"
+  | "FOUND_WITHOUT_WAREHOUSE"
+  | "NOT_FOUND"
+  | "VALIDATION_UNAVAILABLE"
+  | "UNKNOWN";
 
 export interface AiSimilarProductSuggestion {
   source: string;
@@ -30,4 +37,6 @@ export interface AiSimilarProductSuggestion {
   eanTotalStock: number | null;
   branchProduct: ErpProduct | null;
   authorized: boolean | null;
+  erpValidationStatus: ErpValidationStatus;
+  hasUsableCost: boolean | null;
 }

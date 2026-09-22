@@ -12,6 +12,16 @@ export const configureCoreUnauthorizedHandler = (handler: UnauthorizedHandler): 
   unauthorizedHandler = handler;
 };
 
+export const handleCoreUnauthorizedError = (error: unknown): void => {
+  if (
+    axios.isAxiosError(error) &&
+    error.response?.status === 401 &&
+    !isLoginRequest(error.config?.url)
+  ) {
+    unauthorizedHandler?.();
+  }
+};
+
 export const coreHttpClient = axios.create({
   baseURL: envs.CORE_API_URL || undefined,
 });
@@ -19,14 +29,7 @@ export const coreHttpClient = axios.create({
 coreHttpClient.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
-    if (
-      axios.isAxiosError(error) &&
-      error.response?.status === 401 &&
-      !isLoginRequest(error.config?.url)
-    ) {
-      unauthorizedHandler?.();
-    }
-
+    handleCoreUnauthorizedError(error);
     return Promise.reject(error);
   },
 );

@@ -19,6 +19,7 @@ interface ErpByEanRow {
   warehouseId?: string | number;
   warehouseName?: string;
   authorized?: boolean;
+  hasUsableCost?: boolean;
   [key: string]: unknown;
 }
 
@@ -79,15 +80,19 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
       const unit = normalizeMeasurementUnit(rawUnit) ?? (rawUnit || "PZ");
       const stock = Math.max(0, toNumber(row.stock));
       const saleCurrency = toCurrency(row.saleCurrency ?? row.currency);
-      const warehouseCode = toText(row.warehouseId) || options?.branchCode;
-      const warehouseName = toText(row.warehouseName) || options?.branchName;
+      const cost = resolveCost(row);
+      const hasExplicitWarehouse = Object.prototype.hasOwnProperty.call(row, "warehouseId");
+      const warehouseCode = hasExplicitWarehouse ? toText(row.warehouseId) : options?.branchCode;
+      const warehouseName = hasExplicitWarehouse
+        ? toText(row.warehouseName)
+        : options?.branchName;
 
       const mapped: ErpProduct = {
         code,
         ean,
         description,
         unit,
-        costUsd: resolveCost(row),
+        costUsd: cost,
         costCurrency: "MXN",
         saleCurrency,
         stock,
@@ -95,7 +100,8 @@ export const mapByEanPayload = (payload: unknown, options?: MapByEanOptions): Er
         branchName: warehouseName,
         warehouseCode,
         warehouseName,
-        authorized: typeof row.authorized === "boolean" ? row.authorized : Boolean(toText(row.warehouseId)),
+        authorized: typeof row.authorized === "boolean" ? row.authorized : Boolean(warehouseCode),
+        hasUsableCost: typeof row.hasUsableCost === "boolean" ? row.hasUsableCost : cost > 0,
       };
       return mapped;
     })

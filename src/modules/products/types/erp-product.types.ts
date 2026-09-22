@@ -14,4 +14,5 @@ export interface ErpProduct {
   warehouseCode?: string;
   warehouseName?: string;
   authorized?: boolean;
+  hasUsableCost?: boolean;
 }

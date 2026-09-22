@@ -26,6 +26,7 @@ interface ApiBranchProduct {
   averageCostMxn?: unknown;
   lastCostMxn?: unknown;
   authorized?: unknown;
+  hasUsableCost?: unknown;
 }
 
 interface ApiSimilarItem {
@@ -68,6 +69,8 @@ interface ApiSimilarItem {
   stockAvailableInAnyBranch?: unknown;
   codeTotalStock?: unknown;
   eanTotalStock?: unknown;
+  erpValidationStatus?: unknown;
+  hasUsableCost?: unknown;
 }
 
 interface ApiSimilarProductsResponse {
@@ -125,6 +128,20 @@ const asConfidence = (value: unknown): AiSimilarityConfidence => {
   return "low";
 };
 
+const asErpValidationStatus = (value: unknown): AiSimilarProductSuggestion["erpValidationStatus"] => {
+  const normalized = asText(value).toUpperCase();
+  if ([
+    "FOUND_WITH_COST",
+    "FOUND_WITHOUT_COST",
+    "FOUND_WITHOUT_WAREHOUSE",
+    "NOT_FOUND",
+    "VALIDATION_UNAVAILABLE",
+  ].includes(normalized)) {
+    return normalized as AiSimilarProductSuggestion["erpValidationStatus"];
+  }
+  return "UNKNOWN";
+};
+
 const mapBranchProduct = (input: unknown): ErpProduct | null => {
   if (!input || typeof input !== "object") return null;
   const row = input as ApiBranchProduct;
@@ -136,6 +153,7 @@ const mapBranchProduct = (input: unknown): ErpProduct | null => {
   if (!code || !ean || !description) return null;
 
   const rawUnit = asText(row.unit);
+  const cost = resolveCost(row);
   return {
     code,
     ean,
@@ -148,7 +166,8 @@ const mapBranchProduct = (input: unknown): ErpProduct | null => {
     stock: Math.max(0, asNumber(row.stock)),
     costCurrency: "MXN",
     saleCurrency: toCurrency(row.saleCurrency ?? row.currency),
-    costUsd: resolveCost(row),
+    costUsd: cost,
+    hasUsableCost: asBooleanOrNull(row.hasUsableCost) ?? cost > 0,
     authorized: asBooleanOrNull(row.authorized) ?? undefined,
   };
 };
@@ -195,6 +214,8 @@ const mapItem = (input: unknown, responseSource: string): AiSimilarProductSugges
     eanTotalStock: asNumberOrNull(row.eanTotalStock),
     branchProduct,
     authorized: asBooleanOrNull(row.authorized),
+    erpValidationStatus: asErpValidationStatus(row.erpValidationStatus),
+    hasUsableCost: asBooleanOrNull(row.hasUsableCost),
   };
 };
 

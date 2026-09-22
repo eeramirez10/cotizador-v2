@@ -39,6 +39,9 @@ const confidenceBadgeClass = (confidence: AiSimilarProductSuggestion["confidence
   return "bg-rose-100 text-rose-700";
 };
 
+const hasUsableErpCost = (product: ErpProduct): boolean =>
+  product.hasUsableCost ?? product.costUsd > 0;
+
 export const AddErpProductsModal = ({
   open,
   onClose,
@@ -212,6 +215,10 @@ export const AddErpProductsModal = ({
 
     try {
       if (suggestion.branchProduct) {
+        if (!hasUsableErpCost(suggestion.branchProduct)) {
+          notifier.warning("El producto existe en ERP, pero no tiene costo y no puede utilizarse hasta que Compras lo actualice.");
+          return;
+        }
         const resolvedCode = suggestion.resolvedBranchCode || suggestion.branchProduct.branchCode || "";
         if (fixedErpBranchCode && branchId && resolvedCode && resolvedCode !== branchId) {
           notifier.warning(`No puedes agregar productos de ${getBranchNameByCode(resolvedCode)} en esta cotización.`);
@@ -242,7 +249,12 @@ export const AddErpProductsModal = ({
           ?? null;
 
       if (!resolved) {
-        notifier.warning(`No existe en ERP ${getBranchNameByCode(branchId)} para EAN ${suggestion.ean}.`);
+        notifier.warning(`El EAN ${suggestion.ean} no existe actualmente en ERP.`);
+        return;
+      }
+
+      if (!hasUsableErpCost(resolved)) {
+        notifier.warning("El producto existe en ERP, pero no tiene costo y no puede utilizarse hasta que Compras lo actualice.");
         return;
       }
 
@@ -474,10 +486,14 @@ export const AddErpProductsModal = ({
                   mode === "erp" &&
                   sortedErpData.map((product) => {
                     const productBranchCode = product.branchCode ?? "";
-                    const productBranchName = product.branchName || getBranchNameByCode(productBranchCode);
+                    const productBranchName = productBranchCode
+                      ? product.branchName || getBranchNameByCode(productBranchCode)
+                      : "Sin almacén ERP";
                     const isSelectableInUserBranch = fixedErpBranchCode
                       ? !!branchId && productBranchCode === branchId
                       : product.authorized !== false;
+                    const hasUsableCost = hasUsableErpCost(product);
+                    const canSelectProduct = isSelectableInUserBranch && hasUsableCost && !selectionDisabled;
 
                     return (
                       <tr key={`${product.branchCode}-${product.code}-${product.ean}`} className="hover:bg-gray-50">
@@ -486,7 +502,13 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-xs text-gray-700">{product.description}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product.unit}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.saleCurrency}</td>
-                        <td className="px-4 py-2 text-xs text-gray-700">${product.costUsd.toFixed(2)}</td>
+                        <td className="px-4 py-2 text-xs text-gray-700">
+                          {hasUsableCost ? `$${product.costUsd.toFixed(2)}` : (
+                            <span className="rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700">
+                              Sin costo ERP
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product.stock}</td>
                         <td className="px-4 py-2 text-xs text-gray-700">
                           <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
@@ -500,19 +522,25 @@ export const AddErpProductsModal = ({
                         <td className="px-4 py-2 text-right">
                           <button
                             onClick={() => onSelect(product)}
-                            disabled={!isSelectableInUserBranch || selectionDisabled}
+                            disabled={!canSelectProduct}
                             className={`rounded-md px-3 py-1 text-xs font-semibold ${
-                              isSelectableInUserBranch && !selectionDisabled
+                              canSelectProduct
                                 ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
                                 : "cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-500"
                             }`}
                             title={
-                              isSelectableInUserBranch
-                                ? "Agregar producto"
+                              !hasUsableCost
+                                ? "Compras debe registrar un costo antes de utilizar este producto"
+                                : isSelectableInUserBranch
+                                  ? "Agregar producto"
                                 : `No puedes agregar productos de ${productBranchName}`
                             }
                           >
-                            {selectionDisabled ? "Vinculando..." : isSelectableInUserBranch ? actionLabel : "Sin acceso"}
+                            {selectionDisabled
+                              ? "Vinculando..."
+                              : !hasUsableCost
+                                ? "Sin costo ERP"
+                                : isSelectableInUserBranch ? actionLabel : "Sin acceso"}
                           </button>
                         </td>
                       </tr>
@@ -530,7 +558,12 @@ export const AddErpProductsModal = ({
                       : suggestion.authorized === true || product?.authorized === true;
                     const rowKey = `${suggestion.ean}-${suggestion.branchProductCode}-${suggestion.productId}`;
                     const isVerifying = verifyingSuggestionKey === rowKey;
-                    const canSelect = !isVerifying && (!product || isSameUserBranch);
+                    const hasUsableCost = product ? hasUsableErpCost(product) : false;
+                    const notFound = suggestion.erpValidationStatus === "NOT_FOUND";
+                    const noWarehouse = suggestion.erpValidationStatus === "FOUND_WITHOUT_WAREHOUSE";
+                    const canSelect = !isVerifying && !notFound && (product
+                      ? isSameUserBranch && hasUsableCost
+                      : true);
 
                     return (
                       <tr key={`${suggestion.ean}-${suggestion.branchProductCode}-${suggestion.productId}`} className="hover:bg-gray-50">
@@ -544,7 +577,13 @@ export const AddErpProductsModal = ({
                         </td>
                         <td className="px-4 py-2 text-xs text-gray-700">{product?.unit || "-"}</td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">{product?.saleCurrency || "-"}</td>
-                        <td className="px-4 py-2 text-xs text-gray-700">{product ? `$${product.costUsd.toFixed(2)}` : "-"}</td>
+                        <td className="px-4 py-2 text-xs text-gray-700">
+                          {product && hasUsableCost ? `$${product.costUsd.toFixed(2)}` : product ? (
+                            <span className="rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700">
+                              Sin costo ERP
+                            </span>
+                          ) : "-"}
+                        </td>
                         <td className="px-4 py-2 text-xs font-semibold text-gray-700">
                           <p>{product?.stock ?? "-"}</p>
                           {suggestion.codeTotalStock !== null && (
@@ -598,7 +637,19 @@ export const AddErpProductsModal = ({
                                 : "cursor-not-allowed border border-gray-300 bg-gray-100 text-gray-500"
                             }`}
                           >
-                            {isVerifying ? "Validando..." : product ? (isSameUserBranch ? actionLabel : "Sin acceso") : "Validar ERP"}
+                            {isVerifying
+                              ? "Validando..."
+                              : notFound
+                                ? "No existe en ERP"
+                                : product && !hasUsableCost
+                                  ? "Sin costo ERP"
+                                  : noWarehouse
+                                    ? "Sin almacén ERP"
+                                    : product
+                                      ? (isSameUserBranch ? actionLabel : "Sin acceso")
+                                      : suggestion.erpValidationStatus === "VALIDATION_UNAVAILABLE"
+                                        ? "Reintentar ERP"
+                                        : "Validar ERP"}
                           </button>
                         </td>
                       </tr>
