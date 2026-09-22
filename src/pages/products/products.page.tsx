@@ -1,6 +1,19 @@
 import { Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import {
+  LOCAL_PRODUCT_COST_SOURCE_OPTIONS,
+  LOCAL_PRODUCT_FAMILIES,
+  LOCAL_PRODUCT_SUBFAMILIES,
+  LOCAL_PRODUCT_TECHNICAL_FIELDS,
+  getLocalProductFamilyLabel,
+  getLocalProductSubfamilyLabel,
+} from "../../modules/products/constants/local-product-catalog";
+import { ProductCatalogSelect } from "../../modules/products/components/product-catalog-select";
+import {
+  getLocalProductBrandOptions,
+  getLocalProductTechnicalOptions,
+} from "../../modules/products/constants/local-product-technical-options";
 import { MEASUREMENT_UNIT_OPTIONS, MEASUREMENT_UNIT_VALUES, normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 import { type LocalProduct, type UpdateLocalProductInput } from "../../modules/products/services/local-products.service";
 import { useDeleteLocalProduct, useLocalProducts, useUpdateLocalProduct } from "../../queries/products/use-local-products";
@@ -13,10 +26,17 @@ interface ProductFormState {
   code: string;
   ean: string;
   description: string;
+  commercialDescription: string;
+  family: string;
+  subfamily: string;
+  brand: string;
+  technicalAttributes: Record<string, string>;
   unit: string;
   currency: "MXN" | "USD";
   averageCost: string;
   lastCost: string;
+  costStatus: "PENDING" | "ESTIMATED" | "CONFIRMED";
+  costSource: "" | "PRICE_LIST" | "MANUAL_ESTIMATE" | "ERP" | "SUPPLIER_QUOTE";
   stock: string;
   isActive: boolean;
 }
@@ -26,10 +46,17 @@ const EMPTY_FORM: ProductFormState = {
   code: "",
   ean: "",
   description: "",
+  commercialDescription: "",
+  family: "",
+  subfamily: "",
+  brand: "",
+  technicalAttributes: {},
   unit: "",
   currency: "USD",
   averageCost: "",
   lastCost: "",
+  costStatus: "PENDING",
+  costSource: "",
   stock: "",
   isActive: true,
 };
@@ -46,6 +73,11 @@ const mapProductToForm = (product: LocalProduct): ProductFormState => ({
   code: product.code || "",
   ean: product.ean || "",
   description: product.description,
+  commercialDescription: product.commercialDescription || "",
+  family: product.family || "",
+  subfamily: product.subfamily || "",
+  brand: product.brand || "",
+  technicalAttributes: product.technicalAttributes || {},
   unit: normalizeMeasurementUnit(product.unit) ?? product.unit,
   currency: product.currency,
   averageCost:
@@ -56,6 +88,8 @@ const mapProductToForm = (product: LocalProduct): ProductFormState => ({
     typeof product.lastCost === "number" && Number.isFinite(product.lastCost)
       ? String(product.lastCost)
       : "",
+  costStatus: product.costStatus || "PENDING",
+  costSource: product.costSource || "",
   stock:
     typeof product.stock === "number" && Number.isFinite(product.stock)
       ? String(product.stock)
@@ -72,12 +106,30 @@ const formatCurrency = (value: number | null, currency: "MXN" | "USD") => {
   }).format(value);
 };
 
+const COST_STATUS_LABELS = {
+  PENDING: "Costo pendiente",
+  ESTIMATED: "Costo estimado",
+  CONFIRMED: "Costo confirmado",
+} as const;
+
+const COST_SOURCE_LABELS: Record<string, string> = {
+  ERP: "ERP",
+  SUPPLIER_QUOTE: "Cotización de proveedor",
+  PRICE_LIST: "Lista de precios",
+  MANUAL_ESTIMATE: "Estimación manual",
+};
+
 export const ProductsPage = () => {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [form, setForm] = useState<ProductFormState>(EMPTY_FORM);
   const [openEditModal, setOpenEditModal] = useState(false);
+
+  const subfamilyOptions = LOCAL_PRODUCT_SUBFAMILIES[form.family] || [];
+  const hasLegacySubfamily = Boolean(
+    form.subfamily && !subfamilyOptions.some(([value]) => value === form.subfamily),
+  );
 
   const debouncedSearch = useDebouncedValue(search, 350);
 
@@ -137,6 +189,11 @@ export const ProductsPage = () => {
       return "Último costo inválido.";
     }
 
+    const hasEstimatedCost = Math.max(averageCost ?? 0, lastCost ?? 0) > 0;
+    if (form.costStatus !== "CONFIRMED" && hasEstimatedCost && !form.costSource) {
+      return "Selecciona el origen del costo estimado.";
+    }
+
     const stock = toNumberOrNull(form.stock);
     if (typeof stock === "number" && (!Number.isFinite(stock) || stock < 0)) {
       return "Stock inválido.";
@@ -153,14 +210,30 @@ export const ProductsPage = () => {
       return;
     }
 
+    const averageCost = toNumberOrNull(form.averageCost);
+    const lastCost = toNumberOrNull(form.lastCost);
+    const hasEstimatedCost = Math.max(averageCost ?? 0, lastCost ?? 0) > 0;
     const input: UpdateLocalProductInput = {
       code: form.code.trim() || null,
       ean: form.ean.trim() || null,
       description: form.description.trim(),
+      commercialDescription: form.commercialDescription.trim() || null,
+      family: form.family.trim() || null,
+      subfamily: form.subfamily.trim() || null,
+      brand: form.brand.trim() || null,
+      technicalAttributes: form.technicalAttributes,
       unit: form.unit.trim().toUpperCase(),
       currency: form.currency,
-      averageCost: toNumberOrNull(form.averageCost),
-      lastCost: toNumberOrNull(form.lastCost),
+      ...(form.costStatus === "CONFIRMED"
+        ? {}
+        : {
+            averageCost,
+            lastCost,
+            costStatus: hasEstimatedCost ? "ESTIMATED" : "PENDING",
+            costSource: hasEstimatedCost
+              ? (form.costSource as "PRICE_LIST" | "MANUAL_ESTIMATE")
+              : null,
+          }),
       stock: toNumberOrNull(form.stock),
       isActive: form.isActive,
     };
@@ -249,10 +322,12 @@ export const ProductsPage = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Familia</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">UM</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Moneda</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Costo prom.</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Últ. costo</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Estado costo</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Stock</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Sucursal</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Estado</th>
@@ -262,7 +337,7 @@ export const ProductsPage = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {isFetching && (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={13} className="px-3 py-10 text-center text-sm text-gray-500">
                     Cargando productos...
                   </td>
                 </tr>
@@ -270,7 +345,7 @@ export const ProductsPage = () => {
 
               {!isFetching && products.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={13} className="px-3 py-10 text-center text-sm text-gray-500">
                     No hay productos locales para mostrar.
                   </td>
                 </tr>
@@ -281,6 +356,10 @@ export const ProductsPage = () => {
                   <td className="px-3 py-2 text-xs text-gray-700">{product.code || "-"}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{product.ean || "-"}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{product.description}</td>
+                  <td className="px-3 py-2 text-xs text-gray-700">
+                    <p>{getLocalProductFamilyLabel(product.family)}</p>
+                    <p className="mt-0.5 text-[11px] text-gray-500">{getLocalProductSubfamilyLabel(product.family, product.subfamily)}</p>
+                  </td>
                   <td className="px-3 py-2 text-xs text-gray-700">{product.unit}</td>
                   <td className="px-3 py-2 text-xs font-semibold text-gray-700">{product.currency}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">
@@ -288,6 +367,11 @@ export const ProductsPage = () => {
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-700">
                     {formatCurrency(product.lastCost, product.currency)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${product.costStatus === "CONFIRMED" ? "bg-emerald-100 text-emerald-700" : product.costStatus === "ESTIMATED" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-800"}`}>
+                      {COST_STATUS_LABELS[product.costStatus]}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-700">
                     {typeof product.stock === "number" ? product.stock : "-"}
@@ -363,7 +447,7 @@ export const ProductsPage = () => {
             aria-label="Cerrar modal de edición"
           />
 
-          <div className="relative w-full max-w-2xl rounded-md border border-gray-200 bg-white shadow-xl">
+          <div className="relative w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">Editar producto local</h2>
@@ -387,79 +471,92 @@ export const ProductsPage = () => {
             </div>
 
             <form className="px-4 py-3" onSubmit={handleSubmit}>
-              <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
-                <Input
-                  label="Código interno"
-                  value={form.code}
-                  onChange={(value) => setForm((prev) => ({ ...prev, code: value }))}
-                />
-                <Input
-                  label="EAN / Clave"
-                  value={form.ean}
-                  onChange={(value) => setForm((prev) => ({ ...prev, ean: value }))}
-                />
-                <Input
-                  label="Descripción"
-                  value={form.description}
-                  onChange={(value) => setForm((prev) => ({ ...prev, description: value }))}
-                />
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Unidad</label>
-                  <select
-                    value={form.unit}
-                    onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))}
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
-                  >
-                    <option value="">Selecciona una unidad</option>
-                    {unitOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+                <section className="rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800">Identidad del producto</h3>
+                  <p className="mt-1 text-xs text-gray-500">La descripción y unidad son suficientes para el alta rápida. Los demás campos pueden completarse después.</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <Input label="Descripción normalizada *" value={form.description} onChange={(value) => setForm((prev) => ({ ...prev, description: value.toUpperCase() }))} />
+                    <Input label="Descripción comercial" value={form.commercialDescription} onChange={(value) => setForm((prev) => ({ ...prev, commercialDescription: value.toUpperCase() }))} />
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Familia</label>
+                      <select value={form.family} onChange={(event) => setForm((prev) => ({ ...prev, family: event.target.value, subfamily: "", brand: "", technicalAttributes: {} }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+                        <option value="">Por definir</option>
+                        {LOCAL_PRODUCT_FAMILIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Subfamilia</label>
+                      <select value={form.subfamily} disabled={!form.family || subfamilyOptions.length === 0} onChange={(event) => setForm((prev) => ({ ...prev, subfamily: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700 disabled:bg-gray-100 disabled:text-gray-400">
+                        <option value="">Por definir</option>
+                        {hasLegacySubfamily && <option value={form.subfamily}>{form.subfamily} (valor actual)</option>}
+                        {subfamilyOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </div>
+                    <ProductCatalogSelect
+                      key={`brand-${form.family}`}
+                      label="Marca"
+                      value={form.brand}
+                      options={getLocalProductBrandOptions(form.family)}
+                      onChange={(brand) => setForm((prev) => ({ ...prev, brand }))}
+                      disabled={!form.family}
+                    />
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Unidad *</label>
+                      <select value={form.unit} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+                        <option value="">Selecciona una unidad</option>
+                        {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </section>
 
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Moneda</label>
-                  <select
-                    value={form.currency}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, currency: event.target.value as "MXN" | "USD" }))
-                    }
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
-                  >
-                    <option value="USD">USD</option>
-                    <option value="MXN">MXN</option>
-                  </select>
-                </div>
+                {form.family && (
+                  <section className="rounded-lg border border-gray-200 bg-slate-50/60 p-4">
+                    <h3 className="text-sm font-semibold text-gray-800">Datos técnicos</h3>
+                    <p className="mt-1 text-xs text-gray-500">Captura únicamente los atributos que apliquen. Podrán completarse durante la revisión de compras.</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {(LOCAL_PRODUCT_TECHNICAL_FIELDS[form.family] || []).map(([key, label]) => (
+                        <ProductCatalogSelect
+                          key={`${form.family}-${key}`}
+                          label={label}
+                          value={form.technicalAttributes[key] || ""}
+                          options={getLocalProductTechnicalOptions(form.family, key)}
+                          onChange={(value) => setForm((prev) => ({ ...prev, technicalAttributes: { ...prev.technicalAttributes, [key]: value } }))}
+                        />
+                      ))}
+                    </div>
+                    {(LOCAL_PRODUCT_TECHNICAL_FIELDS[form.family] || []).length === 0 && <p className="mt-3 text-xs text-gray-500">Esta familia no tiene atributos predefinidos.</p>}
+                  </section>
+                )}
 
-                <Input
-                  label="Costo promedio"
-                  type="number"
-                  value={form.averageCost}
-                  onChange={(value) => setForm((prev) => ({ ...prev, averageCost: value }))}
-                />
-                <Input
-                  label="Último costo"
-                  type="number"
-                  value={form.lastCost}
-                  onChange={(value) => setForm((prev) => ({ ...prev, lastCost: value }))}
-                />
-                <Input
-                  label="Stock"
-                  type="number"
-                  value={form.stock}
-                  onChange={(value) => setForm((prev) => ({ ...prev, stock: value }))}
-                />
+                <section className="rounded-lg border border-gray-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div><h3 className="text-sm font-semibold text-gray-800">Costo e inventario</h3><p className="mt-1 text-xs text-gray-500">El costo es opcional hasta que compras confirme una propuesta.</p></div>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${form.costStatus === "CONFIRMED" ? "bg-emerald-100 text-emerald-700" : form.costStatus === "ESTIMATED" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-800"}`}>{COST_STATUS_LABELS[form.costStatus]}</span>
+                  </div>
+                  {form.costStatus === "CONFIRMED" ? (
+                    <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Costo confirmado por {COST_SOURCE_LABELS[form.costSource] || "compras"}. Para modificarlo utiliza el flujo de propuestas de proveedor.</div>
+                  ) : (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                      <Input label="Costo promedio" type="number" value={form.averageCost} onChange={(value) => setForm((prev) => ({ ...prev, averageCost: value, costStatus: value || prev.lastCost ? "ESTIMATED" : "PENDING", costSource: value || prev.lastCost ? (prev.costSource === "PRICE_LIST" ? "PRICE_LIST" : "MANUAL_ESTIMATE") : "" }))} />
+                      <Input label="Último costo" type="number" value={form.lastCost} onChange={(value) => setForm((prev) => ({ ...prev, lastCost: value, costStatus: value || prev.averageCost ? "ESTIMATED" : "PENDING", costSource: value || prev.averageCost ? (prev.costSource === "PRICE_LIST" ? "PRICE_LIST" : "MANUAL_ESTIMATE") : "" }))} />
+                      <div><label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Origen del costo</label><select value={form.costSource} onChange={(event) => setForm((prev) => ({ ...prev, costSource: event.target.value as ProductFormState["costSource"] }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"><option value="">Pendiente</option>{LOCAL_PRODUCT_COST_SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+                      <div><label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Moneda del costo</label><select value={form.currency} onChange={(event) => setForm((prev) => ({ ...prev, currency: event.target.value as "MXN" | "USD" }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"><option value="MXN">MXN</option><option value="USD">USD</option></select></div>
+                    </div>
+                  )}
+                  <div className="mt-3 max-w-xs"><Input label="Stock local" type="number" value={form.stock} onChange={(value) => setForm((prev) => ({ ...prev, stock: value }))} /></div>
+                </section>
 
-                <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={form.isActive}
-                    onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))}
-                  />
-                  Producto activo
-                </label>
+                <section className="rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800">Preparación para Proscai</h3>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <Input label="Código ERP" value={form.code} onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))} />
+                    <Input label="EAN / Clave" value={form.ean} onChange={(value) => setForm((prev) => ({ ...prev, ean: value.toUpperCase() }))} />
+                  </div>
+                </section>
+
+                <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))} />Producto activo</label>
               </div>
 
               <div className="mt-4 flex justify-end gap-2 border-t border-gray-200 pt-3">

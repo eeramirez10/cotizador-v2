@@ -34,10 +34,17 @@ export interface ProcurementOffer {
 export interface ProcurementProduct {
   id: string;
   description: string;
+  commercialDescription: string | null;
+  family: string | null;
+  subfamily: string | null;
+  brand: string | null;
+  technicalAttributes: Record<string, string>;
   unit: string;
   currency: "MXN" | "USD";
   averageCost: number | null;
   lastCost: number | null;
+  costStatus: "PENDING" | "ESTIMATED" | "CONFIRMED";
+  costSource: "ERP" | "SUPPLIER_QUOTE" | "PRICE_LIST" | "MANUAL_ESTIMATE" | null;
   branch: { id: string; code: string; name: string } | null;
   createdBy: { id: string; fullName: string } | null;
   procurementStatus: ProductProcurementStatus;

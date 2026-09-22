@@ -573,6 +573,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               currentItem.erpDescription.trim() ||
               `PRODUCTO TEMPORAL ${currentItem.id}`,
             unit: getLocalProductUnit(currentItem.customerUnit),
+            family: currentItem.technicalFamily || null,
+            technicalAttributes: currentItem.technicalAttributes || {},
           },
         ]
       );

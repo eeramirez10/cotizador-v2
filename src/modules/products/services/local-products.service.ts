@@ -5,6 +5,11 @@ import type { ErpProductCurrency } from "../types/erp-product.types";
 export interface LocalProductBatchItemInput {
   itemId: string;
   description: string;
+  commercialDescription?: string | null;
+  family?: string | null;
+  subfamily?: string | null;
+  brand?: string | null;
+  technicalAttributes?: Record<string, string>;
   unit?: string;
   currency?: ErpProductCurrency;
   averageCost?: number | null;
@@ -38,10 +43,17 @@ export interface LocalProduct {
   code: string | null;
   ean: string | null;
   description: string;
+  commercialDescription: string | null;
+  family: string | null;
+  subfamily: string | null;
+  brand: string | null;
+  technicalAttributes: Record<string, string>;
   unit: string;
   currency: ErpProductCurrency;
   averageCost: number | null;
   lastCost: number | null;
+  costStatus: "PENDING" | "ESTIMATED" | "CONFIRMED";
+  costSource: "ERP" | "SUPPLIER_QUOTE" | "PRICE_LIST" | "MANUAL_ESTIMATE" | null;
   stock: number | null;
   branchId: string | null;
   isActive: boolean;
@@ -77,10 +89,17 @@ export interface UpdateLocalProductInput {
   code?: string | null;
   ean?: string | null;
   description?: string;
+  commercialDescription?: string | null;
+  family?: string | null;
+  subfamily?: string | null;
+  brand?: string | null;
+  technicalAttributes?: Record<string, string>;
   unit?: string;
   currency?: ErpProductCurrency;
   averageCost?: number | null;
   lastCost?: number | null;
+  costStatus?: "PENDING" | "ESTIMATED";
+  costSource?: "PRICE_LIST" | "MANUAL_ESTIMATE" | null;
   stock?: number | null;
   isActive?: boolean;
 }
