@@ -25,6 +25,10 @@ import { notifier } from "../../shared/notifications/notifier";
 import { isValidEmail, isValidPhoneNumber } from "../../shared/utils/contact-validation";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useClientsStore } from "../../store/clients/clients.store";
+import { Box, Paper, Tab, Tabs } from "@mui/material";
+import { AssignmentIndRounded } from "@mui/icons-material";
+import { CustomerOnboardingsPanel } from "./customer-onboardings.page";
+import { CustomerOnboardingsService } from "../../modules/clients/services/customer-onboardings.service";
 
 type SourceFilter = "ALL" | "LOCAL" | "ERP";
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -119,7 +123,7 @@ const primaryContact = (client: Client) =>
   || client.contacts?.find((contact) => contact.email || contact.mobile)
   || client.contacts?.[0];
 
-export const ClientsPage = () => {
+const ClientsDirectory = ({ onOpenFiscalOnboardings }: { onOpenFiscalOnboardings: () => void }) => {
   const actor = useAuthStore((state) => state.user);
   const role = (actor?.role || "").trim().toLowerCase();
   const canManageStatus = role === "admin" || role === "manager";
@@ -146,6 +150,7 @@ export const ClientsPage = () => {
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<Client | null>(null);
   const [resettingWhatsApp, setResettingWhatsApp] = useState(false);
+  const [creatingOnboardingId, setCreatingOnboardingId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadClients({ active: canManageStatus ? "all" : "active" }).catch((error) => {
@@ -377,6 +382,23 @@ export const ClientsPage = () => {
     }
   };
 
+  const startFiscalOnboarding = async (client: Client) => {
+    const toast = notifier.loading("Preparando expediente fiscal...");
+    try {
+      setCreatingOnboardingId(client.id);
+      await CustomerOnboardingsService.create(client.id);
+      if (toast !== undefined) notifier.update(toast, "success", "Expediente fiscal listo para completar.");
+      else notifier.success("Expediente fiscal listo para completar.");
+      onOpenFiscalOnboardings();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo preparar el expediente fiscal.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+    } finally {
+      setCreatingOnboardingId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -456,6 +478,11 @@ export const ClientsPage = () => {
                     <td className="px-4 py-3 text-xs text-slate-600">{client.createdByName || "Sistema"}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1.5">
+                        {client.isActive !== false && client.source !== "ERP" && (
+                          <button type="button" onClick={() => void startFiscalOnboarding(client)} disabled={creatingOnboardingId === client.id} className="rounded-md border border-amber-300 p-1.5 text-amber-700 hover:bg-amber-50 disabled:opacity-50" title="Preparar alta fiscal">
+                            {creatingOnboardingId === client.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <AssignmentIndRounded sx={{ fontSize: 16 }} />}
+                          </button>
+                        )}
                         {client.isActive !== false && (
                           <button type="button" onClick={() => openClient(client)} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100" title={client.source === "ERP" ? "Editar contactos del cliente ERP" : "Editar cliente"}>
                             <Pencil className="h-4 w-4" />
@@ -510,6 +537,21 @@ export const ClientsPage = () => {
       {deleteTarget && <DeleteClientModal client={deleteTarget} busy={deleting} onClose={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />}
       {resetTarget && <ResetWhatsAppTestModal client={resetTarget} busy={resettingWhatsApp} onClose={() => setResetTarget(null)} onConfirm={() => void confirmWhatsAppTestReset()} />}
     </div>
+  );
+};
+
+export const ClientsPage = () => {
+  const [section, setSection] = useState<"directory" | "onboarding">("directory");
+  return (
+    <Box sx={{ bgcolor: "#f6f7f9", minHeight: "100%", p: { xs: 1.5, md: 2.5 } }}>
+      <Paper variant="outlined" sx={{ borderRadius: 2.5, px: 1, mb: 1.5 }}>
+        <Tabs value={section} onChange={(_event, value) => setSection(value)} aria-label="Secciones de clientes">
+          <Tab value="directory" label="Clientes" />
+          <Tab value="onboarding" label="Altas pendientes" />
+        </Tabs>
+      </Paper>
+      {section === "directory" ? <ClientsDirectory onOpenFiscalOnboardings={() => setSection("onboarding")} /> : <CustomerOnboardingsPanel />}
+    </Box>
   );
 };
 

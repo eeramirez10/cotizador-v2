@@ -32,6 +32,7 @@ import type { ChatMessage, ConversationListItemAvatarProps } from "@mui/x-chat-h
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate, useSearchParams } from "react-router";
 import { CustomersService } from "../../modules/clients/services/customers.service";
+import { CustomerOnboardingsService, type CustomerOnboarding } from "../../modules/clients/services/customer-onboardings.service";
 import type { Client, ClientInput } from "../../modules/clients/types/client.types";
 import { emptyCustomerContact } from "../../modules/clients/utils/customer-contact-form";
 import { clientWithSelectedContact } from "../../modules/clients/utils/customer-contact-selection";
@@ -55,6 +56,7 @@ import { FilePreviewModal } from "../../shared/components/file-preview/file-prev
 import type { ManagedUser } from "../../modules/users/services/users.service";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { ConfirmWhatsAppQuoteExtractionModal } from "./confirm-whatsapp-quote-extraction.modal";
+import { ConfirmWhatsAppTaxDocumentExtractionModal } from "./confirm-whatsapp-tax-document-extraction.modal";
 
 const chatTheme = createTheme({
   palette: {
@@ -435,6 +437,9 @@ export const WhatsAppInboxPage = () => {
   const [relatedQuotesConversationId, setRelatedQuotesConversationId] = useState<string>();
   const [previewAttachment, setPreviewAttachment] = useState<WhatsAppInboundAttachment | null>(null);
   const [quoteExtractionAttachment, setQuoteExtractionAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [taxDocumentAttachment, setTaxDocumentAttachment] = useState<WhatsAppInboundAttachment | null>(null);
+  const [taxOnboarding, setTaxOnboarding] = useState<CustomerOnboarding | null>(null);
+  const [extractingTaxDocumentId, setExtractingTaxDocumentId] = useState<string | null>(null);
   const [pendingLinkAttachment, setPendingLinkAttachment] = useState<WhatsAppInboundAttachment | null>(null);
   const [linkBeforeExtractionOpen, setLinkBeforeExtractionOpen] = useState(false);
   const [generatingQuoteAttachmentId, setGeneratingQuoteAttachmentId] = useState<string | null>(null);
@@ -568,6 +573,19 @@ export const WhatsAppInboxPage = () => {
   }, [activeId, adapter, markConversationRead]);
 
   useEffect(() => {
+    if (!activeId) {
+      setTaxOnboarding(null);
+      return;
+    }
+    let cancelled = false;
+    setTaxOnboarding((current) => current?.conversationId === activeId ? current : null);
+    void CustomerOnboardingsService.forConversation(activeId)
+      .then((onboarding) => { if (!cancelled) setTaxOnboarding(onboarding); })
+      .catch(() => { if (!cancelled) setTaxOnboarding(null); });
+    return () => { cancelled = true; };
+  }, [activeId, messages.length]);
+
+  useEffect(() => {
     if (!activeId) return;
     const updated = conversationData.find((item) => item.id === activeId);
     if (updated) setSelected(updated);
@@ -599,6 +617,7 @@ export const WhatsAppInboxPage = () => {
     setRelatedQuotesConversationId(undefined);
     setPreviewAttachment(null);
     setQuoteExtractionAttachment(null);
+    setTaxDocumentAttachment(null);
     setPendingLinkAttachment(null);
     setLinkBeforeExtractionOpen(false);
   }, [activeId]);
@@ -707,6 +726,26 @@ export const WhatsAppInboxPage = () => {
     setQuoteExtractionAttachment(null);
     setPendingLinkAttachment(attachment);
     setLinkBeforeExtractionOpen(true);
+  };
+
+  const extractTaxDocument = async () => {
+    if (!selected || !taxDocumentAttachment || !taxOnboarding || extractingTaxDocumentId) return;
+    const attachment = taxDocumentAttachment;
+    setExtractingTaxDocumentId(attachment.id);
+    const toastId = notifier.loading(`Extrayendo datos fiscales de ${attachment.originalName}...`);
+    try {
+      const updated = await CustomerOnboardingsService.processConversationTaxDocument(selected.id, attachment.id);
+      setTaxOnboarding(updated);
+      setTaxDocumentAttachment(null);
+      if (toastId !== undefined) notifier.update(toastId, "success", "Constancia procesada. Revisa el expediente fiscal en Clientes.");
+      else notifier.success("Constancia procesada. Revisa el expediente fiscal en Clientes.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo extraer la constancia fiscal.";
+      if (toastId !== undefined) notifier.update(toastId, "error", message);
+      else notifier.error(message);
+    } finally {
+      setExtractingTaxDocumentId(null);
+    }
   };
 
   const windowActive = isWindowActive(selected?.lastInboundAt || null, now);
@@ -1129,6 +1168,9 @@ export const WhatsAppInboxPage = () => {
                   ? WhatsAppQuoteExtractionService.supports(attachment)
                   : false;
                 const sellerCanGenerate = user?.role?.toLowerCase() === "seller";
+                const isPdf = Boolean(attachment && (attachment.mimeType.toLowerCase().split(";", 1)[0].trim() === "application/pdf" || attachment.originalName.toLowerCase().endsWith(".pdf")));
+                const canExtractTaxDocument = Boolean(isPdf && taxOnboarding && taxOnboarding.conversationId === selected?.id
+                  && ["COLLECTING", "PENDING_REVIEW"].includes(taxOnboarding.status));
                 return attachment
                   ? (
                       <WhatsAppFileMessagePart
@@ -1137,6 +1179,9 @@ export const WhatsAppInboxPage = () => {
                         onGenerateQuote={sellerCanGenerate && supportedForExtraction
                           ? () => setQuoteExtractionAttachment(attachment)
                           : undefined}
+                        onExtractTaxDocument={canExtractTaxDocument ? () => setTaxDocumentAttachment(attachment) : undefined}
+                        taxDocumentExtracted={taxOnboarding?.taxDocumentAttachmentId === attachment.id}
+                        extractingTaxDocument={extractingTaxDocumentId === attachment.id}
                         generateQuoteDisabledReason={!supportedForExtraction
                           ? "Disponible para PDF, XLS o XLSX"
                           : !sellerCanGenerate
@@ -1407,6 +1452,13 @@ export const WhatsAppInboxPage = () => {
           onConfirm={() => {
             if (quoteExtractionAttachment) requestQuoteExtraction(quoteExtractionAttachment);
           }}
+        />
+        <ConfirmWhatsAppTaxDocumentExtractionModal
+          attachment={taxDocumentAttachment}
+          alreadyProcessed={Boolean(taxDocumentAttachment && taxOnboarding?.taxDocumentAttachmentId === taxDocumentAttachment.id)}
+          processing={Boolean(extractingTaxDocumentId)}
+          onClose={() => setTaxDocumentAttachment(null)}
+          onConfirm={() => void extractTaxDocument()}
         />
         <Dialog
           open={linkBeforeExtractionOpen && Boolean(pendingLinkAttachment)}
