@@ -43,6 +43,7 @@ import {
   useRegisterQuoteDeliveryAttempt,
   useSendQuoteWhatsApp,
   useRegisterErpQuote,
+  useRegisterErpOrder,
   useUpdateQuoteStatus,
   useUpdateQuoteProcurementReference,
 } from "../../queries/quotes/use-quote-detail";
@@ -724,6 +725,7 @@ export const QuoteDetailPage = () => {
   const capabilities = useSystemCapabilities();
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
+  const orderFileWithoutStockEnabled = capabilities.data?.orderFileWithoutStockEnabled ?? false;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -789,6 +791,7 @@ export const QuoteDetailPage = () => {
   const registerDeliveryAttempt = useRegisterQuoteDeliveryAttempt();
   const sendQuoteWhatsApp = useSendQuoteWhatsApp();
   const registerErpQuote = useRegisterErpQuote();
+  const registerErpOrder = useRegisterErpOrder();
   const updateProcurementReference = useUpdateQuoteProcurementReference();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
   const rejectionCatalog = useQuoteCatalogs("REJECTION_REASON");
@@ -867,6 +870,7 @@ export const QuoteDetailPage = () => {
     registerDeliveryAttempt.isPending ||
     sendQuoteWhatsApp.isPending ||
     registerErpQuote.isPending ||
+    registerErpOrder.isPending ||
     updateProcurementReference.isPending;
   const disabledActionClass = "disabled:cursor-not-allowed disabled:opacity-60";
   const availableWhatsAppRecipients = useMemo(
@@ -1051,10 +1055,19 @@ export const QuoteDetailPage = () => {
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
   const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
+  const canCancelQuote = !isArchived && !hasRevisionInProgress
+    && ["BORRADOR", "PENDIENTE", "PENDIENTE_APROBACION", "CAMBIOS_SOLICITADOS", "COTIZADA", "APROBADA"].includes(quote.status);
+  const cancellationBlockedByErpLink = Boolean(quote.erpQuoteNumber || quote.erpOrderNumber);
+  const linkedErpNumber = quote.captureMethod === "EXCEL_IMPORT" ? quote.erpQuoteNumber : quote.erpOrderNumber;
+  const linkedErpRegisteredAt = quote.captureMethod === "EXCEL_IMPORT" ? quote.erpQuoteRegisteredAt : quote.erpOrderRegisteredAt;
+  const linkedErpRegisteredByUser = quote.captureMethod === "EXCEL_IMPORT" ? quote.erpQuoteRegisteredByUser : quote.erpOrderRegisteredByUser;
+  const erpOrderPrefix = ({ "01": "P", "02": "PB", "03": "PE", "04": "PD", "05": "PF", "06": "PG", "07": "PH" } as Record<string, string>)[quote.branch.code] || "P";
   const quoteRequiresPurchasing = quote.items.some((item) => {
     const hasErpCode = Boolean(item.erpCode?.trim());
     return !hasErpCode || Math.max(0, item.stock ?? 0) < item.qty;
   });
+  const itemsWithoutErpCode = quote.items.flatMap((item, index) => item.erpCode?.trim() ? [] : [index + 1]);
+  const allItemsHaveErpCode = quote.items.length > 0 && itemsWithoutErpCode.length === 0;
   const procurementItems = quote.items.filter(savedQuoteItemRequiresPurchase).map(toManualQuoteItem);
   const procurementItem = procurementItemId
     ? procurementItems.find((item) => item.id === procurementItemId) || null
@@ -1067,9 +1080,23 @@ export const QuoteDetailPage = () => {
       quote.status === "COTIZADA"
       || (quote.status === "APROBADA" && purchaseRequisition?.status === "DRAFT")
     );
-  const purchaseReady = !quoteRequiresPurchasing || Boolean(
-    purchaseRequisition && ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status)
+  const requisitionReady = Boolean(purchaseRequisition
+    && (purchaseRequisition.status === "READY_FOR_ORDER"
+      || purchaseRequisition.status === "COMPLETED"
+      || (!capabilities.data?.requisitionInternalApprovalEnabled && purchaseRequisition.status === "COST_REVIEW"))
+    && purchaseRequisition.items.every((item) => item.status === "READY"));
+  const orderExportReady = allItemsHaveErpCode && (
+    orderFileWithoutStockEnabled
+    || !quoteRequiresPurchasing
+    || requisitionReady
   );
+  const orderBlockReason = itemsWithoutErpCode.length
+    ? `Las partidas ${itemsWithoutErpCode.map((number) => `#${number}`).join(", ")} no tienen código ERP. Vincúlalas a Proscai antes de generar el TXT.`
+    : capabilities.isLoading
+      ? "Consultando la configuración de pedidos..."
+      : capabilities.isError
+        ? "No se pudo consultar la configuración de pedidos. Actualiza la página e inténtalo de nuevo."
+        : "La opción para generar sin stock está desactivada; Compras debe dejar la requisición lista.";
   const canGenerateOrder =
     quote.captureMethod !== "EXCEL_IMPORT"
     && !isArchived
@@ -1078,15 +1105,18 @@ export const QuoteDetailPage = () => {
     && !hasRevisionInProgress;
   const canDownloadOrder =
     quote.captureMethod !== "EXCEL_IMPORT"
-    && (quote.status === "APROBADA" || quote.orderStatus === "GENERADO" || orderGeneratedLocal);
-  const canRegisterErpQuote =
-    quote.captureMethod === "EXCEL_IMPORT"
-    && !isArchived
     && quote.status === "APROBADA"
+    && (quote.orderStatus === "GENERADO" || orderGeneratedLocal);
+  const canRegisterErpQuote =
+    !isArchived
+    && quote.status === "APROBADA"
+    && (quote.captureMethod === "EXCEL_IMPORT" || quote.orderStatus === "GENERADO" || orderGeneratedLocal)
     && !hasRevisionInProgress;
   const canPermanentlyDelete =
     currentRole === "admin" &&
     ["BORRADOR", "CANCELADA"].includes(quote.status) &&
+    !quote.erpQuoteNumber &&
+    !quote.erpOrderNumber &&
     quote.orderStatus !== "GENERADO" &&
     quote.revisionNumber === 0 &&
     !quote.rootQuoteId &&
@@ -1225,7 +1255,7 @@ export const QuoteDetailPage = () => {
         setShowCancellationModal(false);
         setCancellationReason("");
         setCancellationComment("");
-        await refetch();
+        await Promise.all([refetch(), refetchPurchaseRequisition()]);
       },
     });
   };
@@ -1349,26 +1379,25 @@ export const QuoteDetailPage = () => {
   };
 
   const openErpRegistrationModal = () => {
-    setErpQuoteNumberDraft(quote.erpQuoteNumber || "");
+    setErpQuoteNumberDraft(quote.captureMethod === "EXCEL_IMPORT" ? quote.erpQuoteNumber || "" : quote.erpOrderNumber || "");
     setShowErpRegistrationModal(true);
   };
 
   const handleRegisterErpQuote = async () => {
     const erpQuoteNumber = erpQuoteNumberDraft.trim();
+    const isErpOrder = quote.captureMethod !== "EXCEL_IMPORT";
     if (!erpQuoteNumber) {
-      notifier.warning("Escribe el número de cotización del ERP.");
+      notifier.warning(isErpOrder ? "Escribe el número de pedido del ERP." : "Escribe el número de cotización del ERP.");
       return;
     }
 
     await runActionWithToast({
-      loadingMessage: quote.erpQuoteNumber
-        ? "Actualizando folio de cotización ERP..."
-        : "Registrando cotización en ERP...",
-      action: () => registerErpQuote.mutateAsync({ quoteId: quote.quoteId, erpQuoteNumber }),
-      successMessage: quote.erpQuoteNumber
-        ? "Folio de cotización ERP actualizado."
-        : "Cotización registrada en ERP.",
-      errorMessage: "No se pudo registrar la cotización en ERP.",
+      loadingMessage: "Validando folio en Proscai...",
+      action: () => isErpOrder
+        ? registerErpOrder.mutateAsync({ quoteId: quote.quoteId, erpOrderNumber: erpQuoteNumber })
+        : registerErpQuote.mutateAsync({ quoteId: quote.quoteId, erpQuoteNumber }),
+      successMessage: isErpOrder ? "Pedido ERP vinculado." : "Cotización ERP vinculada.",
+      errorMessage: isErpOrder ? "No se pudo vincular el pedido ERP." : "No se pudo vincular la cotización ERP.",
       onSuccess: async () => {
         setShowErpRegistrationModal(false);
         setErpQuoteNumberDraft("");
@@ -1595,9 +1624,14 @@ export const QuoteDetailPage = () => {
               IMPORTADA EXCEL
             </span>
           )}
-          {quote.erpQuoteNumber && (
+          {linkedErpNumber && (
             <span className="flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-              ERP {quote.erpQuoteNumber}
+              {quote.captureMethod === "EXCEL_IMPORT" ? "Cotización ERP" : "Pedido ERP"} {linkedErpNumber}
+            </span>
+          )}
+          {quote.captureMethod === "SYSTEM" && quote.erpQuoteNumber && (
+            <span className="flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+              Cotización ERP anterior {quote.erpQuoteNumber}
             </span>
           )}
 
@@ -1702,12 +1736,12 @@ export const QuoteDetailPage = () => {
           {canGenerateOrder && (
             <button
               onClick={handleGenerateOrder}
-              disabled={isActionLocked || !purchaseReady}
-              title={!purchaseReady ? "Compras debe completar la requisición antes de generar el pedido." : undefined}
+              disabled={isActionLocked || !orderExportReady}
+              title={!orderExportReady ? orderBlockReason : undefined}
               className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <ShoppingCart className="h-4 w-4" />
-              Generar pedido (.txt)
+              Generar y descargar pedido (.txt)
             </button>
           )}
 
@@ -1718,7 +1752,7 @@ export const QuoteDetailPage = () => {
               className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
             >
               <Download className="h-4 w-4" />
-              {isActionLocked ? "Procesando..." : "Descargar pedido"}
+              {isActionLocked ? "Procesando..." : "Volver a descargar pedido (.txt)"}
             </button>
           )}
 
@@ -1762,7 +1796,7 @@ export const QuoteDetailPage = () => {
               className={`inline-flex items-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 ${disabledActionClass}`}
             >
               <BadgeCheck className="h-4 w-4" />
-              {quote.erpQuoteNumber ? "Corregir folio ERP" : "Registrar en ERP"}
+              {linkedErpNumber ? "Corregir folio ERP" : quote.captureMethod === "EXCEL_IMPORT" ? "Vincular cotización ERP" : "Vincular pedido ERP"}
             </button>
           )}
 
@@ -1777,10 +1811,11 @@ export const QuoteDetailPage = () => {
             </button>
           )}
 
-          {!isArchived && !["CANCELADA", "REEMPLAZADA"].includes(quote.status) && !hasRevisionInProgress && (
+          {canCancelQuote && (
             <button
               onClick={() => setShowCancellationModal(true)}
-              disabled={isActionLocked}
+              disabled={isActionLocked || cancellationBlockedByErpLink}
+              title={cancellationBlockedByErpLink ? "Ya existe un documento vinculado en Proscai. No se puede cancelar aquí." : undefined}
               className={`inline-flex items-center gap-2 rounded-md bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 ${disabledActionClass}`}
             >
               <CircleSlash className="h-4 w-4" />
@@ -1789,6 +1824,12 @@ export const QuoteDetailPage = () => {
           )}
         </div>
       </div>
+
+      {canGenerateOrder && !orderExportReady && (
+        <div role="alert" className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <strong>Archivo de pedido bloqueado.</strong> {orderBlockReason}
+        </div>
+      )}
 
       {isArchived && (
         <div className="mb-4 rounded-md border border-slate-300 bg-slate-100 p-4">
@@ -1849,14 +1890,16 @@ export const QuoteDetailPage = () => {
       )}
 
       {purchaseRequisition && (
-        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 ${purchaseReady ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 ${requisitionReady ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
           <div>
-            <p className={`text-sm font-semibold ${purchaseReady ? "text-emerald-950" : "text-amber-950"}`}>
+            <p className={`text-sm font-semibold ${requisitionReady ? "text-emerald-950" : "text-amber-950"}`}>
               Requisición {purchaseRequisition.requisitionNumber}
             </p>
-            <p className={`text-xs ${purchaseReady ? "text-emerald-800" : "text-amber-800"}`}>
-              {purchaseReady
+            <p className={`text-xs ${requisitionReady ? "text-emerald-800" : "text-amber-800"}`}>
+              {requisitionReady
                 ? "Compras terminó las partidas requeridas. El pedido ERP está habilitado."
+                : orderFileWithoutStockEnabled && allItemsHaveErpCode
+                  ? "El TXT puede generarse; la requisición sigue pendiente para Compras."
                 : purchaseRequisition.status === "DRAFT"
                   ? "El cliente aprobó la cotización. Completa la requisición y envíala a Compras."
                   : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
@@ -1864,7 +1907,7 @@ export const QuoteDetailPage = () => {
           </div>
           <NavLink
             to="/procurement"
-            className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${purchaseReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}
+            className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${requisitionReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}
           >
             {purchaseRequisition.status === "DRAFT" ? "Completar requisición" : "Ver requisición"}
           </NavLink>
@@ -1954,22 +1997,32 @@ export const QuoteDetailPage = () => {
           )}
         </div>
 
-        {quote.captureMethod === "EXCEL_IMPORT" && (
-          <div className={`rounded-md border p-3 ${quote.erpQuoteNumber ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-            <p className={`text-xs font-semibold uppercase ${quote.erpQuoteNumber ? "text-emerald-700" : "text-amber-700"}`}>
-              Cotización ERP
+        {(quote.captureMethod === "EXCEL_IMPORT" || quote.status === "APROBADA" || linkedErpNumber) && (
+          <div className={`rounded-md border p-3 ${linkedErpNumber ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+            <p className={`text-xs font-semibold uppercase ${linkedErpNumber ? "text-emerald-700" : "text-amber-700"}`}>
+              {quote.captureMethod === "EXCEL_IMPORT" ? "Cotización ERP" : "Pedido ERP"}
             </p>
-            <p className={`mt-1 text-sm font-semibold ${quote.erpQuoteNumber ? "text-emerald-950" : "text-amber-950"}`}>
-              {quote.erpQuoteNumber || "Pendiente de registrar"}
+            <p className={`mt-1 text-sm font-semibold ${linkedErpNumber ? "text-emerald-950" : "text-amber-950"}`}>
+              {linkedErpNumber || (quote.captureMethod !== "EXCEL_IMPORT" && quote.orderStatus !== "GENERADO"
+                ? "Genera el TXT para poder vincular el pedido"
+                : "Pendiente de vincular")}
             </p>
-            {quote.erpQuoteRegisteredAt && (
+            {linkedErpRegisteredAt && (
               <p className="mt-1 text-[11px] text-emerald-700">
-                Registrada {new Date(quote.erpQuoteRegisteredAt).toLocaleString("es-MX")}
-                {quote.erpQuoteRegisteredByUser
-                  ? ` por ${quote.erpQuoteRegisteredByUser.firstName} ${quote.erpQuoteRegisteredByUser.lastName}`
+                Vinculado {new Date(linkedErpRegisteredAt).toLocaleString("es-MX")}
+                {linkedErpRegisteredByUser
+                  ? ` por ${linkedErpRegisteredByUser.firstName} ${linkedErpRegisteredByUser.lastName}`
                   : ""}
               </p>
             )}
+          </div>
+        )}
+
+        {quote.captureMethod === "SYSTEM" && quote.erpQuoteNumber && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold uppercase text-amber-800">Folio de cotización ERP anterior</p>
+            <p className="mt-1 text-sm font-semibold text-amber-950">{quote.erpQuoteNumber}</p>
+            <p className="mt-1 text-xs text-amber-800">Este folio se conserva por historial; el pedido generado desde el TXT se vincula por separado.</p>
           </div>
         )}
 
@@ -2284,10 +2337,12 @@ export const QuoteDetailPage = () => {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {quote.erpQuoteNumber ? "Corregir folio ERP" : "Registrar en ERP"}
+                  {linkedErpNumber ? "Corregir folio ERP" : quote.captureMethod === "EXCEL_IMPORT" ? "Vincular cotización ERP" : "Vincular pedido ERP"}
                 </h3>
                 <p className="mt-1 text-xs text-slate-600">
-                  Captura el número asignado cuando esta cotización fue generada manualmente en el ERP.
+                  {quote.captureMethod === "EXCEL_IMPORT"
+                    ? "Captura el folio de cotización de Proscai. Se comprobará que exista y pertenezca al cliente ERP."
+                    : `Después de importar el TXT en Proscai, captura el número del pedido generado. Debe comenzar con ${erpOrderPrefix} para esta sucursal y pertenecer al cliente ERP.`}
                 </p>
               </div>
               <button
@@ -2302,7 +2357,7 @@ export const QuoteDetailPage = () => {
             </div>
 
             <label className="mt-5 block text-xs font-semibold uppercase text-slate-600">
-              Número de cotización ERP *
+              Número de {quote.captureMethod === "EXCEL_IMPORT" ? "cotización" : "pedido"} ERP *
             </label>
             <input
               value={erpQuoteNumberDraft}
@@ -2316,11 +2371,11 @@ export const QuoteDetailPage = () => {
               maxLength={80}
               disabled={isActionLocked}
               autoFocus
-              placeholder="Ej. COT-ERP-12345"
+              placeholder={quote.captureMethod === "EXCEL_IMPORT" ? "Ej. COT-ERP-12345" : `Ej. ${erpOrderPrefix}021827`}
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold uppercase outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
             />
             <p className="mt-2 text-[11px] text-slate-500">
-              El folio debe ser único y quedará ligado al usuario que haga el registro.
+              El folio debe ser único. Al vincularlo, esta cotización ya no podrá cancelarse ni eliminarse.
             </p>
 
             <div className="mt-5 flex justify-end gap-2">
@@ -2338,7 +2393,7 @@ export const QuoteDetailPage = () => {
                 disabled={isActionLocked || !erpQuoteNumberDraft.trim()}
                 className={`rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 ${disabledActionClass}`}
               >
-                {isActionLocked ? "Guardando..." : "Guardar folio ERP"}
+                {isActionLocked ? "Guardando..." : quote.captureMethod === "EXCEL_IMPORT" ? "Guardar cotización ERP" : "Guardar pedido ERP"}
               </button>
             </div>
           </div>
@@ -2590,6 +2645,12 @@ export const QuoteDetailPage = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {quote.status === "APROBADA" && (
+              <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                También se cancelará la requisición interna abierta. Si Compras ya inició una gestión externa, coordina su cancelación por separado.
+              </p>
+            )}
 
             <label className="mt-5 block text-xs font-semibold uppercase text-gray-500" htmlFor="cancellation-reason">
               Motivo <span className="text-rose-600">*</span>

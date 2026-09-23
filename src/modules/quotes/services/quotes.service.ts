@@ -53,6 +53,9 @@ export interface SavedQuoteRecord {
   erpQuoteNumber: string | null;
   erpQuoteRegisteredAt: string | null;
   erpQuoteRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
+  erpOrderNumber: string | null;
+  erpOrderRegisteredAt: string | null;
+  erpOrderRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
   erpProfile?: "GENERIC_TXT";
   erpExportState?: "PENDIENTE" | "EXPORTADO";
   createdAt: string;
@@ -263,6 +266,9 @@ interface ApiQuote {
   erpQuoteNumber: string | null;
   erpQuoteRegisteredAt: string | null;
   erpQuoteRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
+  erpOrderNumber: string | null;
+  erpOrderRegisteredAt: string | null;
+  erpOrderRegisteredByUser: { id: string; firstName: string; lastName: string } | null;
   sourceChannel: QuoteSourceChannel;
   whatsappLeadId: string | null;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
@@ -357,6 +363,7 @@ interface ApiQuoteListSummary {
   id: string;
   quoteNumber: string;
   erpQuoteNumber: string | null;
+  erpOrderNumber: string | null;
   status: ApiQuoteStatus;
   captureMethod: "SYSTEM" | "EXCEL_IMPORT";
   originalQuoteDate: string | null;
@@ -465,6 +472,37 @@ const mapAxiosErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
+const mapErpOrderErrorMessage = (error: unknown, orderNumber: string): string => {
+  const message = mapAxiosErrorMessage(error, "No se pudo vincular el pedido ERP.");
+  const folio = orderNumber.trim().toUpperCase();
+
+  switch (message) {
+    case "ERP order number does not exist in Proscai.":
+      return `No se encontró el pedido ${folio} en Proscai. Verifica el folio y vuelve a intentarlo.`;
+    case "ERP order belongs to a different customer.":
+      return `El pedido ${folio} pertenece a otro cliente en Proscai. Verifica el código ERP del cliente de esta cotización.`;
+    case "ERP order number is already linked to another quote.":
+      return `El pedido ${folio} ya está vinculado a otra cotización.`;
+    case "Quote customer not found.":
+      return "No se encontró el cliente de esta cotización.";
+    case "Only system quotes can be linked to ERP orders.":
+      return "Solo las cotizaciones hechas en el sistema pueden vincularse con pedidos ERP.";
+    case "Quote must be APPROVED before linking an ERP order.":
+      return "La cotización debe estar aprobada antes de vincular el pedido ERP.";
+    case "Order TXT must be generated before linking an ERP order.":
+      return "Primero genera el archivo TXT del pedido.";
+    case "Quote branch has no configured ERP order prefix.":
+      return "La sucursal de esta cotización no tiene un prefijo de pedido ERP configurado.";
+    case "Quote changed while linking the ERP order. Reload and try again.":
+      return "La cotización cambió mientras se vinculaba el pedido. Actualiza la página e inténtalo de nuevo.";
+    default:
+      if (message.startsWith("ERP order number must start with")) {
+        return "El folio del pedido no corresponde al prefijo de la sucursal de esta cotización.";
+      }
+      return message;
+  }
+};
+
 const splitName = (displayName: string): { name: string; lastname: string } => {
   const safe = displayName.trim();
   if (!safe) return { name: "", lastname: "" };
@@ -496,6 +534,9 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     erpQuoteNumber: apiQuote.erpQuoteNumber,
     erpQuoteRegisteredAt: apiQuote.erpQuoteRegisteredAt,
     erpQuoteRegisteredByUser: apiQuote.erpQuoteRegisteredByUser,
+    erpOrderNumber: apiQuote.erpOrderNumber,
+    erpOrderRegisteredAt: apiQuote.erpOrderRegisteredAt,
+    erpOrderRegisteredByUser: apiQuote.erpOrderRegisteredByUser,
     erpProfile: "GENERIC_TXT",
     erpExportState: apiQuote.orderStatus === "GENERATED" ? "EXPORTADO" : "PENDIENTE",
     createdAt: apiQuote.createdAt,
@@ -568,7 +609,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     items: apiQuote.items.map((item) => ({
       id: item.clientItemId || item.id,
       localProductId: item.productId || item.product?.id || null,
-      erpCode: item.externalProductCode || item.product?.code || "",
+      erpCode: item.externalProductCode?.trim() || item.product?.code?.trim() || "",
       ean: item.ean || item.product?.ean || "",
       customerDescription: item.customerDescription || "",
       customerDescriptionOriginal: item.customerDescriptionOriginal || item.customerDescription || "",
@@ -631,6 +672,7 @@ const toQuote = (stored: SavedQuoteRecord): Quote => ({
   id: stored.quoteId,
   quoteNumber: stored.quoteNumber ?? stored.quoteId,
   erpQuoteNumber: stored.erpQuoteNumber,
+  erpOrderNumber: stored.erpOrderNumber,
   status: stored.status,
   createdByName: stored.createdByName,
   providedByName: stored.providedBy?.fullName ?? null,
@@ -689,6 +731,7 @@ const mapApiQuoteSummaryToQuote = (summary: ApiQuoteListSummary): Quote => {
     id: summary.id,
     quoteNumber: summary.quoteNumber,
     erpQuoteNumber: summary.erpQuoteNumber,
+    erpOrderNumber: summary.erpOrderNumber,
     status: mapApiStatusToSaved(summary.status),
     createdByName: `${summary.createdByUser.firstName} ${summary.createdByUser.lastName}`.trim(),
     providedByName: summary.providedByNameSnapshot,
@@ -973,6 +1016,19 @@ export class QuotesService {
       return mapApiQuoteToSavedRecord(data);
     } catch (error) {
       throw new Error(mapAxiosErrorMessage(error, "No se pudo registrar la cotización en ERP."));
+    }
+  }
+
+  static async registerErpOrder(quoteId: string, erpOrderNumber: string): Promise<SavedQuoteRecord> {
+    try {
+      const { data } = await coreHttpClient.patch<ApiQuote>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/erp-order`,
+        { erpOrderNumber: erpOrderNumber.trim() },
+        { headers: requireAuthHeaders() }
+      );
+      return mapApiQuoteToSavedRecord(data);
+    } catch (error) {
+      throw new Error(mapErpOrderErrorMessage(error, erpOrderNumber));
     }
   }
 

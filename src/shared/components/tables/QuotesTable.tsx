@@ -67,7 +67,10 @@ const QuoteRow: FC<QuoteRowProps> = ({
             ) : null}
           </div>
           {quote.erpQuoteNumber && (
-            <p className="mt-1 text-[11px] font-semibold text-teal-700">ERP: {quote.erpQuoteNumber}</p>
+            <p className="mt-1 text-[11px] font-semibold text-teal-700">Cotización ERP: {quote.erpQuoteNumber}</p>
+          )}
+          {quote.erpOrderNumber && (
+            <p className="mt-1 text-[11px] font-semibold text-teal-700">Pedido ERP: {quote.erpOrderNumber}</p>
           )}
           {!isPreviousVersion && versionCount > 0 && (
             <p className="mt-1 text-[11px] font-normal text-slate-500">

@@ -40,6 +40,7 @@ export interface Quote {
   id: string;
   quoteNumber?: string;
   erpQuoteNumber?: string | null;
+  erpOrderNumber?: string | null;
   status:
     | "DRAFT"
     | "FINAL"

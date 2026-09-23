@@ -27,7 +27,7 @@ const categories: Array<{
   icon: ReactNode;
 }> = [
   { key: "QUOTES", label: "Cotizaciones", description: "Aprobaciones y métodos de captura", icon: <ReceiptLongRounded /> },
-  { key: "PROCUREMENT", label: "Compras", description: "Flujo interno de requisiciones", icon: <Inventory2Rounded /> },
+  { key: "PROCUREMENT", label: "Compras", description: "Requisiciones y archivos de pedido", icon: <Inventory2Rounded /> },
   { key: "WHATSAPP", label: "WhatsApp", description: "Bandeja, asistente y control humano", icon: <ChatRounded /> },
 ];
 

@@ -4,6 +4,8 @@ import { coreHttpClient } from "../../core/services/http/core-http.client";
 export interface SystemCapabilities {
   quoteInternalApprovalEnabled: boolean;
   requisitionInternalApprovalEnabled: boolean;
+  orderFileWithoutStockEnabled: boolean;
+  orderFileWithLocalCustomerEnabled: boolean;
   sellerExcelImportEnabled: boolean;
   whatsAppInboxEnabled: boolean;
   whatsAppAssistantEnabled: boolean;

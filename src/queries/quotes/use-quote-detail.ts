@@ -125,6 +125,18 @@ export const useRegisterErpQuote = () => {
   });
 };
 
+export const useRegisterErpOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, erpOrderNumber }: { quoteId: string; erpOrderNumber: string }) =>
+      QuotesService.registerErpOrder(quoteId, erpOrderNumber),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });
+    },
+  });
+};
+
 export const useDeleteQuotePermanently = () => {
   const queryClient = useQueryClient();
   return useMutation({

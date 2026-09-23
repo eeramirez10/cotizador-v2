@@ -7,5 +7,6 @@ export const useSystemCapabilities = () => useQuery({
   queryKey: systemCapabilitiesKey,
   queryFn: SystemCapabilitiesService.get,
   staleTime: 30_000,
+  refetchOnMount: "always",
   retry: 1,
 });
