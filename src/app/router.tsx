@@ -11,6 +11,8 @@ import { SystemQuotePage } from "../pages/quotes/system-quote.page";
 import { ExcelImportQuotePage } from "../pages/quotes/excel-import-quote.page";
 import { UserPage } from "../pages/user/user.page";
 import { ClientsPage } from "../pages/clients/clients.page";
+import { CustomerOnboardingsPage } from "../pages/clients/customer-onboardings.page";
+import { useAuthStore } from "../store/auth/auth.store";
 import { ProductsPage } from "../pages/products/products.page";
 import { UsersPage } from "../pages/users/users.page";
 import { BranchesPage } from "../pages/branches/branches.page";
@@ -44,6 +46,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "home",
+        loader: async () => useAuthStore.getState().user?.role?.toLowerCase() === "credit_collections" ? redirect("/credit-collections") : null,
         handle: { title: "Dashboard" },
         Component: DashboardPage,
       },
@@ -53,11 +56,13 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "quotes",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Cotizaciones" },
         Component: QuotesPage,
       },
       {
         path: "analytics",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Indicadores" },
         lazy: async () => {
           const { AnalyticsPage } = await import("../pages/analytics/analytics.page");
@@ -107,6 +112,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "quotes/:quoteId",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Detalle de Cotización" },
         Component: QuoteDetailPage,
       },
@@ -123,11 +129,19 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "clients",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Clientes" },
         Component: ClientsPage,
       },
       {
+        path: "credit-collections",
+        loader: requireRolesLoader(["admin", "credit_collections"]),
+        handle: { title: "Crédito y Cobranza" },
+        Component: CustomerOnboardingsPage,
+      },
+      {
         path: "products",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
         handle: { title: "Productos" },
         Component: ProductsPage,
       },

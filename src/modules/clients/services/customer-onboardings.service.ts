@@ -31,6 +31,7 @@ export interface CustomerOnboarding {
   updatedAt: string;
   completedAt: string | null;
   erpCode: string | null;
+  reviewNote: string | null;
   taxDocumentOriginalName: string | null;
   customer: { id: string; displayName: string; legalName: string | null; profileStatus: string };
   acceptedQuote: { id: string; quoteNumber: string; status: string } | null;
@@ -115,6 +116,13 @@ export class CustomerOnboardingsService {
   static async approveForErp(id: string): Promise<CustomerOnboarding> {
     try {
       const { data } = await coreHttpClient.post<CustomerOnboarding>(`/api/customer-onboardings/${id}/approve-for-erp`, {}, { headers: headers() });
+      return data;
+    } catch (error) { throw new Error(message(error)); }
+  }
+
+  static async requestCorrection(id: string, reason: string): Promise<CustomerOnboarding> {
+    try {
+      const { data } = await coreHttpClient.post<CustomerOnboarding>(`/api/customer-onboardings/${id}/request-correction`, { reason }, { headers: headers() });
       return data;
     } catch (error) { throw new Error(message(error)); }
   }

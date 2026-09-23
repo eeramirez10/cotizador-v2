@@ -21,7 +21,7 @@ export const guestOnlyLoader = async (): Promise<null> => {
 };
 
 export const indexRedirectLoader = async (): Promise<Response> => {
-  return redirect("/home");
+  return redirect(useAuthStore.getState().user?.role?.toLowerCase() === "credit_collections" ? "/credit-collections" : "/home");
 };
 
 export const requireRolesLoader =

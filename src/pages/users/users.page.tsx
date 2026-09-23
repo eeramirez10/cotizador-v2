@@ -56,6 +56,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
   MANAGER: "Manager",
   SELLER: "Vendedor",
   PURCHASING: "Compras",
+  CREDIT_COLLECTIONS: "Crédito y Cobranza",
 };
 
 const ROLE_BADGE_CLASS: Record<UserRole, string> = {
@@ -63,6 +64,7 @@ const ROLE_BADGE_CLASS: Record<UserRole, string> = {
   MANAGER: "bg-sky-100 text-sky-700",
   SELLER: "bg-emerald-100 text-emerald-700",
   PURCHASING: "bg-amber-100 text-amber-800",
+  CREDIT_COLLECTIONS: "bg-cyan-100 text-cyan-800",
 };
 
 const normalizeBranchCode = (value?: string): string => {
@@ -341,7 +343,7 @@ export const UsersPage = () => {
   };
 
   const roleOptions: UserRole[] = isAdmin
-    ? ["SELLER", "MANAGER", "PURCHASING", "ADMIN"]
+    ? ["SELLER", "MANAGER", "PURCHASING", "CREDIT_COLLECTIONS", "ADMIN"]
     : ["SELLER", "PURCHASING"];
 
   return (
@@ -438,7 +440,7 @@ export const UsersPage = () => {
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs">
-                    {user.role === "PURCHASING" ? (
+                    {user.role === "PURCHASING" || user.role === "CREDIT_COLLECTIONS" ? (
                       <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-500">No aplica</span>
                     ) : user.whatsappInboxEnabled ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">Habilitado</span>
@@ -726,8 +728,8 @@ export const UsersPage = () => {
                   <FormControlLabel
                     control={(
                       <Switch
-                        checked={form.role !== "PURCHASING" && form.whatsappInboxEnabled}
-                        disabled={form.role === "PURCHASING"}
+                        checked={form.role !== "PURCHASING" && form.role !== "CREDIT_COLLECTIONS" && form.whatsappInboxEnabled}
+                        disabled={form.role === "PURCHASING" || form.role === "CREDIT_COLLECTIONS"}
                         onChange={(_, checked) => setForm((prev) => ({
                           ...prev,
                           whatsappInboxEnabled: checked,
@@ -745,8 +747,8 @@ export const UsersPage = () => {
                     slotProps={{ typography: { fontSize: 13, fontWeight: 700, color: "#374151" } }}
                   />
                   <p className="pl-12 text-[11px] leading-4 text-gray-500">
-                    {form.role === "PURCHASING"
-                      ? "El rol de Compras no tiene acceso a la bandeja de WhatsApp."
+                    {form.role === "PURCHASING" || form.role === "CREDIT_COLLECTIONS"
+                      ? "Este rol interactúa con el asistente interno, pero no accede a la bandeja comercial de WhatsApp."
                       : "Permite consultar conversaciones, recibir notificaciones y responder desde el sistema."}
                   </p>
                 </div>

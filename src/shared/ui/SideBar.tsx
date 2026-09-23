@@ -28,6 +28,7 @@ export const SideBar = () => {
   const canApproveQuotes = quoteInternalApprovalEnabled && (role === "admin" || role === "manager");
   const canAccessProcurement = role === "admin" || role === "manager" || role === "seller" || role === "purchasing";
   const canAccessCommercial = role !== "purchasing";
+  const canAccessCxc = role === "admin" || role === "credit_collections";
   const whatsappInboxEnabled = capabilities.data?.whatsAppInboxEnabled === true;
   const canAccessWhatsApp = whatsappInboxEnabled
     && (role === "admin" || role === "manager" || role === "seller");
@@ -39,7 +40,8 @@ export const SideBar = () => {
   const navClass = ({ isActive }: { isActive: boolean }) => `${navBase} ${isActive ? active : inactive}`;
 
   const nav = [
-    ...(canAccessCommercial ? [{ name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> }] : []),
+    ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Cotizaciones", to: "/quotes", icon: <DollarSign /> }] : []),
+    ...(canAccessCxc ? [{ name: "Crédito y Cobranza", to: "/credit-collections", icon: <ContactRound /> }] : []),
     ...(canAccessWhatsApp ? [{
       name: "WhatsApp",
       to: "/whatsapp",
@@ -47,9 +49,9 @@ export const SideBar = () => {
       badge: appNotifications.unreadCount,
     }] : []),
     ...(canApproveQuotes ? [{ name: "Aprobar cotizaciones", to: "/quote-approvals", icon: <ShieldCheck /> }] : []),
-    ...(canAccessCommercial ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
-    ...(canAccessCommercial ? [{ name: "Clientes", to: "/clients", icon: <ContactRound /> }] : []),
-    ...(canAccessCommercial ? [{ name: "Productos", to: "/products", icon: <Package /> }] : []),
+    ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
+    ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Clientes", to: "/clients", icon: <ContactRound /> }] : []),
+    ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Productos", to: "/products", icon: <Package /> }] : []),
     ...(canAccessProcurement ? [{ name: "Proveedores", to: "/suppliers", icon: <Truck /> }] : []),
     ...(canAccessProcurement ? [{ name: "Requisiciones", to: "/procurement", icon: <ShoppingCart /> }] : []),
     ...(canAccessBranches ? [{ name: "Sucursales", to: "/branches", icon: <Building2 /> }] : []),
@@ -88,12 +90,12 @@ export const SideBar = () => {
 
       <div className="flex h-[calc(100%-64px)] flex-col overflow-y-auto bg-white">
         <ul className="space-y-3 px-3 py-4">
-          <li>
+          {role !== "credit_collections" && <li>
             <NavLink onClick={handleNavClick} className={navClass} to="/home">
               <div className="h-5 w-5 shrink-0 text-gray-900"><LucideLayoutDashboard /></div>
               Dashboard
             </NavLink>
-          </li>
+          </li>}
           {canGenerateQuotes && (
             <li>
               <button
