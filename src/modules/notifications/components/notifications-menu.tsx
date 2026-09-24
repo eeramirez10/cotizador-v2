@@ -5,6 +5,7 @@ import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
 import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import AssignmentIndOutlinedIcon from "@mui/icons-material/AssignmentIndOutlined";
 import {
   Avatar,
   Badge,
@@ -40,7 +41,7 @@ const formatOccurredAt = (value: string): string => {
 
 export const NotificationsMenu = () => {
   const navigate = useNavigate();
-  const { enabled, items, loading, unreadCount, markRead } = useAppNotifications();
+  const { enabled, inboxEnabled, items, loading, unreadCount, markRead } = useAppNotifications();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const open = Boolean(anchorEl);
 
@@ -134,7 +135,7 @@ export const NotificationsMenu = () => {
           <Box sx={{ px: 3, py: 4, textAlign: "center" }}>
             <NotificationsOutlinedIcon sx={{ fontSize: 32, color: "#94a3b8" }} />
             <Typography variant="body2" sx={{ mt: 1, color: "#64748b" }}>
-              Las notificaciones de WhatsApp no están habilitadas.
+              Las notificaciones no están disponibles para este usuario.
             </Typography>
           </Box>
         ) : items.length === 0 && !loading ? (
@@ -151,6 +152,7 @@ export const NotificationsMenu = () => {
               const accepted = notification.kind === "QUOTE_ACCEPTED";
               const rejected = notification.kind === "QUOTE_REJECTED";
               const quoteNotification = notification.source === "QUOTE";
+              const systemNotification = notification.source === "SYSTEM";
               const informationRequest = notification.kind === "CUSTOMER_INFORMATION_REQUESTED";
               const changeRequest = notification.kind === "CUSTOMER_CHANGE_REQUESTED";
               return (
@@ -170,10 +172,11 @@ export const NotificationsMenu = () => {
                       <Avatar sx={{
                         width: 36,
                         height: 36,
-                        bgcolor: !quoteNotification ? "#e8f8ef" : accepted ? "#e9f9ef" : rejected ? "#fff7dd" : informationRequest ? "#e0f2fe" : changeRequest ? "#ede9fe" : "#fff0f0",
-                        color: !quoteNotification ? "#128c4a" : accepted ? "#17864b" : rejected ? "#a16207" : informationRequest ? "#0369a1" : changeRequest ? "#6d28d9" : "#c43d3d",
+                        bgcolor: systemNotification ? "#fff4cf" : !quoteNotification ? "#e8f8ef" : accepted ? "#e9f9ef" : rejected ? "#fff7dd" : informationRequest ? "#e0f2fe" : changeRequest ? "#ede9fe" : "#fff0f0",
+                        color: systemNotification ? "#946200" : !quoteNotification ? "#128c4a" : accepted ? "#17864b" : rejected ? "#a16207" : informationRequest ? "#0369a1" : changeRequest ? "#6d28d9" : "#c43d3d",
                       }}>
-                        {!quoteNotification && <WhatsAppIcon sx={{ fontSize: 19 }} />}
+                        {!quoteNotification && !systemNotification && <WhatsAppIcon sx={{ fontSize: 19 }} />}
+                        {systemNotification && <AssignmentIndOutlinedIcon sx={{ fontSize: 20 }} />}
                         {accepted && <CheckCircleOutlineIcon sx={{ fontSize: 20 }} />}
                         {rejected && <ReportProblemOutlinedIcon sx={{ fontSize: 20 }} />}
                         {notification.kind === "QUOTE_CANCELLED" && <CancelOutlinedIcon sx={{ fontSize: 20 }} />}
@@ -229,7 +232,7 @@ export const NotificationsMenu = () => {
           </List>
         )}
 
-        {enabled && (
+        {inboxEnabled && (
           <>
             <Divider />
             <Box sx={{ p: 1 }}>

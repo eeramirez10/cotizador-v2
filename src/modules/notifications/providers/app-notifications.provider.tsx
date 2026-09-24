@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { useSystemCapabilities } from "../../../queries/system/use-system-capabilities";
 import { useNavigate } from "react-router";
 import { notifier } from "../../../shared/notifications/notifier";
@@ -14,6 +14,20 @@ import {
 } from "../../whatsapp/services/whatsapp-realtime.service";
 import { AppNotificationsContext } from "../context/app-notifications.context";
 import type { AppNotification } from "../types/app-notification.types";
+import { SystemNotificationsService, type SystemNotificationRecord } from "../services/system-notifications.service";
+import { SystemNotificationsRealtimeClient } from "../services/system-notifications-realtime.service";
+
+const toSystemNotification = (row: SystemNotificationRecord): AppNotification => ({
+  id: `system-${row.id}`,
+  source: "SYSTEM",
+  sourceId: row.id,
+  kind: row.type,
+  title: row.title,
+  message: row.message,
+  occurredAt: row.createdAt,
+  unreadCount: row.readAt ? 0 : 1,
+  href: row.targetPath,
+});
 
 const toNotification = (conversation: WhatsAppInboxConversation): AppNotification => ({
   id: `whatsapp-${conversation.id}`,
@@ -89,14 +103,19 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
   const capabilities = useSystemCapabilities();
   const [conversations, setConversations] = useState<WhatsAppInboxConversation[]>([]);
   const [quoteNotifications, setQuoteNotifications] = useState<AppNotification[]>([]);
+  const [systemNotifications, setSystemNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
+  const [systemLoading, setSystemLoading] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<WhatsAppRealtimeStatus>("disconnected");
+  const systemUserId = useRef(user?.id);
+  systemUserId.current = user?.id;
   const role = (user?.role || "").trim().toLowerCase();
-  const enabled = capabilities.data?.whatsAppInboxEnabled === true
-    && ["admin", "manager", "seller"].includes(role);
+  const enabled = ["admin", "manager", "seller"].includes(role);
+  const inboxEnabled = enabled && capabilities.data?.whatsAppInboxEnabled === true
+    && user?.whatsappInboxEnabled !== false;
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!enabled) return;
+    if (!inboxEnabled) return;
     setLoading(true);
     try {
       const result = await WhatsAppInboxService.list({ pageSize: 50 });
@@ -104,10 +123,62 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [inboxEnabled]);
+
+  const refreshSystem = useCallback(async (): Promise<void> => {
+    if (!enabled || !user?.id) return;
+    const requestedUserId = user.id;
+    setSystemLoading(true);
+    try {
+      const rows = await SystemNotificationsService.list();
+      if (systemUserId.current === requestedUserId) setSystemNotifications(rows.map(toSystemNotification));
+    } finally {
+      if (systemUserId.current === requestedUserId) setSystemLoading(false);
+    }
+  }, [enabled, user?.id]);
 
   useEffect(() => {
     if (!enabled) {
+      setSystemNotifications([]);
+      return undefined;
+    }
+    setSystemNotifications([]);
+    void refreshSystem().catch(() => undefined);
+    const realtime = new SystemNotificationsRealtimeClient((event) => {
+      if (systemUserId.current !== user?.id) return;
+      const notification = toSystemNotification({
+        ...event.notification,
+        reference: "",
+        createdAt: event.occurredAt,
+        readAt: null,
+      });
+      setSystemNotifications((current) => [
+        notification,
+        ...current.filter((item) => item.id !== notification.id),
+      ].slice(0, 50));
+      notifier.success(notification.message, {
+        id: notification.id,
+        durationMs: 8_000,
+        presentation: { variant: "quote-decision", title: notification.title, occurredAt: notification.occurredAt, tone: "success" },
+        action: {
+          label: "Ver expediente",
+          onClick: () => {
+            void SystemNotificationsService.markRead(notification.sourceId).then(() => {
+              setSystemNotifications((current) => current.map((item) => item.id === notification.id
+                ? { ...item, unreadCount: 0 }
+                : item));
+            }).catch(() => undefined);
+            navigate(notification.href);
+          },
+        },
+      });
+    }, () => { void refreshSystem().catch(() => undefined); });
+    realtime.start();
+    return () => realtime.stop();
+  }, [enabled, navigate, refreshSystem, user?.id]);
+
+  useEffect(() => {
+    if (!inboxEnabled) {
       setConversations([]);
       setQuoteNotifications([]);
       setRealtimeStatus("disconnected");
@@ -286,18 +357,26 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
       window.removeEventListener("tuvansa:whatsapp-conversation-read", handleRead);
       window.removeEventListener("tuvansa:whatsapp-conversation-deleted", handleDeleted);
     };
-  }, [enabled, navigate, refresh, user?.id]);
+  }, [inboxEnabled, navigate, refresh, user?.id]);
 
   const items = useMemo(() => [
+    ...systemNotifications,
     ...quoteNotifications,
     ...conversations.map(toNotification),
-  ].sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt)), [conversations, quoteNotifications]);
+  ].sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt)), [conversations, quoteNotifications, systemNotifications]);
   const unreadCount = useMemo(
     () => items.reduce((total, notification) => total + notification.unreadCount, 0),
     [items],
   );
 
   const markRead = useCallback(async (notification: AppNotification): Promise<void> => {
+    if (notification.source === "SYSTEM") {
+      await SystemNotificationsService.markRead(notification.sourceId);
+      setSystemNotifications((current) => current.map((item) => item.id === notification.id
+        ? { ...item, unreadCount: 0 }
+        : item));
+      return;
+    }
     if (notification.source === "QUOTE") {
       setQuoteNotifications((current) => current.map((item) => item.id === notification.id
         ? { ...item, unreadCount: 0 }
@@ -307,15 +386,20 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
     await WhatsAppInboxService.markRead(notification.sourceId);
   }, []);
 
+  const refreshAll = useCallback(async (): Promise<void> => {
+    await Promise.allSettled([refreshSystem(), refresh()]);
+  }, [refresh, refreshSystem]);
+
   const value = useMemo(() => ({
     enabled,
-    loading,
+    inboxEnabled,
+    loading: loading || systemLoading,
     items,
     unreadCount,
     realtimeStatus,
-    refresh,
+    refresh: refreshAll,
     markRead,
-  }), [enabled, items, loading, markRead, realtimeStatus, refresh, unreadCount]);
+  }), [enabled, inboxEnabled, items, loading, markRead, realtimeStatus, refreshAll, systemLoading, unreadCount]);
 
   return (
     <AppNotificationsContext.Provider value={value}>

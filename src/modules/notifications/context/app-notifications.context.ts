@@ -3,6 +3,7 @@ import type { AppNotificationsContextValue } from "../types/app-notification.typ
 
 const defaultValue: AppNotificationsContextValue = {
   enabled: false,
+  inboxEnabled: false,
   loading: false,
   items: [],
   unreadCount: 0,

@@ -1,6 +1,6 @@
 import { Box, Button, ButtonBase, CircularProgress, Stack, Typography } from "@mui/material";
 import { CheckCircle2, RefreshCw, Sparkles } from "lucide-react";
-import { FactCheckOutlined, PictureAsPdfOutlined } from "@mui/icons-material";
+import { FactCheckOutlined, PictureAsPdfOutlined, SendOutlined } from "@mui/icons-material";
 import type { WhatsAppInboundAttachment } from "../../modules/whatsapp/services/whatsapp-inbox.service";
 import { FilePreviewService } from "../../shared/components/file-preview/file-preview.service";
 import { FileTypeIcon } from "../../shared/components/file-preview/file-type-icon";
@@ -16,8 +16,14 @@ export const WhatsAppFileMessagePart = ({
   onOpen,
   onGenerateQuote,
   onExtractTaxDocument,
+  onSubmitForCxc,
+  onReviewOnboarding,
+  fiscalDocument = false,
   taxDocumentExtracted = false,
   extractingTaxDocument = false,
+  submittingForCxc = false,
+  cxcSubmitted = false,
+  missingFiscalFields = false,
   generateQuoteDisabledReason,
   generating = false,
 }: {
@@ -25,8 +31,14 @@ export const WhatsAppFileMessagePart = ({
   onOpen: () => void;
   onGenerateQuote?: () => void;
   onExtractTaxDocument?: () => void;
+  onSubmitForCxc?: () => void;
+  onReviewOnboarding?: () => void;
+  fiscalDocument?: boolean;
   taxDocumentExtracted?: boolean;
   extractingTaxDocument?: boolean;
+  submittingForCxc?: boolean;
+  cxcSubmitted?: boolean;
+  missingFiscalFields?: boolean;
   generateQuoteDisabledReason?: string;
   generating?: boolean;
 }) => {
@@ -71,7 +83,7 @@ export const WhatsAppFileMessagePart = ({
           </Typography>
         </Stack>
       </ButtonBase>
-      {alreadyExtracted && (
+      {!fiscalDocument && alreadyExtracted && (
         <Stack
           direction="row"
           spacing={0.75}
@@ -87,14 +99,14 @@ export const WhatsAppFileMessagePart = ({
           </Box>
         </Stack>
       )}
-      {taxDocumentExtracted && (
+      {fiscalDocument && taxDocumentExtracted && (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mx: 1, mb: 0.75, p: 0.8, borderRadius: 1.25, bgcolor: "#eef6ff", color: "#1759a2" }}>
           <FactCheckOutlined sx={{ fontSize: 16 }} />
           <Typography variant="caption" fontWeight={700}>Datos fiscales extraídos</Typography>
         </Stack>
       )}
       <Box sx={{ px: 1, pb: 1 }}>
-        <Button
+        {!fiscalDocument && <Button
           fullWidth
           size="small"
           variant="outlined"
@@ -119,7 +131,7 @@ export const WhatsAppFileMessagePart = ({
           {generating
             ? "Extrayendo partidas..."
             : generateQuoteDisabledReason || (alreadyExtracted ? "Procesar otra vez" : "Generar cotización")}
-        </Button>
+        </Button>}
         {onExtractTaxDocument && (
           <Button
             fullWidth
@@ -128,10 +140,23 @@ export const WhatsAppFileMessagePart = ({
             disabled={extractingTaxDocument}
             onClick={onExtractTaxDocument}
             startIcon={extractingTaxDocument ? <CircularProgress size={14} color="inherit" /> : <PictureAsPdfOutlined sx={{ fontSize: 17 }} />}
-            sx={{ mt: 0.75, minHeight: 30, borderColor: "#a9c6e8", color: "#1759a2", bgcolor: "#f2f8ff", fontWeight: 700, textTransform: "none" }}
+            sx={{ mt: fiscalDocument ? 0 : 0.75, minHeight: 30, borderColor: "#a9c6e8", color: "#1759a2", bgcolor: "#f2f8ff", fontWeight: 700, textTransform: "none" }}
           >
             {extractingTaxDocument ? "Extrayendo datos fiscales..." : taxDocumentExtracted ? "Procesar constancia otra vez" : "Extraer datos de constancia"}
           </Button>
+        )}
+        {fiscalDocument && taxDocumentExtracted && onReviewOnboarding && (
+          <Button fullWidth size="small" variant="text" onClick={onReviewOnboarding} sx={{ mt: 0.5 }}>
+            {missingFiscalFields ? "Completar expediente fiscal" : "Revisar datos fiscales"}
+          </Button>
+        )}
+        {fiscalDocument && taxDocumentExtracted && !cxcSubmitted && onSubmitForCxc && (
+          <Button fullWidth size="small" variant="contained" color="primary" disabled={submittingForCxc || missingFiscalFields} onClick={onSubmitForCxc} startIcon={submittingForCxc ? <CircularProgress size={14} color="inherit" /> : <SendOutlined sx={{ fontSize: 16 }} />} sx={{ mt: 0.5 }}>
+            {submittingForCxc ? "Enviando..." : "Enviar a CxC"}
+          </Button>
+        )}
+        {fiscalDocument && taxDocumentExtracted && cxcSubmitted && (
+          <Typography variant="caption" color="success.main" sx={{ display: "block", mt: 0.5, textAlign: "center" }}>Expediente enviado a CxC</Typography>
         )}
       </Box>
     </Box>

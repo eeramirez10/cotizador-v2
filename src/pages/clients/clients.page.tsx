@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import type { Client, ClientInput } from "../../modules/clients/types/client.types";
 import { CustomerContactsService } from "../../modules/clients/services/customer-contacts.service";
 import type { CustomerContactInput } from "../../modules/clients/types/customer-contact.types";
@@ -550,16 +551,29 @@ const ClientsDirectory = ({ onOpenFiscalOnboardings }: { onOpenFiscalOnboardings
 };
 
 export const ClientsPage = () => {
-  const [section, setSection] = useState<"directory" | "onboarding">("directory");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusOnboardingId = searchParams.get("onboarding");
+  const [selectedSection, setSelectedSection] = useState<"directory" | "onboarding">("directory");
+  const section = focusOnboardingId ? "onboarding" : selectedSection;
+  const selectSection = (value: "directory" | "onboarding") => {
+    if (value === "directory" && focusOnboardingId) {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("onboarding");
+        return next;
+      });
+    }
+    setSelectedSection(value);
+  };
   return (
     <Box sx={{ bgcolor: "#f6f7f9", minHeight: "100%", p: { xs: 1.5, md: 2.5 } }}>
       <Paper variant="outlined" sx={{ borderRadius: 2.5, px: 1, mb: 1.5 }}>
-        <Tabs value={section} onChange={(_event, value) => setSection(value)} aria-label="Secciones de clientes">
+        <Tabs value={section} onChange={(_event, value) => selectSection(value)} aria-label="Secciones de clientes">
           <Tab value="directory" label="Clientes" />
           <Tab value="onboarding" label="Altas pendientes" />
         </Tabs>
       </Paper>
-      {section === "directory" ? <ClientsDirectory onOpenFiscalOnboardings={() => setSection("onboarding")} /> : <CustomerOnboardingsPanel />}
+      {section === "directory" ? <ClientsDirectory onOpenFiscalOnboardings={() => selectSection("onboarding")} /> : <CustomerOnboardingsPanel focusOnboardingId={focusOnboardingId} />}
     </Box>
   );
 };

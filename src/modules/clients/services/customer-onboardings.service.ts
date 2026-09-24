@@ -54,6 +54,24 @@ const message = (error: unknown): string => {
 };
 
 export class CustomerOnboardingsService {
+  static async get(id: string): Promise<CustomerOnboarding> {
+    try {
+      const { data } = await coreHttpClient.get<CustomerOnboarding>(
+        `/api/customer-onboardings/${encodeURIComponent(id)}`,
+        { headers: headers() },
+      );
+      return data;
+    } catch (error) { throw new Error(message(error)); }
+  }
+
+  static async remove(id: string, confirmation: string): Promise<void> {
+    try {
+      await coreHttpClient.delete(`/api/customer-onboardings/${encodeURIComponent(id)}`, {
+        headers: headers(), data: { confirmation },
+      });
+    } catch (error) { throw new Error(message(error)); }
+  }
+
   static async forConversation(conversationId: string): Promise<CustomerOnboarding | null> {
     try {
       const { data } = await coreHttpClient.get<{ exists: boolean; onboarding?: CustomerOnboarding }>(

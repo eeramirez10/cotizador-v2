@@ -440,6 +440,8 @@ export const WhatsAppInboxPage = () => {
   const [taxDocumentAttachment, setTaxDocumentAttachment] = useState<WhatsAppInboundAttachment | null>(null);
   const [taxOnboarding, setTaxOnboarding] = useState<CustomerOnboarding | null>(null);
   const [extractingTaxDocumentId, setExtractingTaxDocumentId] = useState<string | null>(null);
+  const [confirmCxcSubmission, setConfirmCxcSubmission] = useState(false);
+  const [submittingForCxc, setSubmittingForCxc] = useState(false);
   const [pendingLinkAttachment, setPendingLinkAttachment] = useState<WhatsAppInboundAttachment | null>(null);
   const [linkBeforeExtractionOpen, setLinkBeforeExtractionOpen] = useState(false);
   const [generatingQuoteAttachmentId, setGeneratingQuoteAttachmentId] = useState<string | null>(null);
@@ -618,6 +620,7 @@ export const WhatsAppInboxPage = () => {
     setPreviewAttachment(null);
     setQuoteExtractionAttachment(null);
     setTaxDocumentAttachment(null);
+    setConfirmCxcSubmission(false);
     setPendingLinkAttachment(null);
     setLinkBeforeExtractionOpen(false);
   }, [activeId]);
@@ -745,6 +748,22 @@ export const WhatsAppInboxPage = () => {
       else notifier.error(message);
     } finally {
       setExtractingTaxDocumentId(null);
+    }
+  };
+
+  const submitTaxDocumentForCxc = async () => {
+    if (!selected || !taxOnboarding || !taxOnboarding.taxDocumentAttachmentId || submittingForCxc) return;
+    if (taxOnboarding.conversationId !== selected.id || taxOnboarding.missingFields.length) return;
+    setSubmittingForCxc(true);
+    try {
+      const updated = await CustomerOnboardingsService.submitForCxc(taxOnboarding.id);
+      setTaxOnboarding(updated);
+      setConfirmCxcSubmission(false);
+      notifier.success("Expediente enviado a revisión de Crédito y Cobranza.");
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo enviar el expediente a CxC.");
+    } finally {
+      setSubmittingForCxc(false);
     }
   };
 
@@ -1169,8 +1188,11 @@ export const WhatsAppInboxPage = () => {
                   : false;
                 const sellerCanGenerate = user?.role?.toLowerCase() === "seller";
                 const isPdf = Boolean(attachment && (attachment.mimeType.toLowerCase().split(";", 1)[0].trim() === "application/pdf" || attachment.originalName.toLowerCase().endsWith(".pdf")));
-                const canExtractTaxDocument = Boolean(isPdf && taxOnboarding && taxOnboarding.conversationId === selected?.id
-                  && ["COLLECTING", "PENDING_REVIEW"].includes(taxOnboarding.status));
+                const fiscalDocument = Boolean(isPdf && taxOnboarding && taxOnboarding.conversationId === selected?.id
+                  && (["COLLECTING", "PENDING_REVIEW", "REJECTED"].includes(taxOnboarding.status)
+                    || taxOnboarding.taxDocumentAttachmentId === attachment?.id));
+                const canExtractTaxDocument = fiscalDocument && Boolean(taxOnboarding && ["COLLECTING", "PENDING_REVIEW", "REJECTED"].includes(taxOnboarding.status));
+                const taxDocumentExtracted = fiscalDocument && taxOnboarding?.taxDocumentAttachmentId === attachment?.id;
                 return attachment
                   ? (
                       <WhatsAppFileMessagePart
@@ -1180,8 +1202,14 @@ export const WhatsAppInboxPage = () => {
                           ? () => setQuoteExtractionAttachment(attachment)
                           : undefined}
                         onExtractTaxDocument={canExtractTaxDocument ? () => setTaxDocumentAttachment(attachment) : undefined}
-                        taxDocumentExtracted={taxOnboarding?.taxDocumentAttachmentId === attachment.id}
+                        fiscalDocument={fiscalDocument}
+                        taxDocumentExtracted={taxDocumentExtracted}
                         extractingTaxDocument={extractingTaxDocumentId === attachment.id}
+                        onReviewOnboarding={taxDocumentExtracted ? () => navigate(`/clients?onboarding=${encodeURIComponent(taxOnboarding!.id)}`) : undefined}
+                        onSubmitForCxc={taxDocumentExtracted && ["COLLECTING", "PENDING_REVIEW", "REJECTED"].includes(taxOnboarding!.status) ? () => setConfirmCxcSubmission(true) : undefined}
+                        submittingForCxc={submittingForCxc}
+                        cxcSubmitted={taxDocumentExtracted && taxOnboarding?.status === "PENDING_CXC"}
+                        missingFiscalFields={Boolean(taxOnboarding?.missingFields.length)}
                         generateQuoteDisabledReason={!supportedForExtraction
                           ? "Disponible para PDF, XLS o XLSX"
                           : !sellerCanGenerate
@@ -1460,6 +1488,16 @@ export const WhatsAppInboxPage = () => {
           onClose={() => setTaxDocumentAttachment(null)}
           onConfirm={() => void extractTaxDocument()}
         />
+        <Dialog open={confirmCxcSubmission} onClose={submittingForCxc ? undefined : () => setConfirmCxcSubmission(false)} fullWidth maxWidth="xs">
+          <DialogTitle>Enviar expediente a CxC</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">Confirma que revisaste los datos extraídos de la constancia. Al enviarlo, Crédito y Cobranza recibirá la notificación para validarlo.</Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmCxcSubmission(false)} disabled={submittingForCxc}>Cancelar</Button>
+            <Button variant="contained" onClick={() => void submitTaxDocumentForCxc()} disabled={submittingForCxc}>Enviar a CxC</Button>
+          </DialogActions>
+        </Dialog>
         <Dialog
           open={linkBeforeExtractionOpen && Boolean(pendingLinkAttachment)}
           onClose={() => {

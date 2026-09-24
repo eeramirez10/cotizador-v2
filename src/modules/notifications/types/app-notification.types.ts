@@ -1,13 +1,14 @@
 import type { WhatsAppRealtimeStatus } from "../../whatsapp/services/whatsapp-realtime.service";
 
-export type AppNotificationSource = "WHATSAPP" | "QUOTE";
+export type AppNotificationSource = "WHATSAPP" | "QUOTE" | "SYSTEM";
 export type AppNotificationKind =
   | "MESSAGE"
   | "QUOTE_ACCEPTED"
   | "QUOTE_REJECTED"
   | "QUOTE_CANCELLED"
   | "CUSTOMER_INFORMATION_REQUESTED"
-  | "CUSTOMER_CHANGE_REQUESTED";
+  | "CUSTOMER_CHANGE_REQUESTED"
+  | "CUSTOMER_ONBOARDING_ERP_LINKED";
 
 export interface AppNotification {
   id: string;
@@ -23,6 +24,7 @@ export interface AppNotification {
 
 export interface AppNotificationsContextValue {
   enabled: boolean;
+  inboxEnabled: boolean;
   loading: boolean;
   items: AppNotification[];
   unreadCount: number;
