@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:staging": "node scripts/validate-staging-env.mjs && tsc -b && vite build --mode staging",
+    "deploy:staging": "node scripts/deploy-staging.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

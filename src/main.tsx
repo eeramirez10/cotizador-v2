@@ -22,6 +22,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppProviders>
       <RouterProvider router={appRouter} />
+      {import.meta.env.MODE === "staging" && (
+        <div role="status" className="pointer-events-none fixed left-1/2 top-2 z-[9999] -translate-x-1/2 rounded-full border border-amber-400 bg-amber-100 px-3 py-1 text-xs font-semibold tracking-wide text-amber-950 shadow-sm">
+          STAGING | DATOS DE PRUEBA
+        </div>
+      )}
     </AppProviders>
   </StrictMode>
 );

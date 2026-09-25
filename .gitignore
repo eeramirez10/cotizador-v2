@@ -28,3 +28,5 @@ dist-ssr
 .env.production
 .firebase/
 quote-files/
+
+.env.staging
