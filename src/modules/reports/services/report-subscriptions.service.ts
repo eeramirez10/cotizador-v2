@@ -51,6 +51,14 @@ export interface ManagerReportSubscription {
   sendMinute: number;
   timezone: string;
   isActive: boolean;
+  nextRunAt: string | null;
+  lastRun: {
+    scheduledAt: string;
+    status: "PROCESSING" | "SUBMITTED" | "FAILED" | "NEEDS_REVIEW" | "SKIPPED";
+    providerMessageId: string | null;
+    errorMessage: string | null;
+    finishedAt: string | null;
+  } | null;
   createdBy: AuditUserSummary;
   updatedBy: AuditUserSummary | null;
   createdAt: string;

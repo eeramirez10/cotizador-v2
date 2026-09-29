@@ -132,6 +132,20 @@ const formatAuditDate = (value: string): string => new Intl.DateTimeFormat("es-M
   timeStyle: "short",
 }).format(new Date(value));
 
+const formatRunDate = (value: string, timezone: string): string => new Intl.DateTimeFormat("es-MX", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: timezone,
+}).format(new Date(value));
+
+const RUN_STATUS: Record<NonNullable<ManagerReportSubscription["lastRun"]>["status"], string> = {
+  PROCESSING: "Procesando",
+  SUBMITTED: "Aceptado por Twilio",
+  FAILED: "Falló",
+  NEEDS_REVIEW: "Requiere revisión",
+  SKIPPED: "Omitido por atraso",
+};
+
 export const ReportSubscriptionsPage = () => {
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = (currentUser?.role || "").trim().toLowerCase() === "admin";
@@ -294,8 +308,8 @@ export const ReportSubscriptionsPage = () => {
           </button>
         </div>
 
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">
-          <span className="font-bold">Configuración preparada:</span> el envío automático se habilitará cuando se conecte el worker de reportes en el siguiente paso.
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-600">
+          Los reportes activos se envían en su horario local cuando el worker de reportes está habilitado. Los envíos manuales no cambian el siguiente horario.
         </div>
 
         <div className="grid gap-3 p-5 sm:grid-cols-3">
@@ -319,6 +333,7 @@ export const ReportSubscriptionsPage = () => {
                   <TableHeader>Frecuencia</TableHeader>
                   <TableHeader>Rango del reporte</TableHeader>
                   <TableHeader>Horario</TableHeader>
+                  <TableHeader>Envío automático</TableHeader>
                   <TableHeader>Estado</TableHeader>
                   <TableHeader>Último cambio</TableHeader>
                   <TableHeader align="right">Acciones</TableHeader>
@@ -326,13 +341,13 @@ export const ReportSubscriptionsPage = () => {
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
                 {(subscriptionsQuery.isLoading || usersQuery.isLoading || branchesQuery.isLoading) && (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Cargando configuración...</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Cargando configuración...</td></tr>
                 )}
                 {subscriptionsQuery.isError && (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-rose-600">{subscriptionsQuery.error instanceof Error ? subscriptionsQuery.error.message : "No se pudo cargar la configuración."}</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-rose-600">{subscriptionsQuery.error instanceof Error ? subscriptionsQuery.error.message : "No se pudo cargar la configuración."}</td></tr>
                 )}
                 {!subscriptionsQuery.isLoading && !subscriptionsQuery.isError && filteredSubscriptions.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center"><CalendarClock className="mx-auto mb-2 h-7 w-7 text-slate-300" /><p className="text-sm font-semibold text-slate-700">No hay suscripciones configuradas</p><p className="mt-1 text-xs text-slate-500">Crea la primera para preparar el envío de reportes gerenciales.</p></td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center"><CalendarClock className="mx-auto mb-2 h-7 w-7 text-slate-300" /><p className="text-sm font-semibold text-slate-700">No hay suscripciones configuradas</p><p className="mt-1 text-xs text-slate-500">Crea la primera para programar el envío de reportes gerenciales.</p></td></tr>
                 )}
                 {filteredSubscriptions.map((subscription) => {
                   const auditUser = subscription.updatedBy || subscription.createdBy;
@@ -347,6 +362,7 @@ export const ReportSubscriptionsPage = () => {
                       <td className="px-3 py-3 text-xs font-semibold text-slate-700">{formatFrequency(subscription.frequency)}</td>
                       <td className="px-3 py-3"><p className="text-xs font-semibold text-slate-800">{formatReportRange(subscription.reportRange)}</p><p className="mt-1 text-[10px] text-slate-500">Información incluida</p></td>
                       <td className="px-3 py-3"><p className="inline-flex items-center gap-1 text-xs font-semibold text-slate-800"><Clock3 className="h-3.5 w-3.5 text-amber-600" />{formatSchedule(subscription)}</p><p className="mt-1 text-[10px] text-slate-500">{TIMEZONES.find((item) => item.value === subscription.timezone)?.label || subscription.timezone}</p></td>
+                      <td className="px-3 py-3 text-xs text-slate-700"><p>{subscription.isActive && subscription.nextRunAt ? `Próximo: ${formatRunDate(subscription.nextRunAt, subscription.timezone)}` : subscription.isActive ? "Pendiente de inicializar" : "Pausado"}</p>{subscription.lastRun && <p className={`mt-1 text-[10px] ${subscription.lastRun.status === "NEEDS_REVIEW" || subscription.lastRun.status === "FAILED" ? "text-rose-700" : "text-slate-500"}`} title={subscription.lastRun.errorMessage || undefined}>Último: {RUN_STATUS[subscription.lastRun.status]} · {formatRunDate(subscription.lastRun.scheduledAt, subscription.timezone)}</p>}</td>
                       <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${subscription.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{subscription.isActive ? "Activa" : "Inactiva"}</span></td>
                       <td className="px-3 py-3"><p className="text-xs font-semibold text-slate-700">{auditUser.fullName}</p><p className="mt-0.5 text-[10px] text-slate-500">{formatAuditDate(subscription.updatedAt)}</p></td>
                       <td className="px-3 py-3 text-right"><div className="inline-flex items-center gap-1"><button type="button" onClick={() => void handleSendNow(subscription)} disabled={!subscription.isActive || sendNowMutation.isPending} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-amber-400 bg-amber-50 px-2 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45" title={subscription.isActive ? "Generar y enviar el reporte ahora" : "Activa la suscripción para enviar"}>{sendNowMutation.isPending && sendNowMutation.variables === subscription.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}Enviar ahora</button><button type="button" onClick={() => openEditModal(subscription)} disabled={sendNowMutation.isPending} className="rounded-md border border-slate-300 p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50" title="Editar suscripción"><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => void handleSetActive(subscription)} disabled={statusMutation.isPending || sendNowMutation.isPending} className={`rounded-md border p-1.5 disabled:opacity-50 ${subscription.isActive ? "border-rose-300 text-rose-600 hover:bg-rose-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`} title={subscription.isActive ? "Desactivar suscripción" : "Activar suscripción"}>{statusMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}</button></div></td>

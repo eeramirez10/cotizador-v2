@@ -13,7 +13,8 @@ export const useReportSubscriptions = () => useQuery({
   queryKey: reportSubscriptionsKeys.list(),
   queryFn: () => ReportSubscriptionsService.list(),
   staleTime: 30_000,
-  refetchOnWindowFocus: false,
+  refetchInterval: 60_000,
+  refetchOnWindowFocus: true,
 });
 
 export const useCreateReportSubscription = () => {
