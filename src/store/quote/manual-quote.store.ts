@@ -57,6 +57,7 @@ export interface ManualQuoteItem {
   sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string;
   sellerSupplierDescription: string;
+  sellerSupplierProductCode?: string;
   sellerSupplierOrigin: string;
   sellerSupplierQuoteValidUntil: string;
   sellerSupplierQuoteReference: string;
@@ -103,6 +104,7 @@ export type ProcurementPrequoteData = Pick<
   | "sellerSupplierOrigin"
   | "sellerSupplierQuoteValidUntil"
   | "sellerSupplierQuoteReference"
+  | "sellerSupplierProductCode"
   | "sellerSupplierQuoteNotes"
   | "sellerOriginRestrictions"
   | "sellerDeliveryState"
@@ -281,6 +283,7 @@ const emptyProcurementPrequote = (): EmptyProcurementPrequoteData => ({
   sellerSupplierOrigin: "",
   sellerSupplierQuoteValidUntil: "",
   sellerSupplierQuoteReference: "",
+  sellerSupplierProductCode: "",
   sellerSupplierQuoteNotes: "",
   sellerOriginRestrictions: [],
   sellerDeliveryState: "",
@@ -435,6 +438,7 @@ const recalcItems = (items: ManualQuoteItem[], currency: QuoteCurrency, exchange
         sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
         sellerQuotedBrand: item.sellerQuotedBrand,
         sellerSupplierDescription: item.sellerSupplierDescription,
+        sellerSupplierProductCode: item.sellerSupplierProductCode || "",
         sellerSupplierOrigin: item.sellerSupplierOrigin,
         sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil,
         sellerSupplierQuoteReference: item.sellerSupplierQuoteReference,
@@ -1021,6 +1025,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
         sellerQuotedBrand: item.sellerQuotedBrand || "",
         sellerSupplierDescription: item.sellerSupplierDescription || "",
+        sellerSupplierProductCode: item.sellerSupplierProductCode || "",
         sellerSupplierOrigin: item.sellerSupplierOrigin || "",
         sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
         sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
@@ -1113,6 +1118,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
       sellerQuotedBrand: item.sellerQuotedBrand || "",
       sellerSupplierDescription: item.sellerSupplierDescription || "",
+      sellerSupplierProductCode: item.sellerSupplierProductCode || "",
       sellerSupplierOrigin: item.sellerSupplierOrigin || "",
       sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
       sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",

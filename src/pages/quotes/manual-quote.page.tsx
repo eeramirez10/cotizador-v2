@@ -339,6 +339,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate ?? null : null,
             sellerQuotedBrand: item.sellerQuotedBrand || "",
             sellerSupplierDescription: item.sellerSupplierDescription || "",
+            sellerSupplierProductCode: item.sellerSupplierProductCode || "",
             sellerSupplierOrigin: item.sellerSupplierOrigin || "",
             sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
             sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",

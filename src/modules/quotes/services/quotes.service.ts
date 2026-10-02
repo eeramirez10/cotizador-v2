@@ -153,6 +153,7 @@ export interface SavedQuoteRecord {
     sellerQuotedExchangeRate?: number | null;
     sellerQuotedBrand?: string;
     sellerSupplierDescription?: string;
+    sellerSupplierProductCode?: string;
     sellerSupplierOrigin?: string;
     sellerSupplierQuoteValidUntil?: string;
     sellerSupplierQuoteReference?: string;
@@ -213,6 +214,7 @@ interface ApiQuoteItem {
   sellerQuotedExchangeRate: number | null;
   sellerQuotedBrand: string | null;
   sellerSupplierDescription: string | null;
+  sellerSupplierProductCode: string | null;
   sellerSupplierOrigin: string | null;
   sellerSupplierQuoteValidUntil: string | null;
   sellerSupplierQuoteReference: string | null;
@@ -641,6 +643,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       sellerQuotedExchangeRate: item.sellerQuotedExchangeRate,
       sellerQuotedBrand: item.sellerQuotedBrand || "",
       sellerSupplierDescription: item.sellerSupplierDescription || "",
+      sellerSupplierProductCode: item.sellerSupplierProductCode || "",
       sellerSupplierOrigin: item.sellerSupplierOrigin || "",
       sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil?.slice(0, 10) || "",
       sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",
@@ -811,6 +814,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     sellerQuotedExchangeRate: Number.isFinite(item.sellerQuotedExchangeRate) ? item.sellerQuotedExchangeRate : null,
     sellerQuotedBrand: item.sellerQuotedBrand?.trim() || null,
     sellerSupplierDescription: item.sellerSupplierDescription?.trim() || null,
+    sellerSupplierProductCode: item.sellerSupplierProductCode?.trim() || null,
     sellerSupplierOrigin: item.sellerSupplierOrigin?.trim() || null,
     sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || null,
     sellerSupplierQuoteReference: item.sellerSupplierQuoteReference?.trim() || null,

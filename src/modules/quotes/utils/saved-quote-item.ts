@@ -32,6 +32,7 @@ export const toManualQuoteItem = (item: SavedQuoteItem): ManualQuoteItem => ({
   sellerQuotedExchangeRate: item.sellerQuotedExchangeRate ?? null,
   sellerQuotedBrand: item.sellerQuotedBrand || "",
   sellerSupplierDescription: item.sellerSupplierDescription || "",
+  sellerSupplierProductCode: item.sellerSupplierProductCode || "",
   sellerSupplierOrigin: item.sellerSupplierOrigin || "",
   sellerSupplierQuoteValidUntil: item.sellerSupplierQuoteValidUntil || "",
   sellerSupplierQuoteReference: item.sellerSupplierQuoteReference || "",

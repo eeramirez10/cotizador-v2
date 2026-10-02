@@ -116,7 +116,9 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
   supplierId: "",
   supplierName: "",
   supplierDescription: item.description,
+  supplierProductCode: "",
   qty: String(item.qty),
+  unit: item.unit,
   unitCost: "",
   currency: item.sellerCurrency,
   exchangeRate: item.sellerCurrency === "USD" ? String(item.sellerExchangeRate) : "",
@@ -124,6 +126,7 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
   origin: "",
   deliveryTime: item.sellerDeliveryTime || "",
   validUntil: "",
+  quoteDate: new Date().toISOString().slice(0, 10),
   externalReference: "",
   notes: "",
 });
@@ -320,16 +323,34 @@ export const PurchaseRequisitionsPage = () => {
   const saveOffer = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!requisition || !offerItem || !currentOfferForm) return;
+    const qty = Number(currentOfferForm.qty);
+    const unitCost = Number(currentOfferForm.unitCost);
+    const taxRate = currentOfferForm.documentTaxRate === null || currentOfferForm.documentTaxRate === undefined
+      ? 0.16
+      : currentOfferForm.documentTaxRate > 1 ? currentOfferForm.documentTaxRate / 100 : currentOfferForm.documentTaxRate;
+    const documentSubtotal = currentOfferForm.documentSubtotal ?? qty * unitCost;
+    const taxableAmount = Math.max(0, documentSubtotal
+      - (currentOfferForm.documentDiscount || 0)
+      + (currentOfferForm.documentFreight || 0)
+      + (currentOfferForm.documentOtherCharges || 0));
+    const hasDocumentAdjustments = Boolean(currentOfferForm.documentSubtotal !== null && currentOfferForm.documentSubtotal !== undefined
+      || currentOfferForm.documentDiscount || currentOfferForm.documentFreight
+      || currentOfferForm.documentOtherCharges || currentOfferForm.taxIncluded
+      || currentOfferForm.documentTax !== null && currentOfferForm.documentTax !== undefined);
+    const calculatedTax = currentOfferForm.taxIncluded
+      ? taxableAmount - taxableAmount / (1 + taxRate)
+      : taxableAmount * taxRate;
+    const documentTax = currentOfferForm.documentTax ?? calculatedTax;
     const input: SaveOfferInput = {
       supplierId: currentOfferForm.supplierId,
       supplierProductCode: currentOfferForm.supplierProductCode || null,
       alternateCodes: currentOfferForm.alternateCodes || [],
       supplierDescription: currentOfferForm.supplierDescription,
-      qty: Number(currentOfferForm.qty),
+      qty,
       unit: currentOfferForm.unit || null,
       listUnitPrice: currentOfferForm.listUnitPrice ?? null,
       discountPct: currentOfferForm.discountPct ?? null,
-      unitCost: Number(currentOfferForm.unitCost),
+      unitCost,
       currency: currentOfferForm.currency,
       exchangeRate: currentOfferForm.currency === "USD" ? Number(currentOfferForm.exchangeRate) : null,
       brand: currentOfferForm.brand,
@@ -347,14 +368,14 @@ export const PurchaseRequisitionsPage = () => {
       documentFreight: currentOfferForm.documentFreight || 0,
       documentOtherCharges: currentOfferForm.documentOtherCharges || 0,
       taxIncluded: currentOfferForm.taxIncluded === true,
-      taxRate: currentOfferForm.documentTaxRate === null || currentOfferForm.documentTaxRate === undefined
-        ? 0.16
-        : currentOfferForm.documentTaxRate > 1 ? currentOfferForm.documentTaxRate / 100 : currentOfferForm.documentTaxRate,
-      documentTax: currentOfferForm.documentTax ?? null,
-      documentTotal: currentOfferForm.documentTotal ?? null,
+      taxRate,
+      documentTax: currentOfferForm.documentTax ?? (hasDocumentAdjustments ? Number(calculatedTax.toFixed(4)) : null),
+      documentTotal: currentOfferForm.documentTotal ?? (hasDocumentAdjustments
+        ? Number((taxableAmount + (currentOfferForm.taxIncluded ? 0 : documentTax)).toFixed(4))
+        : null),
       notes: currentOfferForm.notes,
     };
-    if (!input.supplierId || !Number.isFinite(input.qty) || input.qty <= 0 || !Number.isFinite(input.unitCost) || input.unitCost < 0) {
+    if (!input.supplierId || currentOfferForm.unitCost.trim() === "" || !Number.isFinite(input.qty) || input.qty <= 0 || !Number.isFinite(input.unitCost) || input.unitCost < 0) {
       notifier.warning("Completa proveedor, cantidad y costo.");
       return;
     }
@@ -616,8 +637,9 @@ export const PurchaseRequisitionsPage = () => {
           onSave={saveSellerBulkProcurement}
         />
       )}
-      {offerItem && currentOfferForm && (
+      {requisition && offerItem && currentOfferForm && (
         <OfferModal
+          requisition={requisition}
           item={offerItem}
           form={currentOfferForm}
           setForm={setCurrentOfferForm}
@@ -1057,7 +1079,8 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
   );
 };
 
-const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, attachmentFile, onAttachmentFile, onNewSupplier, onClose, onSubmit }: {
+const OfferModal = ({ requisition, item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, attachmentFile, onAttachmentFile, onNewSupplier, onClose, onSubmit }: {
+  requisition: PurchaseRequisition;
   item: RequisitionItem;
   form: OfferForm;
   setForm: React.Dispatch<React.SetStateAction<OfferForm | null>>;
@@ -1074,6 +1097,7 @@ const OfferModal = ({ item, form, setForm, suppliers, brands, origins, deliveryT
 }) => (
   <SupplierOfferModal
     mode="PURCHASING"
+    purchasingContext={{ requisition, item }}
     itemDescription={item.description}
     value={form}
     onChange={(value) => setForm(value)}

@@ -1,12 +1,15 @@
-import { Loader2, PackageSearch, Paperclip, Sparkles, Store, X } from "lucide-react";
+import { Loader2, PackageSearch, Paperclip, Sparkles, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
+import type { PurchaseRequisition, RequisitionItem, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 import { SupplierQuoteExtractionService, type ExtractedSupplierData, type ExtractedSupplierQuoteItem, type SupplierQuoteExtractionResult } from "../../../modules/procurement/services/supplier-quote-extraction.service";
 import type { SaveSupplierInput } from "../../../modules/procurement/services/purchase-requisitions.service";
 import type { QuoteCatalogOption } from "../../../modules/quote-catalogs/services/quote-catalogs.service";
 import { notifier } from "../../notifications/notifier";
 import { SupplierQuoteExtractionReviewModal } from "./supplier-quote-extraction-review.modal";
 import { DetectedSupplierModal, findDetectedSupplierMatch } from "./detected-supplier.modal";
+import { PurchasingSupplierOfferFields } from "./purchasing-supplier-offer-fields";
+import { SellerSupplierReferenceFields } from "./seller-supplier-reference-fields";
+import type { ManualQuoteItem } from "../../../store/quote/manual-quote.store";
 
 export type SupplierOfferMode = "SELLER" | "PURCHASING";
 export type SupplierOfferCurrency = "MXN" | "USD";
@@ -47,6 +50,8 @@ export interface SupplierOfferFormValue {
 
 interface SupplierOfferModalProps {
   mode: SupplierOfferMode;
+  purchasingContext?: { requisition: PurchaseRequisition; item: RequisitionItem };
+  sellerContext?: { item: ManualQuoteItem; technical: { standard: string; diameter: string; thickness: string; bore: string } };
   itemDescription: string;
   value: SupplierOfferFormValue;
   onChange: (value: SupplierOfferFormValue) => void;
@@ -67,12 +72,10 @@ interface SupplierOfferModalProps {
   existingAttachments?: ReactNode;
 }
 
-const optionValue = (option: QuoteCatalogOption) => option.value || option.label;
-const inputClass = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500";
-const labelClass = "text-xs font-semibold text-slate-600";
-
 export const SupplierOfferModal = ({
   mode,
+  purchasingContext,
+  sellerContext,
   itemDescription,
   value,
   onChange,
@@ -96,14 +99,14 @@ export const SupplierOfferModal = ({
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extraction, setExtraction] = useState<SupplierQuoteExtractionResult | null>(null);
   const [detectedSupplier, setDetectedSupplier] = useState<ExtractedSupplierData | null>(null);
-  const update = <K extends keyof SupplierOfferFormValue>(key: K, fieldValue: SupplierOfferFormValue[K]) => {
-    onChange({ ...value, [key]: fieldValue });
-  };
-  const title = mode === "SELLER" ? "Agregar referencia de proveedor" : "Nueva propuesta de proveedor";
+  const title = mode === "SELLER" ? "Agregar referencia de proveedor" : "Cotización de proveedor";
   const eyebrow = mode === "SELLER" ? "Información opcional para Compras" : "Propuesta de Compras";
   const submitLabel = mode === "SELLER" ? "Guardar referencia" : "Registrar propuesta de Compras";
   const modalBusy = busy || extracting;
   const canExtract = Boolean(attachmentFile && /\.(pdf|xlsx?)$/i.test(attachmentFile.name));
+  if ((mode === "PURCHASING" && !purchasingContext) || (mode === "SELLER" && !sellerContext)) {
+    throw new Error("El contexto de la partida es obligatorio para capturar la referencia del proveedor.");
+  }
 
   const extractSupplierQuote = async () => {
     if (!attachmentFile || !canExtract) return;
@@ -164,7 +167,7 @@ export const SupplierOfferModal = ({
   return (
     <>
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="supplier-offer-title">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${purchasingContext || sellerContext ? "max-w-[min(1500px,96vw)]" : "max-w-4xl"}`}>
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
           <div className="flex min-w-0 gap-3">
             <span className="shrink-0 rounded-xl bg-amber-100 p-2 text-amber-700"><PackageSearch className="h-5 w-5" /></span>
@@ -179,51 +182,31 @@ export const SupplierOfferModal = ({
 
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="overflow-y-auto px-5 py-5">
-            <section>
-              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Proveedor y material</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className={`${labelClass} sm:col-span-2`}>
-                  <span className="flex items-center justify-between gap-3">Proveedor *<button type="button" onClick={() => onNewSupplier()} className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline"><Store className="h-3.5 w-3.5" />Nuevo proveedor</button></span>
-                  <select value={value.supplierId} onChange={(event) => {
-                    const supplierId = event.target.value;
-                    const supplier = suppliers.find((entry) => entry.id === supplierId);
-                    onChange({ ...value, supplierId, supplierName: supplier?.name || "" });
-                  }} className={inputClass}>
-                    <option value="">Selecciona un proveedor registrado...</option>
-                    {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.erpCode ? `${supplier.erpCode} · ` : ""}{supplier.name}</option>)}
-                  </select>
-                </label>
-                <label className={`${labelClass} sm:col-span-2`}>Descripción según el proveedor
-                  <textarea
-                    value={value.supplierDescription}
-                    onChange={(event) => update("supplierDescription", event.target.value)}
-                    onBlur={(event) => update("supplierDescription", event.currentTarget.value.toUpperCase())}
-                    rows={3}
-                    maxLength={500}
-                    className={inputClass}
-                    placeholder="Descripción utilizada por el proveedor"
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="mt-6 border-t border-slate-200 pt-5">
-              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Condiciones de la propuesta</p>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <Field label="Cantidad *" type="number" value={value.qty} disabled={quantityReadOnly} onChange={(fieldValue) => update("qty", fieldValue)} />
-                <Field label="Costo unitario *" type="number" value={value.unitCost} onChange={(fieldValue) => update("unitCost", fieldValue)} />
-                <Select label="Moneda *" value={value.currency} onChange={(fieldValue) => update("currency", fieldValue as SupplierOfferCurrency)} options={[["MXN", "MXN"], ["USD", "USD"]]} />
-                {value.currency === "USD" && <Field label="Tipo de cambio *" type="number" value={value.exchangeRate} onChange={(fieldValue) => update("exchangeRate", fieldValue)} />}
-                <Select label="Marca" value={value.brand} onChange={(fieldValue) => update("brand", fieldValue)} options={[["", "Seleccionar"], ...brands.map((option) => [optionValue(option), option.label] as [string, string])]} />
-                <Select label="Procedencia" value={value.origin} onChange={(fieldValue) => update("origin", fieldValue)} options={[["", "Seleccionar"], ...origins.map((option) => [optionValue(option), option.label] as [string, string])]} />
-                <Select label="Tiempo de entrega *" value={value.deliveryTime} onChange={(fieldValue) => update("deliveryTime", fieldValue)} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [optionValue(option), option.label] as [string, string])]} />
-                <Field label="Vigencia" type="date" value={value.validUntil} onChange={(fieldValue) => update("validUntil", fieldValue)} />
-                <Field label="Referencia del proveedor" value={value.externalReference} onChange={(fieldValue) => update("externalReference", fieldValue)} />
-                <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>Notas
-                  <textarea value={value.notes} onChange={(event) => update("notes", event.target.value)} rows={3} maxLength={1000} className={inputClass} placeholder="Condiciones o aclaraciones de la propuesta" />
-                </label>
-              </div>
-            </section>
+            {mode === "PURCHASING" ? (
+              <PurchasingSupplierOfferFields
+                requisition={purchasingContext!.requisition}
+                item={purchasingContext!.item}
+                value={value}
+                onChange={onChange}
+                suppliers={suppliers}
+                brands={brands}
+                origins={origins}
+                deliveryTimes={deliveryTimes}
+                onNewSupplier={onNewSupplier}
+              />
+            ) : (
+              <SellerSupplierReferenceFields
+                item={sellerContext!.item}
+                technical={sellerContext!.technical}
+                value={value}
+                onChange={onChange}
+                suppliers={suppliers}
+                brands={brands}
+                origins={origins}
+                deliveryTimes={deliveryTimes}
+                onNewSupplier={onNewSupplier}
+              />
+            )}
 
             {children}
 
@@ -273,22 +256,3 @@ export const SupplierOfferModal = ({
     </>
   );
 };
-
-const Field = ({ label, value, onChange, type = "text", disabled = false }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  disabled?: boolean;
-}) => (
-  <label className={labelClass}>{label}<input type={type} min={type === "number" ? "0" : undefined} step={type === "number" ? "0.0001" : undefined} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>
-);
-
-const Select = ({ label, value, onChange, options }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: [string, string][];
-}) => (
-  <label className={labelClass}>{label}<select value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>
-);

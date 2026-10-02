@@ -39,6 +39,7 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
     supplierId: item.sellerSupplierId || "",
     supplierName: item.sellerSupplierName || "",
     supplierDescription: item.sellerSupplierDescription || item.erpDescription || item.customerDescription || "",
+    supplierProductCode: item.sellerSupplierProductCode || "",
     qty: String(fulfillment.purchaseQty),
     unitCost: item.sellerQuotedUnitCost === null ? "" : String(item.sellerQuotedUnitCost),
     currency: item.sellerQuotedCurrency || "MXN",
@@ -140,6 +141,7 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
         sellerQuotedExchangeRate: offer.currency === "USD" ? parsedExchangeRate : null,
         sellerQuotedBrand: offer.brand,
         sellerSupplierDescription: offer.supplierDescription.trim(),
+        sellerSupplierProductCode: offer.supplierProductCode?.trim() || "",
         sellerSupplierOrigin: offer.origin,
         sellerSupplierQuoteValidUntil: offer.validUntil,
         sellerSupplierQuoteReference: offer.externalReference.trim(),
@@ -208,6 +210,7 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
     <>
       <SupplierOfferModal
         mode="SELLER"
+        sellerContext={{ item, technical: { standard, diameter, thickness, bore } }}
         itemDescription={item.erpDescription || item.customerDescription || "Partida sin descripción"}
         value={offer}
         onChange={setOffer}

@@ -360,6 +360,7 @@ export const SellerProcurementBulkPrequoteModal = ({
             : null,
           sellerQuotedBrand: form.brand,
           sellerSupplierDescription: form.supplierDescription.trim().toUpperCase(),
+          sellerSupplierProductCode: item.sellerSupplierProductCode || "",
           sellerSupplierOrigin: form.origin,
           sellerSupplierQuoteValidUntil: form.validUntil,
           sellerSupplierQuoteReference: form.externalReference.trim(),
