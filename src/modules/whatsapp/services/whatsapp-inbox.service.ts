@@ -78,6 +78,7 @@ export interface WhatsAppInboxMessage {
   body: string;
   messageType: "TEXT" | "QUOTE_DOCUMENT";
   status: WhatsAppMessageStatus;
+  errorMessage: string | null;
   occurredAt: string;
   quote: WhatsAppQuoteContext | null;
   fileAssetId: string | null;

@@ -13,7 +13,20 @@ const quoteDetailKeys = {
   all: ["quotes", "detail"] as const,
   byId: (quoteId: string) => [...quoteDetailKeys.all, quoteId] as const,
   customerChangeRequests: (quoteId: string) => [...quoteDetailKeys.byId(quoteId), "customer-change-requests"] as const,
+  deliveryAttempts: (quoteId: string) => [...quoteDetailKeys.byId(quoteId), "delivery-attempts"] as const,
 };
+
+export const useQuoteDeliveryAttempts = (quoteId?: string) => useQuery({
+  queryKey: quoteId ? quoteDetailKeys.deliveryAttempts(quoteId) : ["quotes", "delivery-attempts", "disabled"],
+  queryFn: () => QuotesService.listDeliveryAttempts(quoteId!),
+  enabled: Boolean(quoteId),
+  refetchOnWindowFocus: true,
+  refetchInterval: (query) => {
+    const latestWhatsApp = query.state.data?.find((attempt) => attempt.channel === "WHATSAPP");
+    if (!latestWhatsApp || !["QUEUED", "SENT"].includes(latestWhatsApp.status)) return false;
+    return Date.now() - Date.parse(latestWhatsApp.sentAt) < 86_400_000 ? 15_000 : false;
+  },
+});
 
 export const useQuoteDetail = (quoteId?: string) => {
   return useQuery({
@@ -191,8 +204,8 @@ export const useRegisterQuoteDeliveryAttempt = () => {
 export const useSendQuoteWhatsApp = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ quoteId, contactId, message, file }: { quoteId: string; contactId?: string; message: string; file: File }) =>
-      QuotesService.sendWhatsApp(quoteId, { contactId, message, file }),
+    mutationFn: ({ quoteId, contactId, recipient, message, file }: { quoteId: string; contactId?: string; recipient: string; message: string; file: File }) =>
+      QuotesService.sendWhatsApp(quoteId, { contactId, recipient, message, file }),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
       await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(variables.quoteId), exact: false });

@@ -31,6 +31,7 @@ const mergeCustomerContacts = (
   const additions = detected
     .map((contact) => customerContact(contact, fallbackName))
     .filter((contact) => {
+      if (!contact.email?.trim() && !contact.phone?.trim() && !contact.mobile?.trim()) return false;
       const signature = contactSignature(contact.email, contact.mobile || contact.phone);
       if (signature !== "|" && signatures.has(signature)) return false;
       signatures.add(signature);

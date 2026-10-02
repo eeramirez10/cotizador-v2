@@ -17,6 +17,17 @@ export type QuoteDraftOrigin = "MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT";
 export type SavedDeliveryStatus = "NO_ENVIADA" | "ENVIADA";
 export type SavedOrderStatus = "NO_GENERADO" | "GENERADO";
 export type QuoteDeliveryChannel = "WHATSAPP" | "EMAIL";
+export interface QuoteDeliveryAttempt {
+  id: string;
+  channel: QuoteDeliveryChannel;
+  recipient: string;
+  status: "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED";
+  errorMessage: string | null;
+  sentAt: string;
+  deliveredAt: string | null;
+  readAt: string | null;
+  failedAt: string | null;
+}
 export type QuoteRejectionReason = string;
 export type QuoteCancellationReason = string;
 export type QuoteApprovalReturnReason = string;
@@ -1006,6 +1017,14 @@ export class QuotesService {
     return mapApiQuoteToSavedRecord(raw);
   }
 
+  static async listDeliveryAttempts(quoteId: string): Promise<QuoteDeliveryAttempt[]> {
+    const { data } = await coreHttpClient.get<QuoteDeliveryAttempt[]>(
+      `/api/quotes/${quoteId}/delivery-attempts`,
+      { headers: requireAuthHeaders() },
+    );
+    return data;
+  }
+
   static async registerErpQuote(quoteId: string, erpQuoteNumber: string): Promise<SavedQuoteRecord> {
     try {
       const { data } = await coreHttpClient.patch<ApiQuote>(
@@ -1308,7 +1327,7 @@ export class QuotesService {
 
   static async sendWhatsApp(
     quoteId: string,
-    payload: { contactId?: string; message: string; file: File }
+    payload: { contactId?: string; recipient: string; message: string; file: File }
   ): Promise<{
     ok: boolean;
     message: string;
@@ -1323,6 +1342,7 @@ export class QuotesService {
       const form = new FormData();
       form.append("file", payload.file, payload.file.name);
       if (payload.contactId) form.append("contactId", payload.contactId);
+      form.append("recipient", payload.recipient);
       form.append("message", payload.message);
       const { data } = await coreHttpClient.post<{
         providerMessageId: string;

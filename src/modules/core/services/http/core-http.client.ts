@@ -1,5 +1,6 @@
 import axios from "axios";
 import { envs } from "../../../../config/envs";
+import { preferApiErrorMessage } from "../../../../shared/utils/api-error-message";
 
 type UnauthorizedHandler = () => void;
 
@@ -30,6 +31,6 @@ coreHttpClient.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     handleCoreUnauthorizedError(error);
-    return Promise.reject(error);
+    return Promise.reject(preferApiErrorMessage(error));
   },
 );

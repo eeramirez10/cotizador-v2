@@ -29,6 +29,7 @@ import type {
   QuoteCancellationReason,
   QuoteRejectionReason,
   QuoteRevisionReason,
+  QuoteDeliveryAttempt,
   SavedQuoteRecord,
 } from "../../modules/quotes/services/quotes.service";
 import {
@@ -39,6 +40,7 @@ import {
   useRestoreQuote,
   useDeleteQuotePermanently,
   useQuoteDetail,
+  useQuoteDeliveryAttempts,
   useQuoteCustomerChangeRequests,
   useRegisterQuoteDeliveryAttempt,
   useSendQuoteWhatsApp,
@@ -221,6 +223,27 @@ interface SendRecipientOption {
 
 const normalizeEmail = (value: string): string => value.trim().toLowerCase();
 const normalizePhone = (value: string): string => value.replace(/\D/g, "");
+
+const normalizeWhatsAppRecipient = (value: string): string | null => {
+  let digits = normalizePhone(value);
+  if (digits.length === 13 && digits.startsWith("521")) digits = `52${digits.slice(3)}`;
+  if (digits.length === 10) digits = `52${digits}`;
+  return digits.length >= 11 && digits.length <= 15 ? `+${digits}` : null;
+};
+
+const deliveryLabel = (attempt: QuoteDeliveryAttempt): string => {
+  if (attempt.channel === "EMAIL") return "Envío por correo registrado";
+  if (attempt.status === "FAILED") return "No entregada";
+  if (attempt.status === "READ") return "Leída";
+  if (attempt.status === "DELIVERED") return "Entregada";
+  return "Pendiente de entrega";
+};
+
+const deliveryTone = (attempt: QuoteDeliveryAttempt): string => {
+  if (attempt.status === "FAILED") return "bg-rose-100 text-rose-800";
+  if (attempt.status === "DELIVERED" || attempt.status === "READ") return "bg-emerald-100 text-emerald-800";
+  return "bg-amber-100 text-amber-800";
+};
 
 const createRecipientLabel = (name: string, companyName: string, whatsapp: string, email: string): string => {
   const safeName = name.trim() || companyName.trim() || "Contacto";
@@ -771,6 +794,7 @@ export const QuoteDetailPage = () => {
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
+  const deliveryAttemptsQuery = useQuoteDeliveryAttempts(quoteId);
   const customerChangeRequests = useQuoteCustomerChangeRequests(quoteId);
   const quoteAttachments = useQuoteAttachments(quoteId);
   const {
@@ -885,13 +909,14 @@ export const QuoteDetailPage = () => {
     () => sendRecipientOptions.find((option) => option.id === selectedWhatsAppRecipientId) || null,
     [sendRecipientOptions, selectedWhatsAppRecipientId]
   );
+  const selectedWhatsAppNumber = normalizeWhatsAppRecipient(selectedWhatsAppRecipient?.whatsapp || "");
   const selectedEmailRecipient = useMemo(
     () => sendRecipientOptions.find((option) => option.id === selectedEmailRecipientId) || null,
     [sendRecipientOptions, selectedEmailRecipientId]
   );
   const sendIncludesWhatsApp = sendChannel !== "EMAIL";
   const whatsAppWindow = useWhatsAppConversationWindow(
-    selectedWhatsAppRecipient?.whatsapp || "",
+    selectedWhatsAppNumber || "",
     showSendModal && sendIncludesWhatsApp,
   );
   const isWhatsAppWindowActive = Boolean(whatsAppWindow.data?.active && !whatsAppWindowExpired);
@@ -1476,6 +1501,11 @@ export const QuoteDetailPage = () => {
             continue;
           }
 
+          if (channel === "WHATSAPP" && !selectedWhatsAppNumber) {
+            results.push({ ok: false, message: "El número de WhatsApp seleccionado no es válido." });
+            continue;
+          }
+
           if (channel === "WHATSAPP") {
             const printable = printableRef.current;
             if (!printable) throw new Error("No se pudo preparar la cotización para enviar.");
@@ -1485,6 +1515,7 @@ export const QuoteDetailPage = () => {
               contactId: selectedWhatsAppRecipient?.id === "__base__"
                 ? undefined
                 : selectedWhatsAppRecipient?.id,
+              recipient: selectedWhatsAppNumber!,
               message: deliveryMessage,
               file: pdfFile,
             });
@@ -2078,7 +2109,7 @@ export const QuoteDetailPage = () => {
         <div>
           <p className="text-xs font-semibold uppercase text-gray-500">Envío cliente</p>
           <p className="text-sm text-gray-700">
-            {quote.deliveryStatus}
+            {quote.deliveryStatus === "ENVIADA" ? "Envío iniciado" : "Sin envíos"}
             {quote.firstSentAt ? ` · ${new Date(quote.firstSentAt).toLocaleString("es-MX")}` : ""}
           </p>
         </div>
@@ -2109,6 +2140,35 @@ export const QuoteDetailPage = () => {
           <p className="text-sm text-gray-700">{quote.deliveryPlace || "Por definir"}</p>
         </div>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4" aria-label="Estado de envíos de la cotización">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-800">Envíos de la cotización</h2>
+          {deliveryAttemptsQuery.isFetching && <span className="text-xs text-slate-500">Actualizando...</span>}
+        </div>
+        {deliveryAttemptsQuery.isError ? (
+          <p className="text-sm text-rose-700">No se pudo consultar el estado de los envíos.</p>
+        ) : !deliveryAttemptsQuery.data?.length ? (
+          <p className="text-sm text-slate-500">Todavía no hay envíos registrados.</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {deliveryAttemptsQuery.data.slice(0, 5).map((attempt) => (
+              <div key={attempt.id} className="flex flex-wrap items-start justify-between gap-2 py-2 text-sm first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-800">{attempt.channel === "WHATSAPP" ? "WhatsApp" : "Correo"} · {attempt.recipient}</p>
+                  <p className="text-xs text-slate-500">{new Date(attempt.sentAt).toLocaleString("es-MX")}</p>
+                  {attempt.status === "FAILED" && attempt.errorMessage && (
+                    <p className="mt-1 text-xs text-rose-700">{attempt.errorMessage}</p>
+                  )}
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${deliveryTone(attempt)}`}>
+                  {deliveryLabel(attempt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="max-h-[62vh] overflow-x-auto overflow-y-auto rounded-md border border-gray-200 bg-white">
         {(showCustomerExtractionColumns || hasItemComments || canManageProcurementReferences) && (
@@ -2827,7 +2887,7 @@ export const QuoteDetailPage = () => {
 
                   <p>
                     <span className="font-semibold">WhatsApp seleccionado:</span>{" "}
-                    {selectedWhatsAppRecipient?.whatsapp || "No seleccionado"}
+                    {selectedWhatsAppNumber || selectedWhatsAppRecipient?.whatsapp || "No seleccionado"}
                   </p>
                   <p>
                     <span className="font-semibold">Correo seleccionado:</span>{" "}

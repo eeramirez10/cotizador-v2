@@ -1,4 +1,5 @@
 import { Building2, Loader2, Mail, MessageCircle, Search, Sparkles, Store, X } from "lucide-react";
+import { isAxiosError } from "axios";
 import { useState } from "react";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import type { Client, ClientInput } from "../../../modules/clients/types/client.types";
@@ -173,7 +174,10 @@ export const ErpCustomerOnboardingModal = ({
         if (toast !== undefined) notifier.dismiss(toast);
         return;
       }
-      const message = error instanceof Error ? error.message : "No se pudo crear el cliente.";
+      const apiError = isAxiosError(error) ? error.response?.data?.error : null;
+      const message = typeof apiError === "string" && apiError.trim()
+        ? apiError
+        : error instanceof Error ? error.message : "No se pudo crear el cliente.";
       if (toast !== undefined) notifier.update(toast, "error", message);
       else notifier.error(message);
     } finally {

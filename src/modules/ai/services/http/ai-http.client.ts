@@ -2,6 +2,7 @@ import axios from "axios";
 import { envs } from "../../../../config/envs";
 import { getAuthToken } from "../../../../store/auth/auth.store";
 import { handleCoreUnauthorizedError } from "../../../core/services/http/core-http.client";
+import { preferApiErrorMessage } from "../../../../shared/utils/api-error-message";
 
 export const aiHttpClient = axios.create({
   baseURL: envs.AI_API_URL || undefined,
@@ -26,6 +27,6 @@ aiHttpClient.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     if (usesAuthenticatedCoreProxy) handleCoreUnauthorizedError(error);
-    return Promise.reject(error);
+    return Promise.reject(preferApiErrorMessage(error));
   },
 );

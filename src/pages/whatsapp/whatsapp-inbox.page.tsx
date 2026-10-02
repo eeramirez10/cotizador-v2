@@ -52,6 +52,7 @@ import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
 import { AssignWhatsAppLeadModal } from "./assign-whatsapp-lead.modal";
 import { WhatsAppFileMessagePart } from "./whatsapp-file-message-part";
+import { WhatsAppQuoteMessageMeta } from "./whatsapp-quote-message-meta";
 import { FilePreviewModal } from "../../shared/components/file-preview/file-preview.modal";
 import type { ManagedUser } from "../../modules/users/services/users.service";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
@@ -1267,6 +1268,7 @@ export const WhatsAppInboxPage = () => {
               conversationList: WhatsAppConversationListPanel,
               composerAttachButton: null,
               messageAvatar: null,
+              messageInlineMeta: WhatsAppQuoteMessageMeta,
             }}
             slotProps={{
               conversationList: {

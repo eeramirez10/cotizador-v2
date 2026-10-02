@@ -358,8 +358,17 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
       ? "error"
       : patch.status === "READ"
         ? "read"
-        : "sent";
-    const message = { ...current[index], status };
+        : patch.status === "QUEUED" || patch.status === "SENT"
+          ? "sending"
+          : "sent";
+    const metadata = current[index].metadata as { quoteDeliveryStatus?: string; quoteDeliveryError?: string | null } | undefined;
+    const message = {
+      ...current[index],
+      status,
+      metadata: metadata?.quoteDeliveryStatus
+        ? { ...metadata, quoteDeliveryStatus: patch.status, quoteDeliveryError: patch.errorMessage ?? null }
+        : current[index].metadata,
+    };
     const next = current.map((candidate, candidateIndex) => candidateIndex === index ? message : candidate);
     this.messagesByConversation.set(conversationId, next);
     if (this.activeConversationId === conversationId) this.onMessageData(conversationId, next);
@@ -424,11 +433,16 @@ export class MuiWhatsAppChatAdapter implements ChatAdapter<string> {
       role: outbound ? "user" : "assistant",
       parts,
       createdAt: item.occurredAt,
+      metadata: item.messageType === "QUOTE_DOCUMENT"
+        ? { quoteDeliveryStatus: item.status, quoteDeliveryError: item.errorMessage }
+        : undefined,
       status: item.status === "FAILED"
         ? "error"
         : item.status === "READ"
           ? "read"
-          : "sent",
+          : item.status === "QUEUED" || item.status === "SENT"
+            ? "sending"
+            : "sent",
       author: {
         // MUI uses the author id, not only the role, to decide the message side.
         // AI and human replies both belong to the outbound Tuvansa side.
