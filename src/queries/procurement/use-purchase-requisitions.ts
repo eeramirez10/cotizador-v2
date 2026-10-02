@@ -5,6 +5,7 @@ import {
   type SaveOfferInput,
   type SaveSupplierInput,
   type UpdateRequisitionItemInput,
+  type UpdateRequisitionDocumentInput,
 } from "../../modules/procurement/services/purchase-requisitions.service";
 
 export const purchaseRequisitionKeys = {
@@ -64,6 +65,16 @@ export const usePurchaseRequisitionMutations = () => {
       PurchaseRequisitionsService.updateItem(id, itemId, input),
     onSuccess: refresh,
   });
+  const updateDocument = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateRequisitionDocumentInput }) =>
+      PurchaseRequisitionsService.updateDocument(id, input),
+    onSuccess: refresh,
+  });
+  const updateSupplierCode = useMutation({
+    mutationFn: ({ id, itemId, offerId, supplierProductCode }: { id: string; itemId: string; offerId: string; supplierProductCode: string | null }) =>
+      PurchaseRequisitionsService.updateSupplierCode(id, itemId, offerId, supplierProductCode),
+    onSuccess: refresh,
+  });
   const submit = useMutation({ mutationFn: PurchaseRequisitionsService.submit, onSuccess: refresh });
   const linkItemToErp = useMutation({
     mutationFn: ({ id, itemId, erpCode, erpEan }: { id: string; itemId: string; erpCode: string; erpEan: string }) =>
@@ -117,6 +128,8 @@ export const usePurchaseRequisitionMutations = () => {
   });
 
   return {
+    updateDocument,
+    updateSupplierCode,
     updateItem,
     linkItemToErp,
     submit,

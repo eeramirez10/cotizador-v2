@@ -163,6 +163,7 @@ export interface RequisitionItem {
   sellerCurrency: Currency;
   sellerExchangeRate: number;
   sellerCostSource: "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
+  quotationOwner: "SELLER" | "PURCHASING";
   sellerSupplierId: string | null;
   sellerSupplierName: string | null;
   sellerBrand: string | null;
@@ -182,6 +183,8 @@ export interface PurchaseRequisition {
   quoteCurrency: Currency;
   branchId: string;
   branchName: string;
+  branchAddress: string | null;
+  branchPhone: string | null;
   customerName: string;
   requestedByUserId: string;
   requestedBy: ProcurementUser;
@@ -191,6 +194,12 @@ export interface PurchaseRequisition {
   deliveryState: string | null;
   deliveryPlace: string | null;
   notes: string | null;
+  supplierOrderReference: string | null;
+  shipmentReference: string | null;
+  fobTerms: string | null;
+  paymentTerms: string | null;
+  qualityCertificatesRequired: boolean;
+  markingInstructions: string | null;
   submittedAt: string | null;
   completedAt: string | null;
   costApprovedAt: string | null;
@@ -209,6 +218,7 @@ export interface PaginatedRequisitions {
 }
 
 export interface UpdateRequisitionItemInput {
+  quotationOwner?: "SELLER" | "PURCHASING";
   standard?: string | null;
   diameter?: string | null;
   thickness?: string | null;
@@ -222,6 +232,15 @@ export interface UpdateRequisitionItemInput {
   originRestrictions?: string[];
   sellerDeliveryTime?: string | null;
   deliveryPlace?: string | null;
+}
+
+export interface UpdateRequisitionDocumentInput {
+  supplierOrderReference?: string | null;
+  shipmentReference?: string | null;
+  fobTerms?: string | null;
+  paymentTerms?: string | null;
+  qualityCertificatesRequired?: boolean;
+  markingInstructions?: string | null;
 }
 
 export interface SaveSupplierInput {
@@ -343,6 +362,25 @@ export class PurchaseRequisitionsService {
         { headers: headers() },
       ),
       "No se pudo actualizar la partida.",
+    );
+  }
+
+  static updateDocument(id: string, input: UpdateRequisitionDocumentInput) {
+    return request(
+      () => coreHttpClient.patch<PurchaseRequisition>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/document`, input, { headers: headers() },
+      ),
+      "No se pudieron guardar las referencias de la requisición.",
+    );
+  }
+
+  static updateSupplierCode(id: string, itemId: string, offerId: string, supplierProductCode: string | null) {
+    return request(
+      () => coreHttpClient.patch<PurchaseRequisition>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/offers/${encodeURIComponent(offerId)}/code`,
+        { supplierProductCode }, { headers: headers() },
+      ),
+      "No se pudo actualizar el código del proveedor.",
     );
   }
 

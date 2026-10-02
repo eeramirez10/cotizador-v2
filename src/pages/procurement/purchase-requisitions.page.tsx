@@ -28,7 +28,9 @@ import {
   type SaveOfferInput,
   type SaveSupplierInput,
   type Supplier,
+  type UpdateRequisitionDocumentInput,
 } from "../../modules/procurement/services/purchase-requisitions.service";
+import { RequisitionPaperCard } from "./requisition-paper-card";
 import {
   usePurchaseRequisition,
   usePurchaseRequisitionMutations,
@@ -535,7 +537,22 @@ export const PurchaseRequisitionsPage = () => {
               onAttachOffers={() => setShowOfferAttachmentModal(true)}
               onBulkSellerReference={() => setShowSellerBulkProcurement(true)}
               onBack={() => setSelectedId(null)}
-              onEdit={(item) => role === "SELLER" ? openSellerProcurementItem(item) : openItem(item)}
+              onEdit={(item) => role === "SELLER" && item.quotationOwner === "SELLER" ? openSellerProcurementItem(item) : openItem(item)}
+              onSaveDocument={(input) => run(
+                "Guardando referencias...",
+                () => mutations.updateDocument.mutateAsync({ id: requisition.id, input }),
+                "Referencias actualizadas.",
+              )}
+              onChangeOwner={(itemId, quotationOwner) => run(
+                "Actualizando responsable...",
+                () => mutations.updateItem.mutateAsync({ id: requisition.id, itemId, input: { quotationOwner } }),
+                "Responsable actualizado.",
+              )}
+              onSaveSupplierCode={(itemId, offerId, supplierProductCode) => run(
+                "Guardando código del proveedor...",
+                () => mutations.updateSupplierCode.mutateAsync({ id: requisition.id, itemId, offerId, supplierProductCode }),
+                "Código del proveedor actualizado.",
+              )}
               onLinkErp={setLinkingItem}
               onOffer={(item) => { setOfferItem(item); setCurrentOfferForm(offerForm(item)); }}
               onSelect={(itemId, offerId) => run(
@@ -677,6 +694,9 @@ const RequisitionDetail = ({
   onBulkSellerReference,
   onBack,
   onEdit,
+  onSaveDocument,
+  onChangeOwner,
+  onSaveSupplierCode,
   onLinkErp,
   onOffer,
   onSelect,
@@ -703,6 +723,9 @@ const RequisitionDetail = ({
   onBulkSellerReference: () => void;
   onBack: () => void;
   onEdit: (item: RequisitionItem) => void;
+  onSaveDocument: (input: UpdateRequisitionDocumentInput) => Promise<boolean>;
+  onChangeOwner: (itemId: string, owner: "SELLER" | "PURCHASING") => Promise<boolean>;
+  onSaveSupplierCode: (itemId: string, offerId: string, code: string | null) => Promise<boolean>;
   onLinkErp: (item: RequisitionItem) => void;
   onOffer: (item: RequisitionItem) => void;
   onSelect: (itemId: string, offerId: string) => Promise<boolean>;
@@ -780,6 +803,17 @@ const RequisitionDetail = ({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <RequisitionPaperCard
+          requisition={requisition}
+          canEditDocument={(role === "SELLER" && sellerDraft) || (canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status))}
+          canChangeOwner={sellerDraft || (canBuy && requisition.status === "DRAFT")}
+          busy={busy}
+          onSaveDocument={onSaveDocument}
+          onChangeOwner={onChangeOwner}
+          canEditOfferCode={canBuy || sellerDraft}
+          role={role}
+          onSaveSupplierCode={onSaveSupplierCode}
+        />
         {requisition.items.map((item) => {
           const selected = item.offers.find((offer) => offer.isSelected);
           const sellerAttachmentCount = item.quoteClientItemId
@@ -824,7 +858,7 @@ const RequisitionDetail = ({
               </div>
 
               <div className="grid gap-px bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
-                <InfoBlock label={`Costo vendedor · ${sellerCostSourceLabel(item.sellerCostSource)}`} value={money(item.sellerUnitCost, item.sellerCurrency)} />
+                <InfoBlock label={`Costo vendedor · ${sellerCostSourceLabel(item.sellerCostSource)}`} value={item.sellerUnitCost > 0 ? money(item.sellerUnitCost, item.sellerCurrency) : "Pendiente de cotizar"} />
                 <InfoBlock label="Proveedor vendedor" value={item.sellerSupplierName || "No registrado"} />
                 <InfoBlock label="Norma / diámetro" value={[item.standard, item.diameter].filter(Boolean).join(" · ") || "-"} />
                 <InfoBlock label="Marca" value={item.sellerBrand || "-"} />
@@ -1009,11 +1043,11 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
           <div className="mt-3 flex gap-2"><input value={newTechnicalKey} onChange={(event) => setNewTechnicalKey(event.target.value)} placeholder="Nuevo campo" className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs" /><input value={newTechnicalValue} onChange={(event) => setNewTechnicalValue(event.target.value)} placeholder="Valor" className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs" /><button type="button" onClick={addTechnicalAttribute} className="rounded-md bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-950">Agregar</button></div>
           </div>
         </div>
-        <Field label="Costo unitario del vendedor *" type="number" value={form.sellerUnitCost} onChange={(sellerUnitCost) => setForm((state) => state && ({ ...state, sellerUnitCost }))} />
+        <Field label={item.quotationOwner === "SELLER" ? "Costo unitario del vendedor *" : "Costo de referencia (opcional)"} type="number" value={form.sellerUnitCost} onChange={(sellerUnitCost) => setForm((state) => state && ({ ...state, sellerUnitCost }))} />
         <Select label="Moneda *" value={form.sellerCurrency} onChange={(sellerCurrency) => setForm((state) => state && ({ ...state, sellerCurrency: sellerCurrency as Currency }))} options={[["MXN", "MXN"], ["USD", "USD"]]} />
         <Select label="Origen del costo *" value={form.sellerCostSource} onChange={(sellerCostSource) => setForm((state) => state && ({ ...state, sellerCostSource: sellerCostSource as ItemForm["sellerCostSource"] }))} options={[["ERP_COST", "Costo ERP"], ["SELLER_SUPPLIER_QUOTE", "Cotización del vendedor"], ["PRICE_LIST", "Lista de precios"], ["ESTIMATED", "Estimado"]]} />
         <Select label="Marca cotizada" value={form.sellerBrand} onChange={(sellerBrand) => setForm((state) => state && ({ ...state, sellerBrand }))} options={[["", "Seleccionar"], ...brands.map((option) => [catalogValue(option), option.label] as [string, string])]} />
-        <Select label="Tiempo de entrega *" value={form.sellerDeliveryTime} onChange={(sellerDeliveryTime) => setForm((state) => state && ({ ...state, sellerDeliveryTime }))} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [catalogValue(option), option.label] as [string, string])]} />
+        <Select label={item.quotationOwner === "SELLER" ? "Tiempo de entrega *" : "Tiempo de entrega (pendiente de Compras)"} value={form.sellerDeliveryTime} onChange={(sellerDeliveryTime) => setForm((state) => state && ({ ...state, sellerDeliveryTime }))} options={[["", "Seleccionar"], ...deliveryTimes.map((option) => [catalogValue(option), option.label] as [string, string])]} />
         <Select label="Estado de entrega *" value={form.deliveryPlace} onChange={(deliveryPlace) => setForm((state) => state && ({ ...state, deliveryPlace }))} options={[["", "Seleccionar"], ...deliveryStates.map((option) => [catalogValue(option), option.label] as [string, string])]} />
         <fieldset className="rounded-lg border border-slate-200 p-3 sm:col-span-2"><legend className="px-1 text-xs font-semibold text-slate-600">Restricción de origen</legend><div className="flex flex-wrap gap-2">{restrictions.map((option) => { const value = catalogValue(option); const selected = form.originRestrictions.includes(value); return <button key={option.id} type="button" onClick={() => toggleRestriction(value)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${selected ? "border-amber-500 bg-amber-100 text-amber-800" : "border-slate-300 bg-white text-slate-600"}`}>{option.label}</button>; })}</div></fieldset>
       </div>
