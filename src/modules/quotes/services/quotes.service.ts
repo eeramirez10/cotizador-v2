@@ -131,6 +131,7 @@ export interface SavedQuoteRecord {
   } | null;
   items: Array<{
     id: string;
+    quoteItemId: string;
     localProductId: string | null;
     erpCode: string;
     ean?: string;
@@ -621,6 +622,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     },
     items: apiQuote.items.map((item) => ({
       id: item.clientItemId || item.id,
+      quoteItemId: item.id,
       localProductId: item.productId || item.product?.id || null,
       erpCode: item.externalProductCode?.trim() || item.product?.code?.trim() || "",
       ean: item.ean || item.product?.ean || "",
@@ -1029,6 +1031,19 @@ export class QuotesService {
     return data;
   }
 
+  static async reorderQuotedItems(quoteId: string, itemIds: string[]): Promise<SavedQuoteRecord> {
+    try {
+      const { data } = await coreHttpClient.patch<ApiQuote>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/items/order`,
+        { itemIds },
+        { headers: requireAuthHeaders() },
+      );
+      return mapApiQuoteToSavedRecord(data);
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudo guardar el orden de las partidas."));
+    }
+  }
+
   static async registerErpQuote(quoteId: string, erpQuoteNumber: string): Promise<SavedQuoteRecord> {
     try {
       const { data } = await coreHttpClient.patch<ApiQuote>(
@@ -1057,7 +1072,7 @@ export class QuotesService {
 
   static async createFromDraft(
     draft: ManualQuoteDraft,
-    options: { status: SavedQuoteStatus; origin?: QuoteDraftOrigin }
+    options: { status: SavedQuoteStatus; origin?: QuoteDraftOrigin; reorderItems?: boolean }
   ): Promise<string> {
     if (!draft.client) {
       throw new Error("Selecciona un cliente antes de guardar la cotización.");
@@ -1075,6 +1090,7 @@ export class QuotesService {
       {
         quoteId: draft.savedQuoteId && isUuid(draft.savedQuoteId) ? draft.savedQuoteId : null,
         action: options.status === "COTIZADA" ? "SUBMIT_FOR_APPROVAL" : "SAVE_DRAFT",
+        reorderItems: options.reorderItems === true,
         customerId,
         customerContactId: draft.client.selectedContactId || null,
         currency: draft.currency,

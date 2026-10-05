@@ -620,6 +620,7 @@ export const PurchaseRequisitionsPage = () => {
                 "Variación de costo aprobada.",
               )}
               canBuy={canBuy}
+              localPurchaseWithoutErpCodeEnabled={capabilities.data?.localPurchaseWithoutErpCodeEnabled ?? false}
               canApproveCost={canApproveCost}
               buyers={(buyers.data?.items || []).filter((item) => item.role === "PURCHASING")}
               onAssign={(buyerUserId) => run(
@@ -797,6 +798,7 @@ const RequisitionDetail = ({
   onSubmit,
   onApproveCost,
   canBuy,
+  localPurchaseWithoutErpCodeEnabled,
   canApproveCost,
   buyers,
   onAssign,
@@ -828,12 +830,22 @@ const RequisitionDetail = ({
   onSubmit: () => Promise<boolean>;
   onApproveCost: () => Promise<boolean>;
   canBuy: boolean;
+  localPurchaseWithoutErpCodeEnabled: boolean;
   canApproveCost: boolean;
   buyers: ManagedUser[];
   onAssign: (buyerUserId: string) => Promise<boolean>;
 }) => {
   const sellerDraft = role === "SELLER" && requisition.status === "DRAFT";
   const hasOffers = requisition.items.some((item) => item.offers.length > 0);
+  const localReadyForSupplierDocument = (item: RequisitionItem) => localPurchaseWithoutErpCodeEnabled
+    && item.source === "LOCAL_NEW"
+    && !item.erpCode?.trim()
+    && item.status === "PENDING_ERP_CODE";
+  const supplierDocumentsReady = requisition.items.length > 0
+    && requisition.items.every((item) => item.status === "READY" || localReadyForSupplierDocument(item))
+    && requisition.items.every((item) => item.offers.some((offer) => offer.isSelected))
+    && (["READY_FOR_ORDER", "COMPLETED"].includes(requisition.status)
+      || (requisition.status === "PARTIALLY_QUOTED" && requisition.items.some(localReadyForSupplierDocument)));
   const [attachmentView, setAttachmentView] = useState<{
     type: "ALL" | "SELLER_ITEM";
     clientItemId?: string;
@@ -1017,7 +1029,13 @@ const RequisitionDetail = ({
                   <AllocationEditor key={`${item.id}:${item.offers.map((offer) => `${offer.id}-${offer.awardedQty}`).join(":")}`} item={item} busy={busy} onAllocate={onAllocate} />
                 )}
                 {selected && item.source === "LOCAL_NEW" && !item.erpCode && (
-                  <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800">La propuesta ya fue seleccionada. Falta asignar el código ERP.</p>
+                  <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800">
+                    {localPurchaseWithoutErpCodeEnabled
+                      ? requisition.supplierRequisitions?.length
+                        ? "La requisición al proveedor ya fue emitida. Para generar el TXT de Proscai aún debes vincular este producto."
+                        : "Compras puede emitir la requisición al proveedor sin código ERP. Para generar el TXT de Proscai aún debes vincular este producto."
+                      : "La propuesta ya fue seleccionada. Falta asignar el código ERP."}
+                  </p>
                 )}
               </div>
             </article>
@@ -1046,6 +1064,10 @@ const RequisitionDetail = ({
             ? "La cotización ya puede generar el pedido ERP."
             : requisition.status === "DRAFT"
               ? "Completa los datos requeridos y envía la requisición a Compras."
+              : requisition.supplierRequisitions?.length && requisition.items.some(localReadyForSupplierDocument)
+                ? "La compra al proveedor ya fue emitida. El TXT ERP sigue pendiente hasta vincular los códigos locales."
+              : supplierDocumentsReady
+                ? "Compras puede emitir la requisición al proveedor; el TXT ERP sigue pendiente hasta vincular los códigos locales."
               : "El pedido se habilita cuando todas las partidas estén listas."}
         </p>
         {sellerDraft && (
@@ -1058,7 +1080,7 @@ const RequisitionDetail = ({
             <BadgeDollarSign className="h-4 w-4" />Aprobar mayor costo
           </button>
         )}
-        {canBuy && ["READY_FOR_ORDER", "COMPLETED"].includes(requisition.status) && !requisition.supplierRequisitions?.length && (
+        {canBuy && supplierDocumentsReady && !requisition.supplierRequisitions?.length && (
           <button type="button" disabled={busy} onClick={() => void onGenerate()} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Generar requisiciones por proveedor</button>
         )}
       </footer>

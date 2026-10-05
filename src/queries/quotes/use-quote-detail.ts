@@ -39,6 +39,17 @@ export const useQuoteDetail = (quoteId?: string) => {
   });
 };
 
+export const useReorderQuotedItems = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quoteId, itemIds }: { quoteId: string; itemIds: string[] }) => QuotesService.reorderQuotedItems(quoteId, itemIds),
+    onSuccess: async (_result, { quoteId }) => {
+      await queryClient.invalidateQueries({ queryKey: ["quotes"], exact: false });
+      await queryClient.invalidateQueries({ queryKey: quoteDetailKeys.byId(quoteId), exact: false });
+    },
+  });
+};
+
 export const useQuoteCustomerChangeRequests = (quoteId?: string) => {
   return useQuery({
     queryKey: quoteId

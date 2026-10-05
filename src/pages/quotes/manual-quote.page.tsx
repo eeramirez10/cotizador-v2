@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -9,6 +9,7 @@ import { CustomerContactsModal } from "../../shared/components/modals/customer-c
 import { QuoteExtractionModal } from "../../shared/components/modals/quote-extraction.modal";
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
+import { QuoteItemOrderModal } from "../../shared/components/modals/quote-item-order.modal";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
 import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
@@ -148,7 +149,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [originFilter, setOriginFilter] = useState<OriginFilter>("ALL");
   const [creatingLocalItems, setCreatingLocalItems] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
-  const [savingAction, setSavingAction] = useState<"draft" | "quote" | null>(null);
+  const [savingAction, setSavingAction] = useState<"draft" | "order" | "quote" | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const [showCustomerOrderColumns, setShowCustomerOrderColumns] = useState(true);
   const [commentItemId, setCommentItemId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
@@ -708,6 +710,39 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo guardar la cotización.";
       notifier.error(message);
+    } finally {
+      setSaving(false);
+      setSavingAction(null);
+    }
+  };
+
+  const handleSaveItemOrder = async (orderedIds: string[]) => {
+    if (isExcelFlow || draft.status !== "BORRADOR") {
+      notifier.error("Solo puedes ordenar partidas de un borrador creado en el sistema.");
+      return;
+    }
+    const byId = new Map(draft.items.map((item) => [item.id, item]));
+    if (orderedIds.length !== draft.items.length || new Set(orderedIds).size !== draft.items.length || orderedIds.some((id) => !byId.has(id))) {
+      notifier.error("Las partidas cambiaron. Cierra el ordenamiento e inténtalo nuevamente.");
+      return;
+    }
+    if (!validateBeforeSave()) return;
+
+    try {
+      setSavingAction("order");
+      setSaving(true);
+      const orderedDraft = { ...draft, items: orderedIds.map((id) => byId.get(id)!) };
+      const quoteId = await QuotesService.createFromDraft(orderedDraft, {
+        status: "BORRADOR",
+        origin: quoteOrigin,
+        reorderItems: true,
+      });
+      setShowOrderModal(false);
+      clearDraft();
+      notifier.success(`Orden de partidas guardado en el borrador ${quoteId}.`);
+      navigate(`/quotes/${quoteId}`);
+    } catch (error) {
+      notifier.error(error instanceof Error ? error.message : "No se pudo guardar el orden de las partidas.");
     } finally {
       setSaving(false);
       setSavingAction(null);
@@ -1538,6 +1573,17 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </button>
 	        </div>
 	        <div className="flex flex-wrap items-center gap-2">
+	          {draft.status === "BORRADOR" && draft.items.length > 1 && (
+	            <button
+	              type="button"
+	              onClick={() => setShowOrderModal(true)}
+	              disabled={saving}
+	              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+	            >
+	              <ListOrdered className="h-3.5 w-3.5" />
+	              Ordenar
+	            </button>
+	          )}
 	          {isCompactView && (
 	            <button
 	              type="button"
@@ -1938,6 +1984,16 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             </div>
           </div>
         </div>
+      )}
+
+      {showOrderModal && (
+        <QuoteItemOrderModal
+          open={showOrderModal}
+          items={draft.items}
+          saving={savingAction === "order"}
+          onClose={() => setShowOrderModal(false)}
+          onSave={handleSaveItemOrder}
+        />
       )}
 
       {showAttachmentsModal && (

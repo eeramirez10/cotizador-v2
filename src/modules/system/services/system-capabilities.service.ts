@@ -6,6 +6,7 @@ export interface SystemCapabilities {
   requisitionInternalApprovalEnabled: boolean;
   orderFileWithoutStockEnabled: boolean;
   orderFileWithLocalCustomerEnabled: boolean;
+  localPurchaseWithoutErpCodeEnabled: boolean;
   sellerExcelImportEnabled: boolean;
   whatsAppInboxEnabled: boolean;
   whatsAppAssistantEnabled: boolean;

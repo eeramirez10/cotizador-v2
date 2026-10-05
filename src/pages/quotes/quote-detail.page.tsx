@@ -6,6 +6,7 @@ import {
   CircleSlash,
   Download,
   FileText,
+  ListOrdered,
   Mail,
   MessageCircle,
   Paperclip,
@@ -48,6 +49,7 @@ import {
   useRegisterErpOrder,
   useUpdateQuoteStatus,
   useUpdateQuoteProcurementReference,
+  useReorderQuotedItems,
 } from "../../queries/quotes/use-quote-detail";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
@@ -60,6 +62,7 @@ import { AttachmentsModal } from "../../shared/components/attachments/attachment
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
 import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
+import { QuoteItemOrderModal } from "../../shared/components/modals/quote-item-order.modal";
 import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
 import { resolveSellerCostSource, sellerCostSourceClassName, sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
@@ -749,6 +752,7 @@ export const QuoteDetailPage = () => {
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
   const orderFileWithoutStockEnabled = capabilities.data?.orderFileWithoutStockEnabled ?? false;
+  const localPurchaseWithoutErpCodeEnabled = capabilities.data?.localPurchaseWithoutErpCodeEnabled ?? false;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -762,6 +766,7 @@ export const QuoteDetailPage = () => {
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [showItemOrderModal, setShowItemOrderModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -817,6 +822,7 @@ export const QuoteDetailPage = () => {
   const registerErpQuote = useRegisterErpQuote();
   const registerErpOrder = useRegisterErpOrder();
   const updateProcurementReference = useUpdateQuoteProcurementReference();
+  const reorderQuotedItems = useReorderQuotedItems();
   const revisionCatalog = useQuoteCatalogs("REVISION_REASON");
   const rejectionCatalog = useQuoteCatalogs("REJECTION_REASON");
   const cancellationCatalog = useQuoteCatalogs("CANCELLATION_REASON");
@@ -1077,6 +1083,17 @@ export const QuoteDetailPage = () => {
     !hasRevisionInProgress;
   const canSendQuote =
     !isArchived && !hasRevisionInProgress && (quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA");
+  const canReorderQuotedItems = currentRole === "seller"
+    && !isArchived
+    && quote.status === "COTIZADA"
+    && quote.captureMethod === "SYSTEM"
+    && !quote.firstSentAt
+    && quote.deliveryStatus === "NO_ENVIADA"
+    && deliveryAttemptsQuery.isSuccess
+    && deliveryAttemptsQuery.data.length === 0
+    && !quote.supersededByQuoteId
+    && !hasRevisionInProgress
+    && quote.items.length > 1;
   const canDownloadQuotePdf =
     quote.status === "COTIZADA" || quote.status === "APROBADA" || quote.status === "RECHAZADA" || quote.status === "REEMPLAZADA";
   const canApproveReject = !isArchived && quote.status === "COTIZADA" && !hasRevisionInProgress;
@@ -1611,6 +1628,15 @@ export const QuoteDetailPage = () => {
     });
   };
 
+  const handleSaveQuotedItemOrder = async (itemIds: string[]) => {
+    await runActionWithToast({
+      loadingMessage: "Guardando orden de partidas...",
+      action: () => reorderQuotedItems.mutateAsync({ quoteId: quote.quoteId, itemIds }),
+      successMessage: "Orden de partidas actualizado sin crear revisión.",
+      onSuccess: async () => { setShowItemOrderModal(false); await refetch(); },
+    });
+  };
+
   const handlePrintPreview = async () => {
     const printable = printableRef.current;
     if (!printable) return;
@@ -1684,6 +1710,18 @@ export const QuoteDetailPage = () => {
             >
               <RefreshCw className="h-4 w-4" />
               Crear revisión
+            </button>
+          )}
+
+          {canReorderQuotedItems && (
+            <button
+              type="button"
+              onClick={() => setShowItemOrderModal(true)}
+              disabled={isActionLocked}
+              className={`inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${disabledActionClass}`}
+            >
+              <ListOrdered className="h-4 w-4" />
+              Ordenar partidas
             </button>
           )}
 
@@ -1933,6 +1971,10 @@ export const QuoteDetailPage = () => {
                   ? "El TXT puede generarse; la requisición sigue pendiente para Compras."
                 : purchaseRequisition.status === "DRAFT"
                   ? "El cliente aprobó la cotización. Completa la requisición y envíala a Compras."
+                  : localPurchaseWithoutErpCodeEnabled && purchaseRequisition.items.some((item) => item.source === "LOCAL_NEW" && !item.erpCode)
+                    ? purchaseRequisition.supplierRequisitions?.length
+                      ? "Las requisiciones a proveedores ya fueron emitidas. El TXT de Proscai seguirá bloqueado hasta vincular los códigos ERP de los productos locales."
+                      : "Compras puede emitir requisiciones a proveedores para productos locales después de adjudicar las ofertas y completar las aprobaciones. El TXT de Proscai seguirá bloqueado hasta vincular los códigos ERP."
                   : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
             </p>
           </div>
@@ -2345,6 +2387,17 @@ export const QuoteDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {showItemOrderModal && canReorderQuotedItems && (
+        <QuoteItemOrderModal
+          open={showItemOrderModal}
+          items={quote.items.map((item) => ({ ...item, id: item.quoteItemId }))}
+          saving={actionInProgress}
+          saveHint="Arrastra las partidas o usa las flechas. El orden cambiará en esta cotización sin crear una revisión; solo se permite antes del primer intento de envío."
+          onClose={() => setShowItemOrderModal(false)}
+          onSave={handleSaveQuotedItemOrder}
+        />
+      )}
 
       {showAttachmentsModal && (
         <AttachmentsModal
