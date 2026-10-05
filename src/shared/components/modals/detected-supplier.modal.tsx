@@ -12,6 +12,8 @@ interface Props {
 }
 
 export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched, onCreate, onChooseOther, onClose }: Props) => {
+  const contacts = detectedContacts(detected);
+  const hasNamedContact = contacts.some((contact) => contact.contactName?.trim());
   const initialValues: Partial<SaveSupplierInput> = {
     name: detected.name || "",
     taxId: detected.taxId || "",
@@ -19,14 +21,14 @@ export const DetectedSupplierModal = ({ detected, matchedSupplier, onUseMatched,
     contactName: detected.contactName || "",
     email: detected.email || "",
     phone: detected.phone || "",
-    contacts: detectedContacts(detected).map((contact, index, contacts) => ({
+    contacts: contacts.map((contact, index) => ({
       contactKey: `detected-${canonicalContactKey(`${contact.contactName || detected.contactName || detected.name || "supplier"}-${contact.contactPosition || contact.label || "contact"}`)}`,
       channel: contact.channel,
       value: contact.value,
       phoneKind: contact.phoneKind,
       extension: contact.extension,
       isWhatsApp: contact.isWhatsApp,
-      contactName: contact.contactName,
+      contactName: contact.contactName || (!hasNamedContact ? detected.contactName : null),
       contactPosition: contact.contactPosition,
       label: contact.label,
       isPrimary: contacts.findIndex((entry) => entry.channel === contact.channel) === index,

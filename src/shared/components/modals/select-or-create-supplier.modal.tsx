@@ -12,6 +12,8 @@ type SupplierForm = Omit<SaveSupplierInput, "scope" | "contacts"> & {
   contacts: SaveSupplierContactInput[];
 };
 
+const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+
 const EMPTY_SUPPLIER: SupplierForm = {
   name: "",
   scope: "",
@@ -49,18 +51,23 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
   const mutations = usePurchaseRequisitionMutations();
   const localSuppliers = useSuppliers(mode === "LOCAL", { includeInactive: true });
   const busy = mutations.createSupplier.isPending || mutations.syncErpSupplier.isPending;
+  const normalizedTaxId = canonical(form.taxId || "");
+  const duplicateTaxIdSupplier = (localSuppliers.data || []).find((supplier) =>
+    normalizedTaxId && canonical(supplier.taxId || "") === normalizedTaxId,
+  );
   const potentialDuplicates = useMemo(() => {
-    const canonical = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
     const name = canonical(form.name);
+    const taxId = canonical(form.taxId || "");
     const emails = form.contacts.filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value.trim().toLowerCase()).filter(Boolean);
     const phones = form.contacts.filter((contact) => contact.channel === "PHONE").map((contact) => contact.value.replace(/\D/g, "")).filter(Boolean);
-    if (!name && emails.length === 0 && phones.length === 0) return [];
+    if (!name && !taxId && emails.length === 0 && phones.length === 0) return [];
     return (localSuppliers.data || []).filter((supplier) =>
-      (name && canonical(supplier.name) === name)
+      (taxId && canonical(supplier.taxId || "") === taxId)
+      || (name && canonical(supplier.name) === name)
       || emails.some((email) => [supplier.email, ...(supplier.contacts || []).filter((contact) => contact.channel === "EMAIL").map((contact) => contact.value)].some((value) => value?.trim().toLowerCase() === email))
       || phones.some((phone) => [supplier.phone, supplier.mobile, ...(supplier.contacts || []).filter((contact) => contact.channel === "PHONE").map((contact) => contact.value)].some((value) => value?.replace(/\D/g, "") === phone)),
     ).slice(0, 5);
-  }, [form.contacts, form.name, localSuppliers.data]);
+  }, [form.contacts, form.name, form.taxId, localSuppliers.data]);
 
   const selectErp = async (supplier: ErpSupplier) => {
     if (busy) return;
@@ -81,6 +88,9 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
     event.preventDefault();
     if (!form.name.trim()) return notifier.warning("El nombre del proveedor es obligatorio.");
     if (!form.scope) return notifier.warning("Selecciona si el proveedor es nacional o internacional.");
+    if (duplicateTaxIdSupplier) return notifier.warning(duplicateTaxIdSupplier.isActive
+      ? `Ya existe un proveedor con ese RFC: ${duplicateTaxIdSupplier.name}. Selecciona el existente.`
+      : `El RFC pertenece al proveedor inactivo ${duplicateTaxIdSupplier.name}. Solicita a Compras que lo reactive.`);
     if (potentialDuplicates.length > 0 && !form.allowPotentialDuplicate) {
       notifier.warning("Revisa los proveedores coincidentes o confirma que realmente necesitas crear otro.");
       return;
@@ -98,8 +108,8 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
         ...form,
         scope: form.scope,
         contacts,
-        contactName: primaryContact?.contactName || null,
-        contactPosition: primaryContact?.contactPosition || null,
+        contactName: primaryContact?.contactName?.trim() || (contacts.length === 0 ? form.contactName?.trim() : null) || null,
+        contactPosition: primaryContact?.contactPosition?.trim() || (contacts.length === 0 ? form.contactPosition?.trim() : null) || null,
         email: primaryEmail,
         phone: primaryPhone,
       });
@@ -191,14 +201,16 @@ export const SelectOrCreateSupplierModal = ({ onClose, onSelect, initialValues, 
                     {potentialDuplicates.map((supplier) => (
                       <div key={supplier.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
                         <div><p className="text-sm font-semibold text-slate-900">{supplier.name}</p><p className="text-[11px] text-slate-500">{supplier.email || supplier.phone || supplier.taxId || "Sin contacto"}</p></div>
-                        <button type="button" onClick={() => onSelect(supplier)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Usar existente</button>
+                        {supplier.isActive
+                          ? <button type="button" onClick={() => onSelect(supplier)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">Usar existente</button>
+                          : <span className="text-[11px] font-semibold text-amber-800">Inactivo: solicitar reactivación</span>}
                       </div>
                     ))}
                   </div>
-                  <label className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-900">
+                  {!duplicateTaxIdSupplier && <label className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-900">
                     <input type="checkbox" checked={Boolean(form.allowPotentialDuplicate)} onChange={(event) => setForm((state) => ({ ...state, allowPotentialDuplicate: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-amber-400" />
                     Confirmo que es un proveedor diferente y deseo crearlo de todos modos.
-                  </label>
+                  </label>}
                 </div>
               )}
               <div className="mt-6 flex justify-end gap-2">
@@ -255,11 +267,17 @@ const Field = ({ label, value, type = "text", onChange }: {
 const initialContacts = (initialValues?: Partial<SaveSupplierInput>): SaveSupplierContactInput[] => {
   if (initialValues?.contacts?.length) {
     const fallbackKeys = new Map<string, string>();
+    const hasNamedContact = initialValues.contacts.some((contact) => contact.contactName?.trim());
     return initialValues.contacts.map((contact, index) => {
       const personSignature = `${contact.contactName || "contact"}:${contact.contactPosition || ""}`.toLowerCase();
       const contactKey = contact.contactKey || fallbackKeys.get(personSignature) || `legacy-${index + 1}`;
       fallbackKeys.set(personSignature, contactKey);
-      return { ...contact, contactKey };
+      return {
+        ...contact,
+        contactKey,
+        contactName: contact.contactName || (!hasNamedContact ? initialValues.contactName : null),
+        contactPosition: contact.contactPosition || (!hasNamedContact ? initialValues.contactPosition : null),
+      };
     });
   }
   return personToContacts({

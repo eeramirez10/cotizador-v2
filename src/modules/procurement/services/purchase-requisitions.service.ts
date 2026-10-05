@@ -114,6 +114,7 @@ export interface SupplierOffer {
   externalReference: string | null;
   notes: string | null;
   isSelected: boolean;
+  awardedQty: number | null;
   supplier: Supplier;
   createdBy: ProcurementUser;
   createdAt: string;
@@ -153,6 +154,8 @@ export interface RequisitionItem {
   qty: number;
   unit: string;
   description: string;
+  customerDescription: string | null;
+  erpDescription: string | null;
   standard: string | null;
   diameter: string | null;
   thickness: string | null;
@@ -205,8 +208,35 @@ export interface PurchaseRequisition {
   costApprovedAt: string | null;
   costApprovedBy: ProcurementUser | null;
   items: RequisitionItem[];
+  supplierRequisitions: SupplierRequisition[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SupplierRequisition {
+  id: string;
+  number: string;
+  supplierId: string;
+  supplierName: string;
+  currency: Currency;
+  createdAt: string;
+  lines: Array<{
+    id: string;
+    requisitionItemId: string;
+    offerId: string;
+    position: number;
+    description: string;
+    erpCode: string | null;
+    supplierProductCode: string | null;
+    unit: string;
+    qty: number;
+    unitCost: number;
+    exchangeRate: number | null;
+    taxRate: number;
+    subtotal: number;
+    tax: number;
+    total: number;
+  }>;
 }
 
 export interface PaginatedRequisitions {
@@ -428,6 +458,23 @@ export class PurchaseRequisitionsService {
         { headers: headers() },
       ),
       "No se pudo seleccionar la propuesta.",
+    );
+  }
+
+  static allocateOffers(id: string, itemId: string, allocations: Array<{ offerId: string; qty: number }>) {
+    return request(
+      () => coreHttpClient.put<PurchaseRequisition>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/allocations`,
+        { allocations }, { headers: headers() },
+      ),
+      "No se pudo repartir la partida entre proveedores.",
+    );
+  }
+
+  static generateSupplierRequisitions(id: string) {
+    return request(
+      () => coreHttpClient.post<PurchaseRequisition>(`/api/purchase-requisitions/${encodeURIComponent(id)}/supplier-requisitions`, {}, { headers: headers() }),
+      "No se pudieron generar las requisiciones por proveedor.",
     );
   }
 

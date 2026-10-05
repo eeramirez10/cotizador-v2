@@ -47,6 +47,8 @@ import type { ErpProduct } from "../../modules/products/types/erp-product.types"
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { useRequisitionAttachments } from "../../queries/attachments/use-attachments";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
+import { AttachmentsPanel } from "../../shared/components/attachments/attachments-panel";
+import { PdfAttachmentViewerModal } from "../../shared/components/attachments/pdf-attachment-viewer.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 import { TechnicalDataService } from "../../modules/procurement/services/technical-data.service";
 import { SelectOrCreateSupplierModal } from "../../shared/components/modals/select-or-create-supplier.modal";
@@ -57,7 +59,8 @@ import { useQuoteDetail, useUpdateQuoteProcurementReference } from "../../querie
 import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
 import { sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
-import { TechnicalDataEditor } from "../../shared/components/procurement/technical-data-editor";
+import { TechnicalDataEditor, type TechnicalDataFormValue } from "../../shared/components/procurement/technical-data-editor";
+import { downloadSupplierRequisition } from "../../modules/procurement/utils/requisition-document-pdf";
 
 const PAGE_SIZE = 15;
 
@@ -115,7 +118,7 @@ type OfferForm = SupplierOfferFormValue;
 const offerForm = (item: RequisitionItem): OfferForm => ({
   supplierId: "",
   supplierName: "",
-  supplierDescription: item.description,
+  supplierDescription: "",
   supplierProductCode: "",
   qty: String(item.qty),
   unit: item.unit,
@@ -198,9 +201,13 @@ export const PurchaseRequisitionsPage = () => {
 
   const selectedCosts = useMemo(
     () => requisition?.items.reduce((sum, item) => {
-      const selected = item.offers.find((offer) => offer.isSelected);
-      return sum + (selected?.total || 0);
-    }, 0) || 0,
+      for (const offer of item.offers) {
+        if (!offer.isSelected) continue;
+        const qty = offer.awardedQty ?? item.qty;
+        sum[offer.currency] += qty * offer.unitCost * (1 + offer.taxRate);
+      }
+      return sum;
+    }, { MXN: 0, USD: 0 }) || { MXN: 0, USD: 0 },
     [requisition],
   );
 
@@ -320,7 +327,7 @@ export const PurchaseRequisitionsPage = () => {
     if (linked) setLinkingItem(null);
   };
 
-  const saveOffer = async (event: React.FormEvent) => {
+  const saveOffer = async (event: React.FormEvent, technical: TechnicalDataFormValue, restrictions: string[]) => {
     event.preventDefault();
     if (!requisition || !offerItem || !currentOfferForm) return;
     const qty = Number(currentOfferForm.qty);
@@ -383,6 +390,17 @@ export const PurchaseRequisitionsPage = () => {
     const targetItemId = offerItem.id;
     const toast = notifier.loading(offerAttachmentFile ? "Registrando propuesta y archivo..." : "Registrando propuesta...");
     try {
+      const originalTechnical = {
+        standard: offerItem.standard || "",
+        diameter: offerItem.diameter || "",
+        thickness: offerItem.thickness || "",
+        bore: offerItem.bore || "",
+        technicalFamily: offerItem.technicalFamily || "OTHER",
+        technicalAttributes: offerItem.technicalAttributes || {},
+      };
+      if (JSON.stringify(technical) !== JSON.stringify(originalTechnical) || JSON.stringify(restrictions) !== JSON.stringify(offerItem.originRestrictions)) {
+        await mutations.updateItem.mutateAsync({ id: requisition.id, itemId: targetItemId, input: { ...technical, originRestrictions: restrictions } });
+      }
       const savedRequisition = await mutations.createOffer.mutateAsync({ id: requisition.id, itemId: targetItemId, input });
       const createdOffer = savedRequisition.items
         .find((item) => item.id === targetItemId)
@@ -581,6 +599,16 @@ export const PurchaseRequisitionsPage = () => {
                 () => mutations.selectOffer.mutateAsync({ id: requisition.id, itemId, offerId }),
                 "Propuesta seleccionada.",
               )}
+              onAllocate={(itemId, allocations) => run(
+                "Repartiendo partida...",
+                () => mutations.allocateOffers.mutateAsync({ id: requisition.id, itemId, allocations }),
+                "Partida adjudicada entre proveedores.",
+              )}
+              onGenerate={() => run(
+                "Generando requisiciones por proveedor...",
+                () => mutations.generateSupplierRequisitions.mutateAsync(requisition.id),
+                "Requisiciones por proveedor generadas.",
+              )}
               onSubmit={() => run(
                 "Enviando requisición a Compras...",
                 () => mutations.submit.mutateAsync(requisition.id),
@@ -639,6 +667,7 @@ export const PurchaseRequisitionsPage = () => {
       )}
       {requisition && offerItem && currentOfferForm && (
         <OfferModal
+          key={offerItem.id}
           requisition={requisition}
           item={offerItem}
           form={currentOfferForm}
@@ -646,7 +675,15 @@ export const PurchaseRequisitionsPage = () => {
           suppliers={suppliers.data || []}
           brands={brandCatalog.data || []}
           origins={(restrictionCatalog.data || []).filter((option) => option.code !== "NO_RESTRICTION")}
+          restrictionOptions={restrictionCatalog.data || []}
           deliveryTimes={deliveryTimeCatalog.data || []}
+          attachments={(requisitionAttachments.data || []).filter((file) => file.category === "SELLER_SUPPLIER_QUOTE"
+            ? Boolean(offerItem.quoteClientItemId && file.clientItemIds.includes(offerItem.quoteClientItemId))
+            : file.category === "PURCHASE_SUPPLIER_PROPOSAL" && file.purchaseOfferIds.some((offerId) => offerItem.offers.some((offer) => offer.id === offerId)))}
+          attachmentsLoading={requisitionAttachments.isLoading}
+          busyAttachmentId={busyAttachmentId}
+          onDownloadAttachment={(file) => { void downloadAttachment(file); }}
+          onDeleteAttachment={(file) => { void deleteAttachment(file); }}
           busy={mutations.isPending}
           attachmentFile={offerAttachmentFile}
           onAttachmentFile={setOfferAttachmentFile}
@@ -699,6 +736,39 @@ export const PurchaseRequisitionsPage = () => {
   );
 };
 
+const AllocationEditor = ({ item, busy, onAllocate }: {
+  item: RequisitionItem;
+  busy: boolean;
+  onAllocate: (itemId: string, allocations: Array<{ offerId: string; qty: number }>) => Promise<boolean>;
+}) => {
+  const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(
+    item.offers.map((offer) => [offer.id, offer.isSelected ? String(offer.awardedQty ?? item.qty) : ""]),
+  ));
+  const allocations = item.offers.flatMap((offer) => {
+    const qty = Number(quantities[offer.id]);
+    return Number.isFinite(qty) && qty > 0 ? [{ offerId: offer.id, qty }] : [];
+  });
+  const total = allocations.reduce((sum, allocation) => sum + allocation.qty, 0);
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
+      <p className="font-semibold text-slate-900">Repartir {item.qty} {item.unit} entre proveedores</p>
+      <p className="mt-1 text-slate-600">Deja en blanco las propuestas no elegidas. La suma debe ser exactamente {item.qty}.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {item.offers.map((offer) => (
+          <label key={offer.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5">
+            <span>{offer.supplier.name} · {money(offer.unitCost, offer.currency)}/{item.unit} · máx. {offer.qty}</span>
+            <input type="number" min="0" max={offer.qty} step="0.0001" value={quantities[offer.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [offer.id]: event.target.value }))} className="w-24 rounded border border-slate-300 px-2 py-1 text-right" aria-label={`Cantidad para ${offer.supplier.name}`} />
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <span className={Math.abs(total - item.qty) < 0.00001 ? "text-emerald-700" : "text-red-700"}>Asignado: {total} / {item.qty}</span>
+        <button type="button" disabled={busy || Math.abs(total - item.qty) > 0.00001} onClick={() => void onAllocate(item.id, allocations)} className="rounded bg-blue-700 px-3 py-1.5 font-semibold text-white disabled:opacity-40">Guardar reparto</button>
+      </div>
+    </div>
+  );
+};
+
 const RequisitionDetail = ({
   requisition,
   role,
@@ -722,6 +792,8 @@ const RequisitionDetail = ({
   onLinkErp,
   onOffer,
   onSelect,
+  onAllocate,
+  onGenerate,
   onSubmit,
   onApproveCost,
   canBuy,
@@ -732,7 +804,7 @@ const RequisitionDetail = ({
   requisition: PurchaseRequisition;
   role: string;
   currentUserId: string;
-  selectedCosts: number;
+  selectedCosts: Record<Currency, number>;
   busy: boolean;
   attachments: FileAttachment[];
   attachmentsLoading: boolean;
@@ -751,6 +823,8 @@ const RequisitionDetail = ({
   onLinkErp: (item: RequisitionItem) => void;
   onOffer: (item: RequisitionItem) => void;
   onSelect: (itemId: string, offerId: string) => Promise<boolean>;
+  onAllocate: (itemId: string, allocations: Array<{ offerId: string; qty: number }>) => Promise<boolean>;
+  onGenerate: () => Promise<boolean>;
   onSubmit: () => Promise<boolean>;
   onApproveCost: () => Promise<boolean>;
   canBuy: boolean;
@@ -820,7 +894,7 @@ const RequisitionDetail = ({
           <Info label="Comprador" value={requisition.assignedBuyer?.fullName || "Sin asignar"} />
           <Info label="Destino" value={requisition.deliveryState || "Definido por partida"} />
           <Info label="Partidas" value={String(requisition.items.length)} />
-          <Info label="Total seleccionado" value={selectedCosts ? money(selectedCosts, requisition.quoteCurrency) : "Pendiente"} />
+          <Info label="Compra seleccionada" value={selectedCosts.MXN || selectedCosts.USD ? [selectedCosts.MXN && money(selectedCosts.MXN, "MXN"), selectedCosts.USD && money(selectedCosts.USD, "USD")].filter(Boolean).join(" · ") : "Pendiente"} />
         </div>
       </header>
 
@@ -832,7 +906,7 @@ const RequisitionDetail = ({
           busy={busy}
           onSaveDocument={onSaveDocument}
           onChangeOwner={onChangeOwner}
-          canEditOfferCode={canBuy || sellerDraft}
+          canEditOfferCode={(canBuy || sellerDraft) && !requisition.supplierRequisitions?.length}
           role={role}
           onSaveSupplierCode={onSaveSupplierCode}
         />
@@ -851,7 +925,8 @@ const RequisitionDetail = ({
                       {item.source === "LOCAL_NEW" ? "PRODUCTO NUEVO" : "ERP SIN EXISTENCIA"}
                     </span>
                   </div>
-                  <h3 className="mt-2 text-sm font-bold leading-5 text-slate-900">{item.description}</h3>
+                  <h3 className="mt-2 text-sm font-bold leading-5 text-slate-900">{item.customerDescription || item.description}</h3>
+                  {item.erpDescription && <p className="mt-1 text-xs text-slate-500">Producto ERP: {item.erpDescription}</p>}
                   <p className="mt-1 text-xs text-slate-500">{item.qty} {item.unit} · Código: {item.erpCode || "Pendiente de alta"}</p>
                   {item.erpEan && <p className="mt-1 text-xs font-medium text-slate-500">EAN: {item.erpEan}</p>}
                 </div>
@@ -927,8 +1002,10 @@ const RequisitionDetail = ({
                       <div className="text-right">
                         <p className="text-sm font-bold text-slate-950">{money(offer.unitCost, offer.currency)}</p>
                         <p className="text-[10px] text-slate-500">por {item.unit}</p>
+                        {offer.currency === "USD" && <p className="text-[10px] text-slate-500">{offer.exchangeRate ? `≈ ${money(offer.unitCost * offer.exchangeRate, "MXN")} al TC ${offer.exchangeRate}` : "Tipo de cambio pendiente"}</p>}
+                        {offer.isSelected && <p className="text-[10px] font-semibold text-emerald-700">Adjudicado: {offer.awardedQty ?? item.qty} {item.unit}</p>}
                       </div>
-                      {canBuy && !offer.isSelected && (
+                      {canBuy && !requisition.supplierRequisitions?.length && !offer.isSelected && (
                         <button type="button" disabled={busy} onClick={() => void onSelect(item.id, offer.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" title="Seleccionar propuesta">
                           <Check className="h-4 w-4" />{offer.source === "SELLER" ? "Aplicar cotización del vendedor" : "Seleccionar"}
                         </button>
@@ -936,6 +1013,9 @@ const RequisitionDetail = ({
                     </div>
                   </div>
                 ))}
+                {canBuy && !requisition.supplierRequisitions?.length && item.offers.length > 1 && (
+                  <AllocationEditor key={`${item.id}:${item.offers.map((offer) => `${offer.id}-${offer.awardedQty}`).join(":")}`} item={item} busy={busy} onAllocate={onAllocate} />
+                )}
                 {selected && item.source === "LOCAL_NEW" && !item.erpCode && (
                   <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800">La propuesta ya fue seleccionada. Falta asignar el código ERP.</p>
                 )}
@@ -943,6 +1023,21 @@ const RequisitionDetail = ({
             </article>
           );
         })}
+        {requisition.supplierRequisitions?.length ? (
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Requisiciones finales por proveedor y moneda</h3>
+            <p className="mt-1 text-xs text-slate-500">Cada documento conserva la moneda de compra. La moneda de la cotización al cliente es independiente.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {requisition.supplierRequisitions.map((document) => (
+                <div key={document.id} className="rounded-lg border border-slate-200 p-3 text-xs">
+                  <p className="font-semibold text-slate-900">{document.number} · {document.supplierName}</p>
+                  <p className="mt-1 text-slate-600">{document.lines.length} partidas · {document.currency} · {money(document.lines.reduce((sum, line) => sum + line.total, 0), document.currency)}</p>
+                  <button type="button" className="mt-2 font-semibold text-blue-700 hover:underline" onClick={() => void downloadSupplierRequisition(requisition, document).catch((error) => notifier.error(error instanceof Error ? error.message : "No se pudo descargar el PDF."))}>Descargar PDF</button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
@@ -962,6 +1057,9 @@ const RequisitionDetail = ({
           <button type="button" disabled={busy} onClick={() => void onApproveCost()} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <BadgeDollarSign className="h-4 w-4" />Aprobar mayor costo
           </button>
+        )}
+        {canBuy && ["READY_FOR_ORDER", "COMPLETED"].includes(requisition.status) && !requisition.supplierRequisitions?.length && (
+          <button type="button" disabled={busy} onClick={() => void onGenerate()} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Generar requisiciones por proveedor</button>
         )}
       </footer>
 
@@ -1020,7 +1118,7 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
       setSuggestingTechnical(true);
       const sellerOfferDescription = item.offers.find((offer) => offer.source === "SELLER")?.supplierDescription || undefined;
       const suggestion = await TechnicalDataService.suggest({
-        requestedDescription: item.description,
+        requestedDescription: item.customerDescription || item.description,
         supplierDescription: sellerOfferDescription,
         existingAttributes: form.technicalAttributes,
       });
@@ -1079,7 +1177,7 @@ const ItemModal = ({ form, setForm, item, busy, brands, restrictions, deliverySt
   );
 };
 
-const OfferModal = ({ requisition, item, form, setForm, suppliers, brands, origins, deliveryTimes, busy, attachmentFile, onAttachmentFile, onNewSupplier, onClose, onSubmit }: {
+const OfferModal = ({ requisition, item, form, setForm, suppliers, brands, origins, restrictionOptions, deliveryTimes, attachments, attachmentsLoading, busyAttachmentId, onDownloadAttachment, onDeleteAttachment, busy, attachmentFile, onAttachmentFile, onNewSupplier, onClose, onSubmit }: {
   requisition: PurchaseRequisition;
   item: RequisitionItem;
   form: OfferForm;
@@ -1087,32 +1185,85 @@ const OfferModal = ({ requisition, item, form, setForm, suppliers, brands, origi
   suppliers: Supplier[];
   brands: QuoteCatalogOption[];
   origins: QuoteCatalogOption[];
+  restrictionOptions: QuoteCatalogOption[];
   deliveryTimes: QuoteCatalogOption[];
+  attachments: FileAttachment[];
+  attachmentsLoading: boolean;
+  busyAttachmentId: string | null;
+  onDownloadAttachment: (file: FileAttachment) => void;
+  onDeleteAttachment: (file: FileAttachment) => void;
   busy: boolean;
   attachmentFile: File | null;
   onAttachmentFile: (file: File | null) => void;
   onNewSupplier: (initialValues?: Partial<SaveSupplierInput>) => void;
   onClose: () => void;
-  onSubmit: (event: React.FormEvent) => void;
-}) => (
+  onSubmit: (event: React.FormEvent, technical: TechnicalDataFormValue, restrictions: string[]) => void;
+}) => {
+  const [technical, setTechnical] = useState<TechnicalDataFormValue>({
+    standard: item.standard || "",
+    diameter: item.diameter || "",
+    thickness: item.thickness || "",
+    bore: item.bore || "",
+    technicalFamily: item.technicalFamily || "OTHER",
+    technicalAttributes: item.technicalAttributes || {},
+  });
+  const [restrictions, setRestrictions] = useState(item.originRestrictions);
+  const [suggestingTechnical, setSuggestingTechnical] = useState(false);
+  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+  const suggestTechnical = async () => {
+    setSuggestingTechnical(true);
+    try {
+      const suggestion = await TechnicalDataService.suggest({
+        requestedDescription: item.customerDescription || item.description,
+        supplierDescription: form.supplierDescription.trim() || undefined,
+        existingAttributes: technical.technicalAttributes,
+      });
+      const attributes = Object.fromEntries(suggestion.attributes.map((attribute) => [attribute.key, attribute.value]));
+      setTechnical((current) => ({
+        ...current,
+        technicalFamily: suggestion.family,
+        technicalAttributes: { ...current.technicalAttributes, ...attributes },
+        standard: attributes.STANDARD || current.standard,
+        diameter: attributes.NOMINAL_DIAMETER || current.diameter,
+        thickness: attributes.THICKNESS || attributes.SCHEDULE || current.thickness,
+        bore: attributes.BORE || current.bore,
+      }));
+      notifier.success(`IA sugirió ${suggestion.attributes.length} dato(s) técnicos. Revisa antes de guardar.`);
+    } catch (caught) {
+      notifier.error(caught instanceof Error ? caught.message : "No se pudieron sugerir los datos técnicos.");
+    } finally {
+      setSuggestingTechnical(false);
+    }
+  };
+  return <>
   <SupplierOfferModal
     mode="PURCHASING"
     purchasingContext={{ requisition, item }}
-    itemDescription={item.description}
+    technical={technical}
+    onTechnicalChange={setTechnical}
+    onSuggestTechnical={() => void suggestTechnical()}
+    suggestingTechnical={suggestingTechnical}
+    restrictions={restrictions}
+    restrictionOptions={restrictionOptions}
+    onRestrictionsChange={setRestrictions}
+    itemDescription={item.customerDescription || item.description}
     value={form}
     onChange={(value) => setForm(value)}
     suppliers={suppliers}
     brands={brands}
     origins={origins}
     deliveryTimes={deliveryTimes}
-    busy={busy}
+    busy={busy || suggestingTechnical}
     attachmentFile={attachmentFile}
     onAttachmentFile={onAttachmentFile}
     onNewSupplier={onNewSupplier}
     onClose={onClose}
-    onSubmit={onSubmit}
+    onSubmit={(event) => onSubmit(event, technical, restrictions)}
+    existingAttachments={<AttachmentsPanel files={attachments} loading={attachmentsLoading} title="Cotizaciones del proveedor de esta partida" busyFileId={busyAttachmentId} canDelete onPreview={setPreviewFile} onDownload={onDownloadAttachment} onDelete={onDeleteAttachment} />}
   />
-);
+  {previewFile && <PdfAttachmentViewerModal file={previewFile} onClose={() => setPreviewFile(null)} />}
+  </>;
+};
 
 const PurchaseOfferAttachmentModal = ({ requisition, busy, onClose, onSubmit }: {
   requisition: PurchaseRequisition;

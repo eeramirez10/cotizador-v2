@@ -96,6 +96,12 @@ export const usePurchaseRequisitionMutations = () => {
       PurchaseRequisitionsService.selectOffer(id, itemId, offerId),
     onSuccess: refresh,
   });
+  const allocateOffers = useMutation({
+    mutationFn: ({ id, itemId, allocations }: { id: string; itemId: string; allocations: Array<{ offerId: string; qty: number }> }) =>
+      PurchaseRequisitionsService.allocateOffers(id, itemId, allocations),
+    onSuccess: refresh,
+  });
+  const generateSupplierRequisitions = useMutation({ mutationFn: PurchaseRequisitionsService.generateSupplierRequisitions, onSuccess: refresh });
   const approveCostVariance = useMutation({
     mutationFn: PurchaseRequisitionsService.approveCostVariance,
     onSuccess: refresh,
@@ -136,13 +142,15 @@ export const usePurchaseRequisitionMutations = () => {
     assign,
     createOffer,
     selectOffer,
+    allocateOffers,
+    generateSupplierRequisitions,
     approveCostVariance,
     createSupplier,
     updateSupplier,
     setSupplierActive,
     syncErpSupplier,
     isPending: updateItem.isPending || linkItemToErp.isPending || submit.isPending || assign.isPending || createOffer.isPending
-      || selectOffer.isPending || approveCostVariance.isPending || createSupplier.isPending || updateSupplier.isPending
+      || selectOffer.isPending || allocateOffers.isPending || generateSupplierRequisitions.isPending || approveCostVariance.isPending || createSupplier.isPending || updateSupplier.isPending
       || setSupplierActive.isPending || syncErpSupplier.isPending,
   };
 };

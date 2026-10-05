@@ -74,7 +74,7 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
         <div className="flex flex-wrap items-center gap-2">
           {canEditDocument && <Button size="small" variant="outlined" startIcon={<Pencil size={15} />} onClick={() => { setForm(initialDocument(requisition)); setEditing(true); }}>Referencias</Button>}
           {sellerCount > 0 && <Button size="small" variant="outlined" startIcon={<FileDown size={15} />} disabled={Boolean(exporting)} onClick={() => void exportPdf("COTIZACION")}>PDF cotización</Button>}
-          {purchasingCount > 0 && <Button size="small" variant="outlined" startIcon={<FileDown size={15} />} disabled={Boolean(exporting)} onClick={() => void exportPdf("REQUISICION")}>PDF requisición</Button>}
+          {purchasingCount > 0 && <Button size="small" variant="outlined" startIcon={<FileDown size={15} />} disabled={Boolean(exporting)} onClick={() => void exportPdf("REQUISICION")}>PDF solicitud a Compras</Button>}
         </div>
       </div>
 
@@ -95,7 +95,7 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
         <table className="w-full min-w-[1320px] border-collapse text-left text-xs">
           <thead className="bg-slate-900 text-white"><tr>
             {[
-              "Part.", "Cant.", "UM", "Código ERP / EAN", "Código proveedor", "Descripción", "Norma · diámetro · espesor", "Costo ref.", "Moneda", "Marca", "Origen", "Entrega", "Responsable",
+              "Part.", "Cant.", "UM", "Código ERP / EAN", "Código proveedor", "Descripciones", "Norma · diámetro · espesor", "Costo ref.", "Moneda", "Marca", "Origen", "Entrega", "Responsable",
             ].map((label) => <th key={label} className="whitespace-nowrap px-3 py-2 font-medium">{label}</th>)}
           </tr></thead>
           <tbody className="divide-y divide-slate-200">
@@ -122,7 +122,11 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
                   ><Pencil size={12} /></button>}
                   {offer?.externalReference && <span className="mt-1 block text-[10px] text-slate-500">Cot. prov.: {offer.externalReference}</span>}
                 </td>
-                <td className="min-w-[220px] px-3 py-3">{item.description}</td>
+                <td className="min-w-[220px] px-3 py-3">
+                  <p><span className="font-semibold">Cliente:</span> {item.customerDescription || "No capturada"}</p>
+                  <p className="mt-1 text-slate-600"><span className="font-semibold">ERP:</span> {item.erpDescription || "-"}</p>
+                  <p className="mt-1 text-slate-600"><span className="font-semibold">Proveedor:</span> {offer?.supplierDescription || "Pendiente"}</p>
+                </td>
                 <td className="max-w-[180px] px-3 py-3">{[item.standard, item.diameter, item.thickness, item.bore].filter(Boolean).join(" · ") || "-"}</td>
                 <td className="whitespace-nowrap px-3 py-3">{cost > 0 ? money(cost, currency) : "Pendiente"}</td>
                 <td className="px-3 py-3">{currency}</td>

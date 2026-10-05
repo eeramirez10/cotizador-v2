@@ -1,5 +1,7 @@
-import { Loader2, PackageSearch, Paperclip, Sparkles, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { AttachFileOutlined, AutoAwesomeOutlined, FolderOpenOutlined } from "@mui/icons-material";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton } from "@mui/material";
+import { Loader2, PackageSearch, X } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 import type { PurchaseRequisition, RequisitionItem, Supplier } from "../../../modules/procurement/services/purchase-requisitions.service";
 import { SupplierQuoteExtractionService, type ExtractedSupplierData, type ExtractedSupplierQuoteItem, type SupplierQuoteExtractionResult } from "../../../modules/procurement/services/supplier-quote-extraction.service";
 import type { SaveSupplierInput } from "../../../modules/procurement/services/purchase-requisitions.service";
@@ -10,6 +12,7 @@ import { DetectedSupplierModal, findDetectedSupplierMatch } from "./detected-sup
 import { PurchasingSupplierOfferFields } from "./purchasing-supplier-offer-fields";
 import { SellerSupplierReferenceFields } from "./seller-supplier-reference-fields";
 import type { ManualQuoteItem } from "../../../store/quote/manual-quote.store";
+import type { TechnicalDataFormValue } from "../procurement/technical-data-editor";
 
 export type SupplierOfferMode = "SELLER" | "PURCHASING";
 export type SupplierOfferCurrency = "MXN" | "USD";
@@ -51,7 +54,19 @@ export interface SupplierOfferFormValue {
 interface SupplierOfferModalProps {
   mode: SupplierOfferMode;
   purchasingContext?: { requisition: PurchaseRequisition; item: RequisitionItem };
-  sellerContext?: { item: ManualQuoteItem; technical: { standard: string; diameter: string; thickness: string; bore: string } };
+  sellerContext?: {
+    item: ManualQuoteItem;
+    deliveryState: string;
+    deliveryStates: QuoteCatalogOption[];
+    onDeliveryStateChange: (value: string) => void;
+  };
+  technical: TechnicalDataFormValue;
+  onTechnicalChange: (value: TechnicalDataFormValue) => void;
+  onSuggestTechnical: () => void;
+  suggestingTechnical: boolean;
+  restrictions: string[];
+  restrictionOptions: QuoteCatalogOption[];
+  onRestrictionsChange: (value: string[]) => void;
   itemDescription: string;
   value: SupplierOfferFormValue;
   onChange: (value: SupplierOfferFormValue) => void;
@@ -66,7 +81,6 @@ interface SupplierOfferModalProps {
   onNewSupplier: (initialValues?: Partial<SaveSupplierInput>) => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
-  error?: string;
   loadingMessage?: string;
   children?: ReactNode;
   existingAttachments?: ReactNode;
@@ -76,6 +90,13 @@ export const SupplierOfferModal = ({
   mode,
   purchasingContext,
   sellerContext,
+  technical,
+  onTechnicalChange,
+  onSuggestTechnical,
+  suggestingTechnical,
+  restrictions,
+  restrictionOptions,
+  onRestrictionsChange,
   itemDescription,
   value,
   onChange,
@@ -90,7 +111,6 @@ export const SupplierOfferModal = ({
   onNewSupplier,
   onClose,
   onSubmit,
-  error,
   loadingMessage,
   children,
   existingAttachments,
@@ -99,27 +119,34 @@ export const SupplierOfferModal = ({
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extraction, setExtraction] = useState<SupplierQuoteExtractionResult | null>(null);
   const [detectedSupplier, setDetectedSupplier] = useState<ExtractedSupplierData | null>(null);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const title = mode === "SELLER" ? "Agregar referencia de proveedor" : "Cotización de proveedor";
   const eyebrow = mode === "SELLER" ? "Información opcional para Compras" : "Propuesta de Compras";
   const submitLabel = mode === "SELLER" ? "Guardar referencia" : "Registrar propuesta de Compras";
   const modalBusy = busy || extracting;
-  const canExtract = Boolean(attachmentFile && /\.(pdf|xlsx?)$/i.test(attachmentFile.name));
   if ((mode === "PURCHASING" && !purchasingContext) || (mode === "SELLER" && !sellerContext)) {
     throw new Error("El contexto de la partida es obligatorio para capturar la referencia del proveedor.");
   }
 
-  const extractSupplierQuote = async () => {
-    if (!attachmentFile || !canExtract) return;
+  const extractSupplierQuote = async (file: File) => {
     setExtracting(true);
     setExtractionProgress(0);
     try {
-      const result = await SupplierQuoteExtractionService.extract(attachmentFile, setExtractionProgress);
+      const result = await SupplierQuoteExtractionService.extract(file, setExtractionProgress);
       setExtraction(result);
     } catch (caught) {
       notifier.error(caught instanceof Error ? caught.message : "No se pudo extraer la cotización del proveedor.");
     } finally {
       setExtracting(false);
     }
+  };
+
+  const chooseQuoteFile = (file: File | null) => {
+    if (!file) return;
+    onAttachmentFile(file);
+    if (/\.(pdf|xlsx?)$/i.test(file.name)) void extractSupplierQuote(file);
+    else notifier.warning("El archivo quedó adjunto. La extracción con IA solo admite PDF, XLS y XLSX.");
   };
 
   const applyExtraction = (item: ExtractedSupplierQuoteItem) => {
@@ -168,7 +195,7 @@ export const SupplierOfferModal = ({
     <>
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="supplier-offer-title">
       <div className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${purchasingContext || sellerContext ? "max-w-[min(1500px,96vw)]" : "max-w-4xl"}`}>
-        <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="flex min-w-0 gap-3">
             <span className="shrink-0 rounded-xl bg-amber-100 p-2 text-amber-700"><PackageSearch className="h-5 w-5" /></span>
             <div className="min-w-0">
@@ -177,11 +204,16 @@ export const SupplierOfferModal = ({
               <p className="mt-1 line-clamp-2 text-xs text-slate-500">{itemDescription}</p>
             </div>
           </div>
-          <button type="button" disabled={modalBusy} onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50" aria-label="Cerrar"><X className="h-5 w-5" /></button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileInputRef} type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="sr-only" aria-label="Seleccionar cotización del proveedor" onChange={(event) => { chooseQuoteFile(event.currentTarget.files?.[0] || null); event.currentTarget.value = ""; }} />
+            <Button type="button" size="small" variant="contained" disabled={modalBusy} startIcon={extracting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AutoAwesomeOutlined fontSize="small" />} onClick={() => fileInputRef.current?.click()} sx={{ fontSize: 11, textTransform: "none" }}>{extracting ? `Extrayendo ${extractionProgress}%` : "Extraer cotización con IA"}</Button>
+            <Button type="button" size="small" variant="outlined" startIcon={<FolderOpenOutlined fontSize="small" />} onClick={() => setAttachmentsOpen(true)} sx={{ fontSize: 11, textTransform: "none" }}>Ver cotizaciones del proveedor</Button>
+            <IconButton type="button" disabled={modalBusy} onClick={onClose} size="small" aria-label="Cerrar"><X className="h-4 w-4" /></IconButton>
+          </div>
         </header>
 
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="overflow-y-auto px-5 py-5">
+          <div className="overflow-y-auto px-4 py-3">
             {mode === "PURCHASING" ? (
               <PurchasingSupplierOfferFields
                 requisition={purchasingContext!.requisition}
@@ -193,11 +225,27 @@ export const SupplierOfferModal = ({
                 origins={origins}
                 deliveryTimes={deliveryTimes}
                 onNewSupplier={onNewSupplier}
+                technical={technical}
+                onTechnicalChange={onTechnicalChange}
+                onSuggestTechnical={onSuggestTechnical}
+                suggestingTechnical={suggestingTechnical}
+                restrictions={restrictions}
+                restrictionOptions={restrictionOptions}
+                onRestrictionsChange={onRestrictionsChange}
               />
             ) : (
               <SellerSupplierReferenceFields
                 item={sellerContext!.item}
-                technical={sellerContext!.technical}
+                deliveryState={sellerContext!.deliveryState}
+                deliveryStates={sellerContext!.deliveryStates}
+                onDeliveryStateChange={sellerContext!.onDeliveryStateChange}
+                technical={technical}
+                onTechnicalChange={onTechnicalChange}
+                onSuggestTechnical={onSuggestTechnical}
+                suggestingTechnical={suggestingTechnical}
+                restrictions={restrictions}
+                restrictionOptions={restrictionOptions}
+                onRestrictionsChange={onRestrictionsChange}
                 value={value}
                 onChange={onChange}
                 suppliers={suppliers}
@@ -210,31 +258,23 @@ export const SupplierOfferModal = ({
 
             {children}
 
-            <section className="mt-6 border-t border-slate-200 pt-5">
-              <label className="block rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4 text-xs font-semibold text-slate-700">
-                <span className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-amber-700" />Archivo de la propuesta (opcional)</span>
-                <input type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" disabled={modalBusy} onChange={(event) => onAttachmentFile(event.currentTarget.files?.[0] || null)} className="mt-3 w-full text-xs font-normal file:mr-3 file:rounded-md file:border-0 file:bg-amber-400 file:px-3 file:py-2 file:font-semibold file:text-slate-950" />
-                {attachmentFile && <span className="mt-2 block font-normal text-slate-500">{attachmentFile.name}</span>}
-                <button type="button" disabled={!canExtract || modalBusy} onClick={() => void extractSupplierQuote()} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
-                  {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  {extracting ? `Extrayendo con IA (${extractionProgress}%)` : "Extraer cotización con IA"}
-                </button>
-                {attachmentFile && !canExtract && <span className="mt-2 block font-normal text-slate-500">La extracción con IA está disponible para PDF, XLS y XLSX.</span>}
-              </label>
-              {existingAttachments && <div className="mt-4">{existingAttachments}</div>}
-            </section>
+            {attachmentFile && <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-slate-700"><AttachFileOutlined sx={{ fontSize: 15 }} /><span className="min-w-0 flex-1 truncate">Archivo para adjuntar: {attachmentFile.name}</span><Button type="button" size="small" onClick={() => onAttachmentFile(null)} sx={{ fontSize: 10 }}>Quitar</Button></div>}
 
-            {error && <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>}
             {loadingMessage && <p className="mt-4 inline-flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />{loadingMessage}</p>}
           </div>
 
-          <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2.5">
             <button type="button" onClick={onClose} disabled={modalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
             <button type="submit" disabled={modalBusy} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50">{modalBusy && <Loader2 className="h-4 w-4 animate-spin" />}{submitLabel}</button>
           </footer>
         </form>
       </div>
     </div>
+    <Dialog open={attachmentsOpen} onClose={() => setAttachmentsOpen(false)} fullWidth maxWidth="md" aria-labelledby="supplier-attachments-title">
+      <DialogTitle id="supplier-attachments-title" sx={{ fontSize: 16, fontWeight: 600 }}>Cotizaciones del proveedor</DialogTitle>
+      <DialogContent dividers>{existingAttachments || <p className="text-xs text-slate-500">Todavía no hay cotizaciones adjuntas para esta partida.</p>}</DialogContent>
+      <DialogActions><Button type="button" size="small" onClick={() => setAttachmentsOpen(false)}>Cerrar</Button></DialogActions>
+    </Dialog>
     {extraction && <SupplierQuoteExtractionReviewModal result={extraction} onApply={applyExtraction} onClose={() => setExtraction(null)} />}
     {detectedSupplier && <DetectedSupplierModal
       detected={detectedSupplier}
