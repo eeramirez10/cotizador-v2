@@ -3,15 +3,11 @@ import { FileDown, Pencil } from "lucide-react";
 import { useState } from "react";
 import type { PurchaseRequisition, RequisitionItem, UpdateRequisitionDocumentInput } from "../../modules/procurement/services/purchase-requisitions.service";
 import { downloadRequisitionDocument, type RequisitionDocumentKind } from "../../modules/procurement/utils/requisition-document-pdf";
+import { preferredRequisitionOffer, requisitionItemSupplierDescription, requisitionItemSupplierName, requisitionSupplierSummary } from "../../modules/procurement/utils/requisition-supplier-display";
 import { notifier } from "../../shared/notifications/notifier";
 
 const money = (value: number, currency: string) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
-
-const matchingOffer = (item: RequisitionItem) =>
-  item.offers.find((offer) => offer.isSelected)
-  ?? item.offers.find((offer) => offer.source === "SELLER")
-  ?? null;
 
 const initialDocument = (requisition: PurchaseRequisition): UpdateRequisitionDocumentInput => ({
   supplierOrderReference: requisition.supplierOrderReference || "",
@@ -22,16 +18,15 @@ const initialDocument = (requisition: PurchaseRequisition): UpdateRequisitionDoc
   markingInstructions: requisition.markingInstructions || "",
 });
 
-export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOwner, canEditOfferCode, role, busy, onSaveDocument, onChangeOwner, onSaveSupplierCode }: {
+export const RequisitionPaperCard = ({ requisition, canEditDocument, canEditOfferCode, role, busy, onSaveDocument, onSaveSupplierCode, onOpenItem }: {
   requisition: PurchaseRequisition;
   canEditDocument: boolean;
-  canChangeOwner: boolean;
   canEditOfferCode: boolean;
   role: string;
   busy: boolean;
   onSaveDocument: (input: UpdateRequisitionDocumentInput) => Promise<boolean>;
-  onChangeOwner: (itemId: string, owner: "SELLER" | "PURCHASING") => Promise<boolean>;
   onSaveSupplierCode: (itemId: string, offerId: string, code: string | null) => Promise<boolean>;
+  onOpenItem: (item: RequisitionItem) => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<UpdateRequisitionDocumentInput>(() => initialDocument(requisition));
@@ -80,7 +75,7 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
 
       <div className="grid gap-px bg-slate-200 text-xs sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ["Proveedor", ([...new Set(requisition.items.map((item) => matchingOffer(item)?.supplier.name || item.sellerSupplierName).filter(Boolean))].join(", ") || "Pendiente")],
+          ["Proveedor", requisitionSupplierSummary(requisition.items, requisition.supplierName)],
           ["Sucursal", [requisition.branchName, requisition.branchAddress].filter(Boolean).join(" · ")],
           ["No. requisición", requisition.requisitionNumber],
           ["Cotización cliente", requisition.quoteNumber],
@@ -91,16 +86,16 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
         ].map(([label, value]) => <div key={label} className="min-w-0 bg-white px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p><p className="mt-0.5 break-words font-medium text-slate-800">{value}</p></div>)}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1320px] border-collapse text-left text-xs">
-          <thead className="bg-slate-900 text-white"><tr>
+      <div role="region" aria-label="Partidas de la requisición" tabIndex={0} className="max-h-[620px] overflow-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">
+        <table className="w-full min-w-[1570px] border-collapse text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-slate-900 text-white"><tr>
             {[
-              "Part.", "Cant.", "UM", "Código ERP / EAN", "Código proveedor", "Descripciones", "Norma · diámetro · espesor", "Costo ref.", "Moneda", "Marca", "Origen", "Entrega", "Responsable",
+              "Part.", "Cant.", "UM", "Código ERP / EAN", "Código proveedor", "Proveedor", "Descripciones", "Norma · diámetro · espesor", "Costo ref.", "Moneda", "Marca", "Origen", "Entrega", "Cotiza", "Acciones",
             ].map((label) => <th key={label} className="whitespace-nowrap px-3 py-2 font-medium">{label}</th>)}
           </tr></thead>
           <tbody className="divide-y divide-slate-200">
             {requisition.items.map((item) => {
-              const offer = matchingOffer(item);
+              const offer = preferredRequisitionOffer(item);
               const cost = offer?.unitCost ?? item.sellerUnitCost;
               const currency = offer?.currency ?? item.sellerCurrency;
               const differentDelivery = Boolean(offer?.deliveryTime && item.sellerDeliveryTime
@@ -122,10 +117,11 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
                   ><Pencil size={12} /></button>}
                   {offer?.externalReference && <span className="mt-1 block text-[10px] text-slate-500">Cot. prov.: {offer.externalReference}</span>}
                 </td>
+                <td className="min-w-[160px] max-w-[210px] px-3 py-3 font-medium text-slate-800">{requisitionItemSupplierName(item) || "Sin asignar"}{offer?.source === "PURCHASING" && !offer.isSelected && <span className="mt-1 block text-[10px] font-normal text-blue-700">Propuesta de Compras · sin adjudicar</span>}</td>
                 <td className="min-w-[220px] px-3 py-3">
                   <p><span className="font-semibold">Cliente:</span> {item.customerDescription || "No capturada"}</p>
                   <p className="mt-1 text-slate-600"><span className="font-semibold">ERP:</span> {item.erpDescription || "-"}</p>
-                  <p className="mt-1 text-slate-600"><span className="font-semibold">Proveedor:</span> {offer?.supplierDescription || "Pendiente"}</p>
+                  <p className="mt-1 text-slate-600"><span className="font-semibold">Descripción proveedor:</span> {requisitionItemSupplierDescription(item) || "No capturada"}</p>
                 </td>
                 <td className="max-w-[180px] px-3 py-3">{[item.standard, item.diameter, item.thickness, item.bore].filter(Boolean).join(" · ") || "-"}</td>
                 <td className="whitespace-nowrap px-3 py-3">{cost > 0 ? money(cost, currency) : "Pendiente"}</td>
@@ -134,14 +130,12 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canChangeOw
                 <td className="max-w-[130px] px-3 py-3">{item.originRestrictions.join(", ") || "-"}</td>
                 <td className="max-w-[130px] px-3 py-3">{offer?.deliveryTime || item.sellerDeliveryTime || "Pendiente"}{differentDelivery && <span className="mt-1 block font-semibold text-amber-800">Difiere del solicitado: {item.sellerDeliveryTime}</span>}</td>
                 <td className="px-3 py-3">
-                  {canChangeOwner ? <select
-                    aria-label={`Responsable de cotizar partida ${item.position}`}
-                    value={item.quotationOwner}
-                    disabled={busy}
-                    onChange={(event) => void onChangeOwner(item.id, event.target.value as "SELLER" | "PURCHASING")}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                  ><option value="SELLER">Ventas</option><option value="PURCHASING">Compras</option></select>
-                    : item.quotationOwner === "SELLER" ? "Ventas" : "Compras"}
+                  {item.quotationOwner === "SELLER" ? "Ventas" : "Compras"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3">
+                  <Button size="small" variant="outlined" onClick={() => onOpenItem(item)} aria-label={`Gestionar partida ${item.position}`}>
+                    Gestionar{item.offers.length ? ` (${item.offers.length})` : ""}
+                  </Button>
                 </td>
               </tr>;
             })}

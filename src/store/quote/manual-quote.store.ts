@@ -943,16 +943,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       const items = state.draft.items.map((item) => {
         if (item.id !== itemId) return item;
         const updatedItem = { ...item, ...data };
-        const effectiveCost = getQuoteItemEffectiveCost(
-          updatedItem,
-          state.draft.currency,
-          state.draft.exchangeRate
-        ).effectiveUnitCost;
-
         return {
           ...updatedItem,
-          manualUnitPrice: round(effectiveCost),
-          marginPct: 0,
+          manualUnitPrice: item.manualUnitPrice ?? (item.unitPrice > 0 ? item.unitPrice : undefined),
         };
       });
 
@@ -972,16 +965,9 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         if (!data) return item;
 
         const updatedItem = { ...item, ...data };
-        const unitPrice = round(getQuoteItemEffectiveCost(
-          updatedItem,
-          state.draft.currency,
-          state.draft.exchangeRate
-        ).effectiveUnitCost);
-
         return {
           ...updatedItem,
-          manualUnitPrice: unitPrice,
-          marginPct: 0,
+          manualUnitPrice: item.manualUnitPrice ?? (item.unitPrice > 0 ? item.unitPrice : undefined),
         };
       });
 
@@ -1046,7 +1032,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? quote.currency : item.sourceCurrency,
         sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
         sourceSubtotal: item.importedFromExcel ? item.sourceSubtotal ?? item.subtotal : item.sourceSubtotal,
-        manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
+        manualUnitPrice: item.importedFromExcel ? undefined : item.unitPrice > 0 ? item.unitPrice : undefined,
       }));
 
       const loadedItems = recalcItems(normalizedItems, quote.currency, quote.exchangeRate);
@@ -1139,7 +1125,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? stored.currency : item.sourceCurrency,
       sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
       sourceSubtotal: item.importedFromExcel ? item.sourceSubtotal ?? item.subtotal : item.sourceSubtotal,
-      manualUnitPrice: item.importedFromExcel ? undefined : item.costUsd <= 0 && item.unitPrice > 0 ? item.unitPrice : undefined,
+      manualUnitPrice: item.importedFromExcel ? undefined : item.unitPrice > 0 ? item.unitPrice : undefined,
     }));
 
     const loadedItems = recalcItems(normalizedItems, stored.currency, stored.exchangeRate);

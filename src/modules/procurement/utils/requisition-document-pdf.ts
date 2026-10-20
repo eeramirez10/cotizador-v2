@@ -1,11 +1,7 @@
-import type { PurchaseRequisition, RequisitionItem, SupplierRequisition } from "../services/purchase-requisitions.service";
+import type { PurchaseRequisition, SupplierRequisition } from "../services/purchase-requisitions.service";
+import { preferredRequisitionOffer, requisitionItemSupplierDescription, requisitionItemSupplierName } from "./requisition-supplier-display";
 
 export type RequisitionDocumentKind = "COTIZACION" | "REQUISICION";
-
-const selectedOffer = (item: RequisitionItem) =>
-  item.offers.find((offer) => offer.isSelected)
-  ?? item.offers.find((offer) => offer.source === "SELLER")
-  ?? null;
 
 const fileName = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, "_");
 
@@ -24,7 +20,7 @@ export const downloadRequisitionDocument = async (requisition: PurchaseRequisiti
   const widths = [24, 34, 31, 91, 157, 98, 80, 67, 74, 88];
   const labels = ["#", "CANT.", "UM", "ERP / PROV.", "DESCRIPCIONES", "DATOS TECNICOS", "PROVEEDOR", "COSTO REF.", "ENTREGA", "DESTINO"];
   const rowWidth = widths.reduce((sum, width) => sum + width, 0);
-  const suppliers = [...new Set(items.map((item) => selectedOffer(item)?.supplier.name || item.sellerSupplierName).filter(Boolean))];
+  const suppliers = [...new Set(items.map(requisitionItemSupplierName).filter((name): name is string => Boolean(name)))];
   const line = (value: string, x: number, y: number, maxWidth: number, size = 8) => {
     pdf.setFontSize(size);
     const lines = pdf.splitTextToSize(value || "-", maxWidth);
@@ -49,6 +45,7 @@ export const downloadRequisitionDocument = async (requisition: PurchaseRequisiti
     pdf.text(`Direccion sucursal: ${requisition.branchAddress || "-"}${requisition.branchPhone ? `  |  Tel: ${requisition.branchPhone}` : ""}`.slice(0, 125), left, 119);
     pdf.text(`O.C. proveedor: ${requisition.supplierOrderReference || "-"}  |  Embarque: ${requisition.shipmentReference || "-"}`, left, 133);
     if (suppliers.length === 1) pdf.text(`Proveedor: ${suppliers[0]}`, right, 105, { align: "right" });
+    if (suppliers.length > 1) pdf.text(`${suppliers.length} proveedores (ver partidas)`, right, 105, { align: "right" });
     pdf.setFillColor(25, 40, 63);
     pdf.rect(left, 145, rowWidth, 22, "F");
     pdf.setTextColor(255, 255, 255);
@@ -66,15 +63,15 @@ export const downloadRequisitionDocument = async (requisition: PurchaseRequisiti
   drawHeader();
   let y = 167;
   for (const item of items) {
-    const offer = selectedOffer(item);
+    const offer = preferredRequisitionOffer(item);
     const cost = offer?.unitCost ?? item.sellerUnitCost;
     const currency = offer?.currency ?? item.sellerCurrency;
     const technical = [item.standard, item.diameter, item.thickness, item.bore, item.originRestrictions.length ? `Origen: ${item.originRestrictions.join(", ")}` : null].filter(Boolean).join(" / ");
     const code = `${item.erpEan || item.erpCode || "PENDIENTE ERP"}${offer?.supplierProductCode ? `\nProv: ${offer.supplierProductCode}` : ""}`;
     const price = cost > 0 && (kind === "COTIZACION" || offer) ? `${currency} ${cost.toFixed(2)}` : "PENDIENTE";
-    const provider = `${offer?.supplier.name || item.sellerSupplierName || "Pendiente"}${offer?.externalReference ? `\nRef: ${offer.externalReference}` : ""}${offer?.brand || item.sellerBrand ? `\n${offer?.brand || item.sellerBrand}` : ""}`;
+    const provider = `${requisitionItemSupplierName(item) || "Sin asignar"}${offer?.source === "PURCHASING" && !offer.isSelected ? "\nPropuesta sin adjudicar" : ""}${offer?.externalReference ? `\nRef: ${offer.externalReference}` : ""}${offer?.brand || item.sellerBrand ? `\n${offer?.brand || item.sellerBrand}` : ""}`;
     const delivery = `${offer?.deliveryTime || item.sellerDeliveryTime || "Pendiente"}${offer?.deliveryTime && item.sellerDeliveryTime && offer.deliveryTime.trim().toUpperCase() !== item.sellerDeliveryTime.trim().toUpperCase() ? `\nSolicitado: ${item.sellerDeliveryTime}` : ""}`;
-    const descriptions = `Cliente: ${item.customerDescription || "No capturada"}\nERP: ${item.erpDescription || "-"}\nProveedor: ${offer?.supplierDescription || "Pendiente"}`;
+    const descriptions = `Cliente: ${item.customerDescription || "No capturada"}\nERP: ${item.erpDescription || "-"}\nDescripcion proveedor: ${requisitionItemSupplierDescription(item) || "No capturada"}`;
     const values = [
       String(item.position), String(item.qty), item.unit, code, descriptions,
       technical || "-", provider,

@@ -41,16 +41,17 @@ const NumberField = ({ label, value, onChange, width = 110, required = false }: 
   required?: boolean;
 }) => <TextField size="small" type="number" label={label} value={value ?? ""} onChange={(event) => onChange(event.target.value)} required={required} inputProps={{ min: 0, step: "any" }} sx={{ ...compactFieldSx, minWidth: Math.max(78, width - 18) }} />;
 
-const CatalogField = ({ label, value, options, onChange, width = 135 }: {
+const CatalogField = ({ label, value, options, onChange, width = 135, required = false }: {
   label: string;
   value: string;
   options: QuoteCatalogOption[];
   onChange: (value: string) => void;
   width?: number;
+  required?: boolean;
 }) => {
   const hasCurrent = options.some((option) => optionValue(option) === value);
-  return <TextField select size="small" label={label} value={value} onChange={(event) => onChange(event.target.value)} sx={{ ...compactFieldSx, minWidth: Math.max(100, width - 20) }}>
-    <MenuItem value="">Sin indicar</MenuItem>
+  return <TextField select size="small" required={required} label={label} value={value} onChange={(event) => onChange(event.target.value)} sx={{ ...compactFieldSx, minWidth: Math.max(100, width - 20) }}>
+    <MenuItem value="">{required ? "Seleccionar" : "Sin indicar"}</MenuItem>
     {value && !hasCurrent && <MenuItem value={value}>{value}</MenuItem>}
     {options.map((option) => <MenuItem key={option.id} value={optionValue(option)}>{option.label}</MenuItem>)}
   </TextField>;
@@ -95,7 +96,7 @@ export const PurchasingSupplierOfferFields = ({ requisition, item, value, onChan
         <TextField size="small" sx={compactFieldSx} type="date" label="Fecha cotización" value={value.quoteDate || ""} onChange={(event) => update("quoteDate", event.target.value)} InputLabelProps={{ shrink: true }} />
         <TextField size="small" sx={compactFieldSx} type="date" label="Vigencia" value={value.validUntil} onChange={(event) => update("validUntil", event.target.value)} InputLabelProps={{ shrink: true }} />
         <TextField select size="small" sx={compactFieldSx} required label="Moneda" value={value.currency} onChange={(event) => update("currency", event.target.value as SupplierOfferFormValue["currency"])}><MenuItem value="MXN">MXN</MenuItem><MenuItem value="USD">USD</MenuItem></TextField>
-        {value.currency === "USD" && <NumberField label="Tipo de cambio" value={value.exchangeRate} onChange={(next) => update("exchangeRate", next)} required />}
+        {value.currency === "USD" && <NumberField label="Tipo de cambio cotización" value={value.exchangeRate} onChange={(next) => update("exchangeRate", next)} required />}
         <TextField size="small" sx={compactFieldSx} label="Condiciones de pago" value={value.paymentTerms || ""} onChange={(event) => update("paymentTerms", event.target.value)} />
         <TextField size="small" sx={compactFieldSx} label="Condiciones de entrega" value={value.deliveryTerms || ""} onChange={(event) => update("deliveryTerms", event.target.value)} />
       </div>
@@ -119,13 +120,13 @@ export const PurchasingSupplierOfferFields = ({ requisition, item, value, onChan
             <TableCell sx={{ minWidth: 180, maxWidth: 240, overflowWrap: "anywhere" }}>{item.erpDescription || "-"}</TableCell>
             <TableCell sx={{ minWidth: 205 }}><TextField size="small" sx={compactFieldSx} fullWidth multiline minRows={2} label="Descripción proveedor" placeholder="Pendiente de cotización" value={value.supplierDescription} onChange={(event) => update("supplierDescription", event.target.value.toUpperCase())} inputProps={{ maxLength: 500 }} /></TableCell>
             <SupplierTechnicalCell value={technical} onExpand={() => setTechnicalOpen((current) => !current)} onSuggest={onSuggestTechnical} suggesting={suggestingTechnical} />
-            <TableCell><SupplierRestrictionSelect value={restrictions} options={restrictionOptions} onChange={onRestrictionsChange} /></TableCell>
+            <TableCell><SupplierRestrictionSelect required value={restrictions} options={restrictionOptions} onChange={onRestrictionsChange} /></TableCell>
             <TableCell><NumberField label="Lista" value={value.listUnitPrice} onChange={(next) => update("listUnitPrice", optionalNumber(next))} /></TableCell>
             <TableCell><NumberField label="Descuento" value={value.discountPct} onChange={(next) => update("discountPct", optionalNumber(next))} width={95} /></TableCell>
             <TableCell><NumberField label="Costo neto" value={value.unitCost} onChange={(next) => updateLineAmount("unitCost", next)} width={110} required /></TableCell>
             <TableCell><CatalogField label="Marca" value={value.brand} options={brands} onChange={(next) => update("brand", next)} /></TableCell>
-            <TableCell><CatalogField label="Origen" value={value.origin} options={origins} onChange={(next) => update("origin", next)} /></TableCell>
-            <TableCell><CatalogField label="Plazo" value={value.deliveryTime} options={deliveryTimes} onChange={(next) => update("deliveryTime", next)} width={160} /></TableCell>
+            <TableCell><CatalogField required label="Origen" value={value.origin} options={origins} onChange={(next) => update("origin", next)} /></TableCell>
+            <TableCell><CatalogField required label="Plazo" value={value.deliveryTime} options={deliveryTimes} onChange={(next) => update("deliveryTime", next)} width={160} /></TableCell>
             <TableCell sx={{ minWidth: 110, fontWeight: 600 }}>{Number.isFinite(subtotal) && value.unitCost !== "" ? money(subtotal, value.currency) : "Pendiente"}</TableCell>
           </TableRow><SupplierTechnicalRow colSpan={18} value={technical} onChange={onTechnicalChange} open={technicalOpen} /></TableBody>
         </Table>

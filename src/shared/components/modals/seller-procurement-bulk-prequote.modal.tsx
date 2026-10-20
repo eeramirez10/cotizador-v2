@@ -29,12 +29,14 @@ import { TechnicalDataService } from "../../../modules/procurement/services/tech
 import type { BulkProcurementItemForm } from "./bulk-procurement-item.types";
 import { DetectedSupplierModal, findDetectedSupplierMatch } from "./detected-supplier.modal";
 import { getQuoteItemFulfillment } from "../../../modules/quotes/utils/quote-fulfillment";
-import { SellerSupplierBulkReferenceTable } from "./seller-supplier-bulk-reference-table";
+import { SupplierBulkReferenceTable } from "./seller-supplier-bulk-reference-table";
 import { SupplierRestrictionSelect } from "./supplier-offer-line-controls";
 import { compactFieldSx } from "./supplier-offer-line-styles";
 
 interface SellerProcurementBulkPrequoteModalProps {
   items: ManualQuoteItem[];
+  initialItemIds?: string[];
+  startInCapture?: boolean;
   clientDraftId: string;
   quoteExchangeRate: number;
   onClose: () => void;
@@ -64,6 +66,8 @@ const commonValue = (values: string[]): string => {
 
 export const SellerProcurementBulkPrequoteModal = ({
   items,
+  initialItemIds,
+  startInCapture = false,
   clientDraftId,
   quoteExchangeRate,
   onClose,
@@ -76,9 +80,13 @@ export const SellerProcurementBulkPrequoteModal = ({
   const deliveryTimes = useQuoteCatalogs("DELIVERY_TIME");
   const attachments = useDraftAttachments(clientDraftId);
   const initiallySelectedItems = useMemo(() => {
+    if (initialItemIds) {
+      const selected = new Set(initialItemIds);
+      return items.filter((item) => selected.has(item.id));
+    }
     const incomplete = items.filter((item) => !hasCompleteData(item));
     return incomplete.length > 0 ? incomplete : items;
-  }, [items]);
+  }, [initialItemIds, items]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(initiallySelectedItems.map((item) => item.id))
   );
@@ -119,7 +127,13 @@ export const SellerProcurementBulkPrequoteModal = ({
   );
   const [bulkRestrictions, setBulkRestrictions] = useState<string[]>([]);
   const [bulkCurrency, setBulkCurrency] = useState<QuoteCurrency | "">("");
-  const [stage, setStage] = useState<"SELECT" | "CAPTURE">("SELECT");
+  const [globalExchangeRate, setGlobalExchangeRate] = useState(() => {
+    const existingRates = initiallySelectedItems
+      .filter((item) => item.sellerQuotedCurrency === "USD" && item.sellerQuotedExchangeRate)
+      .map((item) => String(item.sellerQuotedExchangeRate));
+    return commonValue(existingRates) || (quoteExchangeRate > 0 ? String(quoteExchangeRate) : "");
+  });
+  const [stage, setStage] = useState<"SELECT" | "CAPTURE">(startInCapture ? "CAPTURE" : "SELECT");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
@@ -151,6 +165,16 @@ export const SellerProcurementBulkPrequoteModal = ({
   );
   const originOptions = (restrictions.data || []).filter((option) => option.code !== "NO_RESTRICTION");
   const selectedItems = items.filter((item) => selectedIds.has(item.id));
+  const selectedTableItems = items.flatMap((item, index) => selectedIds.has(item.id) ? [{
+    id: item.id,
+    position: index + 1,
+    qty: getQuoteItemFulfillment(item).purchaseQty,
+    unit: item.unit,
+    erpCode: item.erpCode,
+    ean: item.ean,
+    customerDescription: item.customerDescription,
+    erpDescription: item.erpDescription,
+  }] : []);
 
   const downloadAttachment = async (file: FileAttachment) => {
     setBusyAttachmentId(file.id);
@@ -335,9 +359,7 @@ export const SellerProcurementBulkPrequoteModal = ({
         supplierDescription: extracted.description.toUpperCase(),
         unitCost: extracted.netUnitPrice === null ? current[item.id].unitCost : String(extracted.netUnitPrice),
         currency: extractionResult.header.currency || current[item.id].currency,
-        exchangeRate: extractionResult.header.exchangeRate === null
-          ? current[item.id].exchangeRate
-          : String(extractionResult.header.exchangeRate),
+        exchangeRate: current[item.id].exchangeRate,
         brand: extracted.brand || current[item.id].brand,
         origin: extracted.origin || current[item.id].origin,
         deliveryTime: extracted.deliveryTime || current[item.id].deliveryTime,
@@ -382,11 +404,16 @@ export const SellerProcurementBulkPrequoteModal = ({
     if (invalidCost) {
       return notifier.error(`Captura un costo mayor a cero para la partida ${invalidCost.erpCode || invalidCost.id}.`);
     }
-    const invalidExchangeRate = selectedItems.find((item) => {
-      const form = itemForms[item.id];
-      return form.currency === "USD" && (!Number.isFinite(Number(form.exchangeRate)) || Number(form.exchangeRate) <= 0);
-    });
-    if (invalidExchangeRate) return notifier.error(`Captura un tipo de cambio válido para ${invalidExchangeRate.erpCode || "la partida local"}.`);
+    const missingRestrictions = selectedItems.find((item) => itemForms[item.id].originRestrictions.length === 0);
+    if (missingRestrictions) return notifier.error(`Selecciona una restricción o Sin restricción para ${missingRestrictions.erpCode || "la partida local"}.`);
+    const missingCurrency = selectedItems.find((item) => !["MXN", "USD"].includes(itemForms[item.id].currency));
+    if (missingCurrency) return notifier.error(`Selecciona la moneda para ${missingCurrency.erpCode || "la partida local"}.`);
+    const missingOrigin = selectedItems.find((item) => !itemForms[item.id].origin.trim());
+    if (missingOrigin) return notifier.error(`Selecciona el origen para ${missingOrigin.erpCode || "la partida local"}.`);
+    if (selectedItems.some((item) => itemForms[item.id].currency === "USD")
+      && (!globalExchangeRate.trim() || !Number.isFinite(Number(globalExchangeRate)) || Number(globalExchangeRate) <= 0)) {
+      return notifier.error("Captura un tipo de cambio global válido para las partidas en USD.");
+    }
     const missingDelivery = selectedItems.find((item) => !(itemForms[item.id].deliveryTime || supplierDeliveryTime));
     if (missingDelivery) return notifier.error(`Captura el tiempo de entrega para ${missingDelivery.erpCode || "la partida local"}.`);
     const pendingTechnicalReview = selectedItems.find((item) => itemForms[item.id].technicalRequiresReview);
@@ -405,7 +432,7 @@ export const SellerProcurementBulkPrequoteModal = ({
             : "ESTIMATED",
           sellerQuotedCurrency: form.currency,
           sellerQuotedExchangeRate: form.currency === "USD"
-            ? Number(form.exchangeRate)
+            ? Number(globalExchangeRate)
             : null,
           sellerQuotedBrand: form.brand,
           sellerSupplierDescription: form.supplierDescription.trim().toUpperCase(),
@@ -470,7 +497,9 @@ export const SellerProcurementBulkPrequoteModal = ({
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Información opcional para Compras</p>
               <h2 id="bulk-procurement-prequote-title" className="text-base font-semibold text-slate-900">Referencia de un proveedor · {selectedItems.length} partida(s)</h2>
-              <p className="mt-1 text-xs text-slate-500">Las partidas de esta tabla se guardarán con el mismo proveedor.</p>
+              <p className="mt-1 text-xs text-slate-500">{startInCapture
+                ? "Revisa o edita los datos del proveedor. Después, guarda la cotización para conservar los cambios."
+                : "Las partidas de esta tabla se guardarán con el mismo proveedor."}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -492,19 +521,19 @@ export const SellerProcurementBulkPrequoteModal = ({
         <div className="overflow-y-auto px-4 py-3">
           <section className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-semibold text-slate-800">Proveedor y documento</h3><Button type="button" size="small" variant="outlined" onClick={() => { setSupplierInitialValues(undefined); setSupplierModalOpen(true); }} sx={{ fontSize: 11, textTransform: "none" }}>Nuevo proveedor</Button></div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-              <TextField select size="small" required label="Proveedor" value={supplierSelection} onChange={(event) => { const id = event.target.value; setSupplierSelection(id); setSupplierName(supplierOptions.find((entry) => entry.id === id)?.name || ""); }} sx={{ ...compactFieldSx, gridColumn: { sm: "span 2", lg: "span 3" } }}>
+            <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+              <TextField select size="small" required label="Proveedor" value={supplierSelection} onChange={(event) => { const id = event.target.value; setSupplierSelection(id); setSupplierName(supplierOptions.find((entry) => entry.id === id)?.name || ""); }} sx={{ ...compactFieldSx, minWidth: 0 }}>
                 <MenuItem value={MANUAL_SUPPLIER}>Seleccionar proveedor</MenuItem>
                 {supplierOptions.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.erpCode ? `${supplier.erpCode} · ` : ""}{supplier.name}</MenuItem>)}
               </TextField>
               <TextField select size="small" required label="Estado de entrega" value={deliveryState} onChange={(event) => setDeliveryState(event.target.value)} sx={compactFieldSx}><MenuItem value="">Seleccionar estado</MenuItem>{(deliveryStates.data || []).map((option) => <MenuItem key={option.id} value={optionValue(option)}>{option.label}</MenuItem>)}</TextField>
               <TextField size="small" label="No. cotización proveedor" value={commonValue(selectedItems.map((item) => itemForms[item.id].externalReference))} onChange={(event) => selectedItems.forEach((item) => updateItemForm(item.id, { externalReference: event.target.value }))} sx={compactFieldSx} />
               <TextField size="small" type="date" label="Vigencia" value={commonValue(selectedItems.map((item) => itemForms[item.id].validUntil))} onChange={(event) => selectedItems.forEach((item) => updateItemForm(item.id, { validUntil: event.target.value }))} InputLabelProps={{ shrink: true }} sx={compactFieldSx} />
-              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <SupplierRestrictionSelect id="supplier-restrictions-all" label="Restricción general" value={bulkRestrictions} options={restrictions.data || []} onChange={setBulkRestrictions} />
                 <Button type="button" size="small" variant="outlined" disabled={busy || selectedItems.length === 0} onClick={applyBulkRestrictions} aria-label="Aplicar restricción a todas las partidas" sx={{ fontSize: 10, textTransform: "none" }}>Aplicar</Button>
               </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <TextField select size="small" label="Moneda general" value={bulkCurrency} onChange={(event) => setBulkCurrency(event.target.value as QuoteCurrency | "")} sx={{ ...compactFieldSx, minWidth: 135 }}>
                   <MenuItem value="">Seleccionar</MenuItem>
                   <MenuItem value="MXN">MXN</MenuItem>
@@ -512,6 +541,9 @@ export const SellerProcurementBulkPrequoteModal = ({
                 </TextField>
                 <Button type="button" size="small" variant="outlined" disabled={busy || selectedItems.length === 0 || !bulkCurrency} onClick={applyBulkCurrency} aria-label="Aplicar moneda a todas las partidas" sx={{ fontSize: 10, textTransform: "none" }}>Aplicar</Button>
               </div>
+              {(bulkCurrency === "USD" || selectedItems.some((item) => itemForms[item.id].currency === "USD")) && (
+                <TextField size="small" type="number" label="Tipo de cambio global (USD)" value={globalExchangeRate} onChange={(event) => setGlobalExchangeRate(event.target.value)} helperText="Se aplica a todas las partidas en USD" inputProps={{ min: 0, step: "any" }} sx={compactFieldSx} />
+              )}
             </div>
           </section>
 
@@ -519,11 +551,11 @@ export const SellerProcurementBulkPrequoteModal = ({
 
           <section className="mt-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div><h3 className="text-xs font-semibold text-slate-900">Material cotizado por este proveedor</h3><p className="text-[10px] text-slate-500">{selectedItems.length} partida(s). Cada fila conserva su costo, restricciones y datos técnicos.</p></div>
+              <div><h3 className="text-xs font-semibold text-slate-900">Material cotizado por este proveedor</h3><p className="text-[10px] text-slate-500">{selectedItems.length} partida(s). El precio de venta y el recargo se revisan en la cotización.</p></div>
               <Button type="button" size="small" variant="outlined" disabled={busy} startIcon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => void suggestTechnicalBatch()} sx={{ fontSize: 10, textTransform: "none" }}>{suggestingTechnicalBatch ? "Completando..." : "Completar datos técnicos de todas con IA"}</Button>
             </div>
-            <SellerSupplierBulkReferenceTable
-              items={selectedItems}
+            <SupplierBulkReferenceTable
+              items={selectedTableItems}
               forms={itemForms}
               brands={brands.data || []}
               origins={originOptions}

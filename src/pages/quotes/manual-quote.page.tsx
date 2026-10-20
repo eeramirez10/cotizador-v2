@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Menu, MenuItem } from "@mui/material";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
@@ -13,10 +14,12 @@ import { QuoteItemOrderModal } from "../../shared/components/modals/quote-item-o
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
 import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
+import { QuoteRequisitionModal } from "./quote-requisition.modal";
 import { ExcelImportedQuoteItemsTable } from "../../shared/components/tables/excel-imported-quote-items.table";
 import { notifier } from "../../shared/notifications/notifier";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
+import { useQuotePurchaseRequisition } from "../../queries/procurement/use-purchase-requisitions";
 import { useDraftAttachments } from "../../queries/attachments/use-attachments";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useManualQuoteStore } from "../../store/quote/manual-quote.store";
@@ -168,6 +171,10 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [showCommercialConditionsModal, setShowCommercialConditionsModal] = useState(false);
   const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
   const [showBulkProcurement, setShowBulkProcurement] = useState(false);
+  const [activeProcurementSupplierId, setActiveProcurementSupplierId] = useState<string | null>(null);
+  const [procurementMenuAnchor, setProcurementMenuAnchor] = useState<HTMLElement | null>(null);
+  const [requisitionMenuAnchor, setRequisitionMenuAnchor] = useState<HTMLElement | null>(null);
+  const [activeRequisitionId, setActiveRequisitionId] = useState<string | null>(null);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [detectedCustomer, setDetectedCustomer] = useState<ExtractedPartyData | null>(null);
@@ -227,6 +234,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
+  const requisitionsQuery = useQuotePurchaseRequisition(
+    quoteIdFromQuery || undefined,
+    Boolean(quoteIdFromQuery && draft.savedQuoteId === quoteIdFromQuery && draft.captureMethod === "SYSTEM"),
+  );
+  const requisitions = requisitionsQuery.data || [];
   const selectedClientContact = draft.client?.contacts?.find((contact) =>
     contact.id === draft.client?.selectedContactId
   ) || draft.client?.contacts?.find((contact) => contact.isPrimary);
@@ -446,6 +458,23 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
     () => draft.items.filter(requiresProcurementPrequote),
     [draft.items]
   );
+  const referencedSuppliers = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; itemIds: string[] }>();
+    for (const item of procurementItems) {
+      if (!item.sellerSupplierId || !item.sellerSupplierName.trim()) continue;
+      const group = groups.get(item.sellerSupplierId) || {
+        id: item.sellerSupplierId,
+        name: item.sellerSupplierName.trim(),
+        itemIds: [],
+      };
+      group.itemIds.push(item.id);
+      groups.set(group.id, group);
+    }
+    return [...groups.values()];
+  }, [procurementItems]);
+  const bulkProcurementItems = activeProcurementSupplierId
+    ? procurementItems.filter((item) => item.sellerSupplierId === activeProcurementSupplierId)
+    : procurementItems;
   const showCustomerExtractionColumns = useMemo(() => {
     return draft.items.some((item) => item.customerDescription.trim().length > 0 || item.customerUnit.trim().length > 0);
   }, [draft.items]);
@@ -1596,12 +1625,64 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 	          {procurementItems.length > 0 && (
 	            <button
 	              type="button"
-	              onClick={() => setShowBulkProcurement(true)}
+	              onClick={() => { setActiveProcurementSupplierId(null); setShowBulkProcurement(true); }}
 	              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
 	            >
 	              <ShoppingCart className="h-3.5 w-3.5" />
 	              Referencias de compra ({procurementItems.length})
 	            </button>
+	          )}
+	          {requisitions.length > 0 && (
+	            <>
+	              <button
+	                type="button"
+	                onClick={(event) => {
+	                  if (requisitions.length === 1) setActiveRequisitionId(requisitions[0].id);
+	                  else setRequisitionMenuAnchor(event.currentTarget);
+	                }}
+	                className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+	              >
+	                <FileCheck2 className="h-3.5 w-3.5" />
+	                {requisitions.length === 1 ? "Ver requisición" : `Ver requisiciones (${requisitions.length})`}
+	              </button>
+	              <Menu anchorEl={requisitionMenuAnchor} open={Boolean(requisitionMenuAnchor)} onClose={() => setRequisitionMenuAnchor(null)}>
+	                {requisitions.map((requisition) => (
+	                  <MenuItem key={requisition.id} onClick={() => { setRequisitionMenuAnchor(null); setActiveRequisitionId(requisition.id); }}>
+	                    {requisition.requisitionNumber} · {requisition.status.replaceAll("_", " ")}
+	                  </MenuItem>
+	                ))}
+	              </Menu>
+	            </>
+	          )}
+	          {referencedSuppliers.length > 0 && (
+	            <>
+	              <button
+	                type="button"
+	                onClick={(event) => {
+	                  if (referencedSuppliers.length === 1) {
+	                    setActiveProcurementSupplierId(referencedSuppliers[0].id);
+	                    setShowBulkProcurement(true);
+	                  } else {
+	                    setProcurementMenuAnchor(event.currentTarget);
+	                  }
+	                }}
+	                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+	              >
+	                <FileCheck2 className="h-3.5 w-3.5" />
+	                {referencedSuppliers.length === 1 ? "Editar referencia de Ventas" : `Editar referencias de Ventas (${referencedSuppliers.length})`}
+	              </button>
+	              <Menu anchorEl={procurementMenuAnchor} open={Boolean(procurementMenuAnchor)} onClose={() => setProcurementMenuAnchor(null)}>
+	                {referencedSuppliers.map((group) => (
+	                  <MenuItem key={group.id} onClick={() => {
+	                    setProcurementMenuAnchor(null);
+	                    setActiveProcurementSupplierId(group.id);
+	                    setShowBulkProcurement(true);
+	                  }}>
+	                    {group.name} · {group.itemIds.length} {group.itemIds.length === 1 ? "partida" : "partidas"}
+	                  </MenuItem>
+	                ))}
+	              </Menu>
+	            </>
 	          )}
 	          {showCustomerExtractionColumns && (
             <button
@@ -2149,24 +2230,32 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             setItemProcurementPrequote(procurementItemId, data);
             setProcurementItemId(null);
             void draftAttachments.refetch();
-            notifier.success("Referencia de compra guardada y precio vendedor actualizado.");
+            notifier.success("Referencia actualizada en la edición. Guarda la cotización para conservar los cambios.");
           }}
         />
       )}
 
-      {showBulkProcurement && procurementItems.length > 0 && (
+      {showBulkProcurement && bulkProcurementItems.length > 0 && (
         <SellerProcurementBulkPrequoteModal
-          items={procurementItems}
+          key={activeProcurementSupplierId || "new-reference"}
+          items={bulkProcurementItems}
+          initialItemIds={activeProcurementSupplierId ? bulkProcurementItems.map((item) => item.id) : undefined}
+          startInCapture={Boolean(activeProcurementSupplierId)}
           clientDraftId={draft.id}
           quoteExchangeRate={draft.exchangeRate}
-          onClose={() => setShowBulkProcurement(false)}
+          onClose={() => { setShowBulkProcurement(false); setActiveProcurementSupplierId(null); }}
           onSave={(updates) => {
             setItemsProcurementPrequote(updates);
             setShowBulkProcurement(false);
+            setActiveProcurementSupplierId(null);
             void draftAttachments.refetch();
-            notifier.success(`Referencias de compra aplicadas a ${updates.length} partida(s).`);
+            notifier.success(`Referencias actualizadas en ${updates.length} partida(s). Guarda la cotización para conservar los cambios.`);
           }}
         />
+      )}
+
+      {activeRequisitionId && (
+        <QuoteRequisitionModal requisitionId={activeRequisitionId} onClose={() => setActiveRequisitionId(null)} />
       )}
 
       {showCommercialConditionsModal && (draft.commercialConditions || "").trim() && (

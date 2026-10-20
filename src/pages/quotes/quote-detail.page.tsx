@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { forwardRef, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Menu, MenuItem } from "@mui/material";
 import { NavLink, useNavigate, useParams } from "react-router";
 import { CustomerContactsService } from "../../modules/clients/services/customer-contacts.service";
 import type { CustomerContact } from "../../modules/clients/types/customer-contact.types";
@@ -56,6 +57,11 @@ import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalog
 import { useAuthStore } from "../../store/auth/auth.store";
 import { getErpCostDisplayAmount, getErpCostDisplayCurrency } from "../../modules/quotes/utils/quote-currency";
 import { useQuotePurchaseRequisition } from "../../queries/procurement/use-purchase-requisitions";
+import { requisitionSupplierSummary } from "../../modules/procurement/utils/requisition-supplier-display";
+import { PurchaseRequisitionsService } from "../../modules/procurement/services/purchase-requisitions.service";
+import { SendToPurchasingModal } from "./send-to-purchasing.modal";
+import { SalePriceReviewModal } from "./sale-price-review.modal";
+import { QuotesService } from "../../modules/quotes/services/quotes.service";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { useQuoteAttachments } from "../../queries/attachments/use-attachments";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
@@ -752,7 +758,6 @@ export const QuoteDetailPage = () => {
   const quoteInternalApprovalEnabled = capabilities.data?.quoteInternalApprovalEnabled ?? true;
   const sellerExcelImportEnabled = capabilities.data?.sellerExcelImportEnabled ?? true;
   const orderFileWithoutStockEnabled = capabilities.data?.orderFileWithoutStockEnabled ?? false;
-  const localPurchaseWithoutErpCodeEnabled = capabilities.data?.localPurchaseWithoutErpCodeEnabled ?? false;
   const currentRole = (currentUser?.role || "").trim().toLowerCase();
   const { quoteId } = useParams<{ quoteId: string }>();
   const navigate = useNavigate();
@@ -796,6 +801,9 @@ export const QuoteDetailPage = () => {
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [procurementItemId, setProcurementItemId] = useState<string | null>(null);
   const [showBulkProcurement, setShowBulkProcurement] = useState(false);
+  const [showSendToPurchasing, setShowSendToPurchasing] = useState(false);
+  const [showSalePriceReview, setShowSalePriceReview] = useState(false);
+  const [requisitionMenuAnchor, setRequisitionMenuAnchor] = useState<HTMLElement | null>(null);
   const printableRef = useRef<HTMLElement | null>(null);
 
   const { data: quote, isLoading, refetch } = useQuoteDetail(quoteId);
@@ -803,12 +811,11 @@ export const QuoteDetailPage = () => {
   const customerChangeRequests = useQuoteCustomerChangeRequests(quoteId);
   const quoteAttachments = useQuoteAttachments(quoteId);
   const {
-    data: purchaseRequisition,
+    data: purchaseRequisitions = [],
     refetch: refetchPurchaseRequisition,
   } = useQuotePurchaseRequisition(
     quoteId,
-    quote?.captureMethod !== "EXCEL_IMPORT"
-      && (quote?.status === "APROBADA" || quote?.orderStatus === "GENERADO")
+    Boolean(quote && quote.captureMethod !== "EXCEL_IMPORT")
   );
   const updateStatus = useUpdateQuoteStatus();
   const createRevision = useCreateQuoteRevision();
@@ -1065,6 +1072,7 @@ export const QuoteDetailPage = () => {
   );
   const isArchived = Boolean(quote.archivedAt);
   const canSubmitApproval = !isArchived && currentRole === "seller" && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(quote.status);
+  const salePriceReviewItems = quote.items.filter((item) => item.salePriceReviewRequired);
   const canApproveInternally = quoteInternalApprovalEnabled && !isArchived && ["admin", "manager"].includes(currentRole) && quote.status === "PENDIENTE_APROBACION";
   const canEditQuote = !isArchived
     && currentRole === "seller"
@@ -1110,7 +1118,10 @@ export const QuoteDetailPage = () => {
   });
   const itemsWithoutErpCode = quote.items.flatMap((item, index) => item.erpCode?.trim() ? [] : [index + 1]);
   const allItemsHaveErpCode = quote.items.length > 0 && itemsWithoutErpCode.length === 0;
-  const procurementItems = quote.items.filter(savedQuoteItemRequiresPurchase).map(toManualQuoteItem);
+  const lockedProcurementItemIds = new Set(purchaseRequisitions
+    .filter((requisition) => requisition.status !== "DRAFT")
+    .flatMap((requisition) => requisition.items.map((item) => item.quoteItemId)));
+  const procurementItems = quote.items.filter((item) => savedQuoteItemRequiresPurchase(item) && !lockedProcurementItemIds.has(item.quoteItemId)).map(toManualQuoteItem);
   const procurementItem = procurementItemId
     ? procurementItems.find((item) => item.id === procurementItemId) || null
     : null;
@@ -1120,13 +1131,17 @@ export const QuoteDetailPage = () => {
     && !hasRevisionInProgress
     && (
       quote.status === "COTIZADA"
-      || (quote.status === "APROBADA" && purchaseRequisition?.status === "DRAFT")
+      || quote.status === "APROBADA"
     );
-  const requisitionReady = Boolean(purchaseRequisition
-    && (purchaseRequisition.status === "READY_FOR_ORDER"
-      || purchaseRequisition.status === "COMPLETED"
-      || (!capabilities.data?.requisitionInternalApprovalEnabled && purchaseRequisition.status === "COST_REVIEW"))
-    && purchaseRequisition.items.every((item) => item.status === "READY"));
+  const requisitionedItemIds = new Set(purchaseRequisitions.flatMap((requisition) => requisition.items.map((item) => item.quoteItemId)));
+  const pendingSupplierItems = quote.items.filter((item) => savedQuoteItemRequiresPurchase(item) && !requisitionedItemIds.has(item.quoteItemId));
+  const unquotedPurchasingItems = pendingSupplierItems.filter((item) => !item.sellerSupplierId);
+  const requisitionReady = purchaseRequisitions.length > 0 && pendingSupplierItems.length === 0
+    && purchaseRequisitions.every((requisition) => (
+      requisition.status === "READY_FOR_ORDER"
+      || requisition.status === "COMPLETED"
+      || (!capabilities.data?.requisitionInternalApprovalEnabled && requisition.status === "COST_REVIEW")
+    ) && requisition.items.every((item) => item.status === "READY"));
   const orderExportReady = allItemsHaveErpCode && (
     orderFileWithoutStockEnabled
     || !quoteRequiresPurchasing
@@ -1420,6 +1435,26 @@ export const QuoteDetailPage = () => {
     });
   };
 
+  const handleSendToPurchasing = async (itemIds: string[], buyerUserId: string): Promise<boolean> => {
+    if (isActionLocked) return false;
+    setActionInProgress(true);
+    const toast = notifier.loading("Enviando partidas a Compras...");
+    try {
+      await PurchaseRequisitionsService.sendUnquotedItemsToPurchasing(quote.quoteId, itemIds, buyerUserId);
+      await refetchPurchaseRequisition();
+      if (toast !== undefined) notifier.update(toast, "success", "Partidas enviadas al responsable de Compras.");
+      else notifier.success("Partidas enviadas al responsable de Compras.");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron enviar las partidas a Compras.";
+      if (toast !== undefined) notifier.update(toast, "error", message);
+      else notifier.error(message);
+      return false;
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
   const openErpRegistrationModal = () => {
     setErpQuoteNumberDraft(quote.captureMethod === "EXCEL_IMPORT" ? quote.erpQuoteNumber || "" : quote.erpOrderNumber || "");
     setShowErpRegistrationModal(true);
@@ -1676,6 +1711,38 @@ export const QuoteDetailPage = () => {
 
         <div className="flex flex-wrap gap-2">
           <span className={` flex justify-center items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeClass}`}>{quote.status}</span>
+          {purchaseRequisitions.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  if (purchaseRequisitions.length === 1) {
+                    navigate(`/procurement/${purchaseRequisitions[0].id}`, { state: { returnTo: `/quotes/${quote.quoteId}` } });
+                  } else {
+                    setRequisitionMenuAnchor(event.currentTarget);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                <ShoppingCart className="h-4 w-4" />
+                {purchaseRequisitions.length === 1 ? "Ver requisición" : `Ver requisiciones (${purchaseRequisitions.length})`}
+              </button>
+              <Menu anchorEl={requisitionMenuAnchor} open={Boolean(requisitionMenuAnchor)} onClose={() => setRequisitionMenuAnchor(null)}>
+                {purchaseRequisitions.map((requisition) => (
+                  <MenuItem
+                    key={requisition.id}
+                    onClick={() => {
+                      setRequisitionMenuAnchor(null);
+                      navigate(`/procurement/${requisition.id}`, { state: { returnTo: `/quotes/${quote.quoteId}` } });
+                    }}
+                  >
+                    {requisition.requisitionNumber} · {requisitionSupplierSummary(requisition.items, requisition.supplierName)}
+                  </MenuItem>
+                ))}
+              </Menu>
+            </>
+          )}
+          {currentRole === "seller" && salePriceReviewItems.length > 0 && canSubmitApproval && <button type="button" onClick={() => setShowSalePriceReview(true)} disabled={isActionLocked} className="rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">Revisar {salePriceReviewItems.length} precio(s) de venta</button>}
           {quote.captureMethod === "EXCEL_IMPORT" && (
             <span className="flex items-center rounded-full bg-teal-100 px-2 py-1 text-xs font-semibold text-teal-700">
               IMPORTADA EXCEL
@@ -1958,34 +2025,45 @@ export const QuoteDetailPage = () => {
         </div>
       )}
 
-      {purchaseRequisition && (
-        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 ${requisitionReady ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
-          <div>
-            <p className={`text-sm font-semibold ${requisitionReady ? "text-emerald-950" : "text-amber-950"}`}>
-              Requisición {purchaseRequisition.requisitionNumber}
-            </p>
-            <p className={`text-xs ${requisitionReady ? "text-emerald-800" : "text-amber-800"}`}>
-              {requisitionReady
-                ? "Compras terminó las partidas requeridas. El pedido ERP está habilitado."
-                : orderFileWithoutStockEnabled && allItemsHaveErpCode
-                  ? "El TXT puede generarse; la requisición sigue pendiente para Compras."
-                : purchaseRequisition.status === "DRAFT"
-                  ? "El cliente aprobó la cotización. Completa la requisición y envíala a Compras."
-                  : localPurchaseWithoutErpCodeEnabled && purchaseRequisition.items.some((item) => item.source === "LOCAL_NEW" && !item.erpCode)
-                    ? purchaseRequisition.supplierRequisitions?.length
-                      ? "Las requisiciones a proveedores ya fueron emitidas. El TXT de Proscai seguirá bloqueado hasta vincular los códigos ERP de los productos locales."
-                      : "Compras puede emitir requisiciones a proveedores para productos locales después de adjudicar las ofertas y completar las aprobaciones. El TXT de Proscai seguirá bloqueado hasta vincular los códigos ERP."
-                  : `Estado: ${purchaseRequisition.status}. El pedido permanece bloqueado.`}
-            </p>
-          </div>
-          <NavLink
-            to="/procurement"
-            className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${requisitionReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}
-          >
-            {purchaseRequisition.status === "DRAFT" ? "Completar requisición" : "Ver requisición"}
-          </NavLink>
+      {["BORRADOR", "APROBADA"].includes(quote.status) && pendingSupplierItems.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <p>{pendingSupplierItems.length} {pendingSupplierItems.length === 1 ? "partida necesita" : "partidas necesitan"} precio de compra. Puedes preparar la oferta del proveedor desde Ventas o pedir a Compras que las cotice antes de enviar la cotización al cliente.</p>
+          {currentRole === "seller" && unquotedPurchasingItems.length > 0 && !hasRevisionInProgress && (
+            <button type="button" disabled={isActionLocked} onClick={() => setShowSendToPurchasing(true)}
+              className={`rounded-md bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 ${disabledActionClass}`}>
+              Solicitar precios a Compras
+            </button>
+          )}
         </div>
       )}
+      {purchaseRequisitions.map((purchaseRequisition) => {
+        const pricesReady = purchaseRequisition.items.length > 0 && purchaseRequisition.items.every((item) =>
+          item.offers.filter((offer) => offer.isSelected)
+            .reduce((quantity, offer) => quantity + (offer.awardedQty ?? item.qty), 0) >= item.qty - 0.0001);
+        const supplierReady = quote.status === "APROBADA"
+          ? ["READY_FOR_ORDER", "COMPLETED"].includes(purchaseRequisition.status)
+            && purchaseRequisition.items.every((item) => item.status === "READY")
+          : pricesReady;
+        return (
+          <div key={purchaseRequisition.id} className={`mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 ${supplierReady ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+            <div>
+              <p className={`text-sm font-semibold ${supplierReady ? "text-emerald-950" : "text-amber-950"}`}>
+                {purchaseRequisition.requisitionNumber} · {requisitionSupplierSummary(purchaseRequisition.items, purchaseRequisition.supplierName)}
+              </p>
+              <p className={`text-xs ${supplierReady ? "text-emerald-800" : "text-amber-800"}`}>
+                {purchaseRequisition.items.length} {purchaseRequisition.items.length === 1 ? "partida" : "partidas"} · {supplierReady
+                  ? quote.status === "APROBADA" ? "Lista para pedido" : "Precios listos para cotizar; pendiente de aprobación del cliente"
+                  : purchaseRequisition.status === "DRAFT"
+                    ? "Completa esta requisición y envíala a Compras."
+                    : quote.status === "BORRADOR" ? "Compras está cotizando estas partidas" : `Estado: ${purchaseRequisition.status}`}
+              </p>
+            </div>
+            <NavLink to={`/procurement/${purchaseRequisition.id}`} state={{ returnTo: `/quotes/${quote.quoteId}` }} className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${supplierReady ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800"}`}>
+              {purchaseRequisition.status === "DRAFT" ? "Completar requisición" : quote.status === "BORRADOR" ? "Ver solicitud de precios" : "Ver requisición"}
+            </NavLink>
+          </div>
+        );
+      })}
 
       {quote.status === "REEMPLAZADA" && quote.supersededByQuoteId && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-gray-50 p-4">
@@ -2350,7 +2428,8 @@ export const QuoteDetailPage = () => {
                 <td className="px-3 py-2 text-xs font-semibold text-emerald-700">{formatCurrency(item.subtotal, quote.currency)}</td>
                 {canManageProcurementReferences && (
                   <td className="px-3 py-2 text-xs">
-                    {savedQuoteItemRequiresPurchase(item) ? (
+                    {lockedProcurementItemIds.has(item.quoteItemId) ? <span className="text-slate-500">Enviada a Compras</span>
+                      : savedQuoteItemRequiresPurchase(item) ? (
                       <button
                         type="button"
                         onClick={() => setProcurementItemId(item.id)}
@@ -2434,6 +2513,28 @@ export const QuoteDetailPage = () => {
           quoteExchangeRate={quote.exchangeRate}
           onClose={() => { if (!updateProcurementReference.isPending) setShowBulkProcurement(false); }}
           onSave={saveBulkProcurementReferences}
+        />
+      )}
+      {showSalePriceReview && salePriceReviewItems.length > 0 && <SalePriceReviewModal items={salePriceReviewItems} currency={quote.currency} exchangeRate={quote.exchangeRate} onClose={() => setShowSalePriceReview(false)} onSave={async (items) => {
+        await QuotesService.reviewSalePrices(quote.quoteId, items);
+        await refetch();
+        setShowSalePriceReview(false);
+        notifier.success("Precios de venta revisados y guardados en la cotización.");
+      }} />}
+
+      {showSendToPurchasing && unquotedPurchasingItems.length > 0 && (
+        <SendToPurchasingModal
+          quoteId={quote.quoteId}
+          items={unquotedPurchasingItems.map((item) => ({
+            id: item.quoteItemId,
+            position: quote.items.findIndex((entry) => entry.id === item.id) + 1,
+            description: item.customerDescription || item.erpDescription || item.erpCode || "Sin descripción",
+            qty: item.qty,
+            unit: item.unit,
+          }))}
+          busy={isActionLocked}
+          onClose={() => setShowSendToPurchasing(false)}
+          onSubmit={handleSendToPurchasing}
         />
       )}
 

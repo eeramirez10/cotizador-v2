@@ -6,12 +6,13 @@ import { compactFieldSx } from "./supplier-offer-line-styles";
 
 const optionValue = (option: QuoteCatalogOption) => option.value || option.label;
 
-export const SupplierRestrictionSelect = ({ value, options, onChange, id = "supplier-restrictions", label = "Restricción" }: {
+export const SupplierRestrictionSelect = ({ value, options, onChange, id = "supplier-restrictions", label = "Restricción", required = false }: {
   value: string[];
   options: QuoteCatalogOption[];
   onChange: (value: string[]) => void;
   id?: string;
   label?: string;
+  required?: boolean;
 }) => {
   const noRestriction = options.find((option) => option.code === "NO_RESTRICTION");
   const noRestrictionValue = noRestriction ? optionValue(noRestriction) : "SIN RESTRICCIÓN";
@@ -20,9 +21,10 @@ export const SupplierRestrictionSelect = ({ value, options, onChange, id = "supp
     const added = next.find((entry) => !value.includes(entry));
     onChange(added === noRestrictionValue ? [noRestrictionValue] : next.filter((entry) => entry !== noRestrictionValue));
   };
-  return <FormControl size="small" sx={{ ...compactFieldSx, minWidth: 130, maxWidth: 185 }}>
+  return <FormControl size="small" required={required} sx={{ ...compactFieldSx, minWidth: 130, maxWidth: 185 }}>
     <InputLabel id={`${id}-label`}>{label}</InputLabel>
     <Select labelId={`${id}-label`} id={id} multiple value={value} label={label} onChange={handleChange} renderValue={(selected) => selected.length ? selected.join(", ") : "Sin indicar"}>
+      {!noRestriction && <MenuItem value={noRestrictionValue} sx={{ fontSize: 11 }}><Checkbox size="small" checked={value.includes(noRestrictionValue)} />Sin restricción</MenuItem>}
       {options.map((option) => <MenuItem key={option.id} value={optionValue(option)} sx={{ fontSize: 11 }}><Checkbox size="small" checked={value.includes(optionValue(option))} />{option.label}</MenuItem>)}
     </Select>
   </FormControl>;

@@ -1,28 +1,28 @@
 import {
   ArrowRight,
   BadgeDollarSign,
-  Check,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   ExternalLink,
   Loader2,
-  Link2,
   PackageCheck,
   Paperclip,
-  Pencil,
-  Plus,
   Search,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { NavLink } from "react-router";
+import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from "@mui/material";
+import { NavLink, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   type Currency,
   type PurchaseRequisition,
+  PurchaseRequisitionsService,
+  type ProcurementUser,
   type RequisitionItem,
   type RequisitionStatus,
   type SaveOfferInput,
@@ -31,6 +31,8 @@ import {
   type UpdateRequisitionDocumentInput,
 } from "../../modules/procurement/services/purchase-requisitions.service";
 import { RequisitionPaperCard } from "./requisition-paper-card";
+import { RequisitionItemPage } from "./requisition-item.page";
+import { requisitionSupplierSummary } from "../../modules/procurement/utils/requisition-supplier-display";
 import {
   usePurchaseRequisition,
   usePurchaseRequisitionMutations,
@@ -39,7 +41,6 @@ import {
 } from "../../queries/procurement/use-purchase-requisitions";
 import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
-import { UsersService, type ManagedUser } from "../../modules/users/services/users.service";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import type { QuoteCatalogOption } from "../../modules/quote-catalogs/services/quote-catalogs.service";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
@@ -58,11 +59,11 @@ import { SellerProcurementBulkPrequoteModal } from "../../shared/components/moda
 import { useQuoteDetail, useUpdateQuoteProcurementReference } from "../../queries/quotes/use-quote-detail";
 import type { ProcurementPrequoteData, ProcurementPrequoteUpdate } from "../../store/quote/manual-quote.store";
 import { savedQuoteItemRequiresPurchase, toManualQuoteItem } from "../../modules/quotes/utils/saved-quote-item";
-import { sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 import { TechnicalDataEditor, type TechnicalDataFormValue } from "../../shared/components/procurement/technical-data-editor";
 import { downloadSupplierRequisition } from "../../modules/procurement/utils/requisition-document-pdf";
 
 const PAGE_SIZE = 15;
+const PurchaseOffersBatchModal = lazy(() => import("./purchase-offers-batch.modal").then((module) => ({ default: module.PurchaseOffersBatchModal })));
 
 const STATUS: Record<RequisitionStatus, { label: string; color: string }> = {
   DRAFT: { label: "Por completar", color: "bg-slate-100 text-slate-700" },
@@ -115,7 +116,7 @@ const itemForm = (item: RequisitionItem): ItemForm => ({
 
 type OfferForm = SupplierOfferFormValue;
 
-const offerForm = (item: RequisitionItem): OfferForm => ({
+const offerForm = (item: RequisitionItem, quoteExchangeRate: number): OfferForm => ({
   supplierId: "",
   supplierName: "",
   supplierDescription: "",
@@ -124,7 +125,7 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
   unit: item.unit,
   unitCost: "",
   currency: item.sellerCurrency,
-  exchangeRate: item.sellerCurrency === "USD" ? String(item.sellerExchangeRate) : "",
+  exchangeRate: quoteExchangeRate > 0 ? String(quoteExchangeRate) : "",
   brand: item.sellerBrand || "",
   origin: "",
   deliveryTime: item.sellerDeliveryTime || "",
@@ -137,13 +138,35 @@ const offerForm = (item: RequisitionItem): OfferForm => ({
 const catalogValue = (option: QuoteCatalogOption): string => option.value || option.label;
 
 export const PurchaseRequisitionsPage = () => {
+  const { requisitionId, itemId } = useParams<{ requisitionId: string; itemId?: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = requisitionId || null;
+  const search = searchParams.get("search") || "";
+  const statusParam = searchParams.get("status");
+  const status: RequisitionStatus | "ALL" = statusParam && statusParam in STATUS
+    ? statusParam as RequisitionStatus
+    : "ALL";
+  const pageParam = Number(searchParams.get("page"));
+  const page = Number.isSafeInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+  const returnTo = `${location.pathname}${location.search}`;
+  const savedReturnTo = (location.state as { returnTo?: unknown } | null)?.returnTo;
+  const backTo = typeof savedReturnTo === "string" && (savedReturnTo === "/procurement" || savedReturnTo.startsWith("/procurement?") || /^\/quotes\/[A-Za-z0-9-]+$/.test(savedReturnTo))
+    ? savedReturnTo
+    : "/procurement";
+  const setListParam = (key: "search" | "status" | "page", value: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (!value || (key === "status" && value === "ALL") || (key === "page" && value === "1")) next.delete(key);
+      else next.set(key, value);
+      if (key !== "page") next.delete("page");
+      return next;
+    }, { replace: key !== "page" });
+  };
   const user = useAuthStore((state) => state.user);
   const capabilities = useSystemCapabilities();
   const role = (user?.role || "").toUpperCase();
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<RequisitionStatus | "ALL">("ALL");
-  const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<RequisitionItem | null>(null);
   const [editingItemForm, setEditingItemForm] = useState<ItemForm | null>(null);
   const [linkingItem, setLinkingItem] = useState<RequisitionItem | null>(null);
@@ -155,9 +178,13 @@ export const PurchaseRequisitionsPage = () => {
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [sellerProcurementItemId, setSellerProcurementItemId] = useState<string | null>(null);
   const [showSellerBulkProcurement, setShowSellerBulkProcurement] = useState(false);
+  const [showBuyerBulkOffers, setShowBuyerBulkOffers] = useState(false);
+  const [editingBuyerQuoteId, setEditingBuyerQuoteId] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [supplierInitialValues, setSupplierInitialValues] = useState<Partial<SaveSupplierInput> | undefined>();
   const debouncedSearch = useDebouncedValue(search, 350);
-  const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status });
+  const list = usePurchaseRequisitions({ page, pageSize: PAGE_SIZE, search: debouncedSearch, status }, !selectedId);
   const detail = usePurchaseRequisition(selectedId);
   const requisitionAttachments = useRequisitionAttachments(selectedId);
   const suppliers = useSuppliers(Boolean(offerItem));
@@ -170,17 +197,22 @@ export const PurchaseRequisitionsPage = () => {
   const requisitionInternalApprovalEnabled = capabilities.data?.requisitionInternalApprovalEnabled ?? true;
   const canApproveCost = requisitionInternalApprovalEnabled && (role === "ADMIN" || role === "MANAGER");
   const buyers = useQuery({
-    queryKey: ["purchase-requisitions", "buyers"],
-    queryFn: () => UsersService.listActiveQuoteProviders({ page: 1, pageSize: 100 }),
-    enabled: canBuy,
+    queryKey: ["purchase-requisitions", "buyers", selectedId],
+    queryFn: () => PurchaseRequisitionsService.listBuyers(selectedId!),
+    enabled: Boolean(selectedId),
     staleTime: 30_000,
   });
   const requisition = detail.data || null;
   const sourceQuote = useQuoteDetail(requisition?.quoteId);
   const updateProcurementReference = useUpdateQuoteProcurementReference();
   const sellerProcurementItems = useMemo(
-    () => (sourceQuote.data?.items || []).filter(savedQuoteItemRequiresPurchase).map(toManualQuoteItem),
-    [sourceQuote.data],
+    () => {
+      const requisitionClientIds = new Set((requisition?.items || []).map((item) => item.quoteClientItemId));
+      return (sourceQuote.data?.items || [])
+        .filter((item) => requisitionClientIds.has(item.id) && savedQuoteItemRequiresPurchase(item))
+        .map(toManualQuoteItem);
+    },
+    [sourceQuote.data, requisition],
   );
   const sellerProcurementItem = sellerProcurementItemId
     ? sellerProcurementItems.find((item) => item.id === sellerProcurementItemId) || null
@@ -224,6 +256,19 @@ export const PurchaseRequisitionsPage = () => {
       else notifier.error(message);
       return false;
     }
+  };
+
+  const deleteRequisition = async () => {
+    if (!requisition || deleteConfirmation !== requisition.requisitionNumber) return;
+    const deleted = await run(
+      "Eliminando requisición...",
+      () => mutations.deletePermanently.mutateAsync({ id: requisition.id, confirmation: deleteConfirmation }),
+      "Requisición eliminada. La cotización y los datos capturados por el vendedor permanecen.",
+    );
+    if (!deleted) return;
+    setDeleteOpen(false);
+    setDeleteConfirmation("");
+    navigate(backTo, { replace: true });
   };
 
   const openItem = (item: RequisitionItem) => {
@@ -386,6 +431,11 @@ export const PurchaseRequisitionsPage = () => {
       notifier.warning("Completa proveedor, cantidad y costo.");
       return;
     }
+    if (!restrictions.length) return notifier.warning("Selecciona una restricción o Sin restricción.");
+    if (!currentOfferForm.origin.trim()) return notifier.warning("Selecciona el origen del material.");
+    if (!currentOfferForm.deliveryTime.trim()) return notifier.warning("Selecciona el plazo de entrega.");
+    if (currentOfferForm.currency !== "MXN" && currentOfferForm.currency !== "USD") return notifier.warning("Selecciona la moneda.");
+    if (currentOfferForm.currency === "USD" && (!Number.isFinite(Number(currentOfferForm.exchangeRate)) || Number(currentOfferForm.exchangeRate) <= 0)) return notifier.warning("Captura un tipo de cambio válido.");
     const previousOfferIds = new Set(offerItem.offers.map((offer) => offer.id));
     const targetItemId = offerItem.id;
     const toast = notifier.loading(offerAttachmentFile ? "Registrando propuesta y archivo..." : "Registrando propuesta...");
@@ -489,8 +539,8 @@ export const PurchaseRequisitionsPage = () => {
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Operación comercial</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-950">Requisiciones de compra</h1>
-          <p className="mt-1 text-sm text-slate-500">Cotizaciones aceptadas con material nuevo o sin existencia.</p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-950">{itemId ? "Gestión de partida" : selectedId ? "Expediente de compra" : "Requisiciones de compra"}</h1>
+          <p className="mt-1 text-sm text-slate-500">{itemId ? "Consulta el material, sus documentos y las propuestas del proveedor." : selectedId ? "Consulta y completa la requisición seleccionada." : "Solicitudes de precio y compras de cotizaciones con material nuevo o sin existencia."}</p>
         </div>
         {canBuy && (
           <NavLink to="/procurement/products" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
@@ -499,69 +549,92 @@ export const PurchaseRequisitionsPage = () => {
         )}
       </header>
 
-      <section className="grid min-h-[650px] overflow-hidden rounded-xl border border-slate-200 bg-white xl:grid-cols-[410px_minmax(0,1fr)]">
-        <div className={`border-slate-200 xl:border-r ${selectedId ? "hidden xl:block" : "block"}`}>
-          <div className="space-y-3 border-b border-slate-200 p-4">
-            <div className="relative">
+      {!selectedId ? (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 value={search}
-                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                onChange={(event) => setListParam("search", event.target.value)}
                 placeholder="Folio, cliente o material..."
+                aria-label="Buscar requisiciones"
                 className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-500"
               />
             </div>
             <select
               value={status}
-              onChange={(event) => { setStatus(event.target.value as RequisitionStatus | "ALL"); setPage(1); }}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              onChange={(event) => setListParam("status", event.target.value)}
+              aria-label="Filtrar por estado"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 sm:w-56"
             >
               <option value="ALL">Todos los estados</option>
               {Object.entries(STATUS).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
             </select>
           </div>
 
-          <div className="max-h-[570px] divide-y divide-slate-100 overflow-y-auto">
-            {list.isLoading && <Empty icon={<Loader2 className="h-6 w-6 animate-spin" />} text="Cargando requisiciones..." />}
-            {!list.isLoading && !list.data?.items.length && <Empty icon={<ClipboardList className="h-7 w-7" />} text="No hay requisiciones para este filtro." />}
-            {list.data?.items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedId(item.id)}
-                className={`w-full p-4 text-left transition hover:bg-amber-50/60 ${selectedId === item.id ? "bg-amber-50" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{item.requisitionNumber}</p>
-                    <p className="mt-1 text-xs font-medium text-slate-500">{item.quoteNumber} · {item.branchName}</p>
-                  </div>
-                  <StatusBadge status={item.status} />
-                </div>
-                <p className="mt-3 line-clamp-1 text-sm text-slate-700">{item.customerName}</p>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>{item.items.length} partida{item.items.length === 1 ? "" : "s"}</span>
-                  <span>{date(item.updatedAt)}</span>
-                </div>
-              </button>
-            ))}
-          </div>
+          {list.isLoading && <Empty icon={<Loader2 className="h-6 w-6 animate-spin" />} text="Cargando requisiciones..." />}
+          {list.isError && <Empty icon={<ClipboardList className="h-7 w-7" />} text="No se pudieron cargar las requisiciones." />}
+          {!list.isLoading && !list.isError && !list.data?.items.length && <Empty icon={<ClipboardList className="h-7 w-7" />} text="No hay requisiciones para este filtro." />}
+          {Boolean(list.data?.items.length) && !list.isError && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1080px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th scope="col" className="px-4 py-3">Requisición</th>
+                    <th scope="col" className="px-4 py-3">Cotización</th>
+                    <th scope="col" className="px-4 py-3">Cliente</th>
+                    <th scope="col" className="px-4 py-3">Proveedor</th>
+                    <th scope="col" className="px-4 py-3">Sucursal</th>
+                    <th scope="col" className="px-4 py-3">Solicitó</th>
+                    <th scope="col" className="px-4 py-3">Comprador</th>
+                    <th scope="col" className="px-4 py-3 text-center">Partidas</th>
+                    <th scope="col" className="px-4 py-3">Estado</th>
+                    <th scope="col" className="px-4 py-3">Actualizada</th>
+                    <th scope="col" className="px-4 py-3 text-right"><span className="sr-only">Abrir detalle</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {list.data?.items.map((item) => (
+                    <tr key={item.id} onClick={() => navigate(`/procurement/${item.id}`, { state: { returnTo } })} className="cursor-pointer transition-colors hover:bg-amber-50/60">
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        <NavLink to={`/procurement/${item.id}`} state={{ returnTo }} onClick={(event) => event.stopPropagation()} className="rounded-sm hover:text-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">{item.requisitionNumber}</NavLink>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{item.quoteNumber}</td>
+                      <td className="max-w-56 truncate px-4 py-3 text-slate-800" title={item.customerName}>{item.customerName}</td>
+                      <td className="max-w-56 truncate px-4 py-3 text-slate-800" title={requisitionSupplierSummary(item.items, item.supplierName)}>{requisitionSupplierSummary(item.items, item.supplierName)}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.branchName}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.requestedBy.fullName}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.assignedBuyer?.fullName || "Sin asignar"}</td>
+                      <td className="px-4 py-3 text-center tabular-nums text-slate-700">{item.items.length}</td>
+                      <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">{date(item.updatedAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <NavLink to={`/procurement/${item.id}`} state={{ returnTo }} onClick={(event) => event.stopPropagation()} aria-label={`Abrir requisición ${item.requisitionNumber}`} className="inline-flex rounded-md p-1.5 text-slate-500 hover:bg-amber-100 hover:text-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"><ArrowRight className="h-4 w-4" /></NavLink>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          <div className="flex items-center justify-between border-t border-slate-200 p-3 text-xs text-slate-500">
-            <span>{list.data?.total || 0} registros</span>
-            <div className="flex gap-1">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-md border p-1.5 disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button>
-              <button type="button" disabled={page >= (list.data?.totalPages || 1)} onClick={() => setPage((value) => value + 1)} className="rounded-md border p-1.5 disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button>
+          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+            <span>{list.data?.total || 0} registros · Página {page} de {list.data?.totalPages || 1}</span>
+            <div className="flex gap-2">
+              <button type="button" aria-label="Página anterior" disabled={page <= 1} onClick={() => setListParam("page", String(page - 1))} className="rounded-md border border-slate-300 p-2 hover:bg-slate-50 disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" aria-label="Página siguiente" disabled={page >= (list.data?.totalPages || 1)} onClick={() => setListParam("page", String(page + 1))} className="rounded-md border border-slate-300 p-2 hover:bg-slate-50 disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
-        </div>
-
-        <div className={selectedId ? "block" : "hidden xl:block"}>
-          {!selectedId && <Empty icon={<PackageCheck className="h-10 w-10" />} text="Selecciona una requisición para abrir su expediente." large />}
-          {selectedId && detail.isLoading && <Empty icon={<Loader2 className="h-7 w-7 animate-spin" />} text="Cargando expediente..." large />}
+        </section>
+      ) : (
+        <section className="min-h-[650px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {detail.isLoading && <Empty icon={<Loader2 className="h-7 w-7 animate-spin" />} text="Cargando expediente..." large />}
+          {detail.isError && <div><Empty icon={<ClipboardList className="h-7 w-7" />} text="No se pudo cargar esta requisición." /><div className="pb-8 text-center"><NavLink to={backTo} className="text-sm font-semibold text-amber-800 hover:underline">Volver al listado</NavLink></div></div>}
           {requisition && (
             <RequisitionDetail
               requisition={requisition}
+              itemId={itemId}
               role={role}
               currentUserId={user?.id || ""}
               selectedCosts={selectedCosts}
@@ -575,17 +648,16 @@ export const PurchaseRequisitionsPage = () => {
               onDeleteAttachment={(file) => { void deleteAttachment(file); }}
               onAttachOffers={() => setShowOfferAttachmentModal(true)}
               onBulkSellerReference={() => setShowSellerBulkProcurement(true)}
-              onBack={() => setSelectedId(null)}
+              onBulkBuyerOffers={() => { setEditingBuyerQuoteId(null); setShowBuyerBulkOffers(true); }}
+              onEditSupplierReference={(supplierQuoteId) => { setEditingBuyerQuoteId(supplierQuoteId); setShowBuyerBulkOffers(true); }}
+              onBack={() => navigate(backTo)}
+              onOpenItem={(item) => navigate(`/procurement/${requisition.id}/items/${item.id}`, { state: { returnTo: backTo } })}
+              onBackToRequisition={() => navigate(`/procurement/${requisition.id}`, { state: { returnTo: backTo } })}
               onEdit={(item) => role === "SELLER" && item.quotationOwner === "SELLER" ? openSellerProcurementItem(item) : openItem(item)}
               onSaveDocument={(input) => run(
                 "Guardando referencias...",
                 () => mutations.updateDocument.mutateAsync({ id: requisition.id, input }),
                 "Referencias actualizadas.",
-              )}
-              onChangeOwner={(itemId, quotationOwner) => run(
-                "Actualizando responsable...",
-                () => mutations.updateItem.mutateAsync({ id: requisition.id, itemId, input: { quotationOwner } }),
-                "Responsable actualizado.",
               )}
               onSaveSupplierCode={(itemId, offerId, supplierProductCode) => run(
                 "Guardando código del proveedor...",
@@ -593,7 +665,7 @@ export const PurchaseRequisitionsPage = () => {
                 "Código del proveedor actualizado.",
               )}
               onLinkErp={setLinkingItem}
-              onOffer={(item) => { setOfferItem(item); setCurrentOfferForm(offerForm(item)); }}
+              onOffer={(item) => { setOfferItem(item); setCurrentOfferForm(offerForm(item, requisition.quoteExchangeRate)); }}
               onSelect={(itemId, offerId) => run(
                 "Seleccionando propuesta...",
                 () => mutations.selectOffer.mutateAsync({ id: requisition.id, itemId, offerId }),
@@ -604,14 +676,19 @@ export const PurchaseRequisitionsPage = () => {
                 () => mutations.allocateOffers.mutateAsync({ id: requisition.id, itemId, allocations }),
                 "Partida adjudicada entre proveedores.",
               )}
+              onFinalizePrices={() => run(
+                "Aplicando costos de Compras...",
+                () => mutations.finalizePricesForQuote.mutateAsync({ quoteId: requisition.quoteId }),
+                "Costos aplicados a la cotización. Se avisó al vendedor si no había recibido este cierre.",
+              )}
               onGenerate={() => run(
                 "Generando requisiciones por proveedor...",
                 () => mutations.generateSupplierRequisitions.mutateAsync(requisition.id),
                 "Requisiciones por proveedor generadas.",
               )}
-              onSubmit={() => run(
+              onSubmit={(buyerUserId) => run(
                 "Enviando requisición a Compras...",
-                () => mutations.submit.mutateAsync(requisition.id),
+                () => mutations.submit.mutateAsync({ id: requisition.id, buyerUserId }),
                 "Requisición enviada a Compras.",
               )}
               onApproveCost={() => run(
@@ -622,16 +699,32 @@ export const PurchaseRequisitionsPage = () => {
               canBuy={canBuy}
               localPurchaseWithoutErpCodeEnabled={capabilities.data?.localPurchaseWithoutErpCodeEnabled ?? false}
               canApproveCost={canApproveCost}
-              buyers={(buyers.data?.items || []).filter((item) => item.role === "PURCHASING")}
+              buyers={buyers.data || []}
+              buyersLoading={buyers.isPending}
+              buyersError={buyers.isError}
               onAssign={(buyerUserId) => run(
                 "Asignando comprador...",
                 () => mutations.assign.mutateAsync({ id: requisition.id, buyerUserId }),
                 "Comprador asignado.",
               )}
+              onDelete={role === "ADMIN" ? () => { setDeleteConfirmation(""); setDeleteOpen(true); } : undefined}
             />
           )}
-        </div>
-      </section>
+        </section>
+      )}
+
+      <Dialog open={deleteOpen && role === "ADMIN" && Boolean(requisition)} onClose={mutations.deletePermanently.isPending ? undefined : () => setDeleteOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Eliminar requisición de compra</DialogTitle>
+        <DialogContent dividers className="space-y-4">
+          <Alert severity="warning">Esta acción elimina la requisición, sus partidas, propuestas, documentos por proveedor y archivos exclusivos de Compras. No elimina la cotización, los datos de compra capturados por el vendedor ni los archivos ligados a la cotización. No está disponible si ya existe un pedido ERP o archivo de pedido generado.</Alert>
+          <p className="text-sm text-slate-700">Para confirmar, escribe el folio <strong>{requisition?.requisitionNumber}</strong>.</p>
+          <TextField fullWidth size="small" label="Folio de la requisición" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={mutations.deletePermanently.isPending} autoComplete="off" />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOpen(false)} disabled={mutations.deletePermanently.isPending}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={() => void deleteRequisition()} disabled={mutations.deletePermanently.isPending || deleteConfirmation !== requisition?.requisitionNumber}>Eliminar definitivamente</Button>
+        </DialogActions>
+      </Dialog>
 
       {editingItem && editingItemForm && (
         <ItemModal
@@ -665,6 +758,17 @@ export const PurchaseRequisitionsPage = () => {
           onClose={() => { if (!updateProcurementReference.isPending) setShowSellerBulkProcurement(false); }}
           onSave={saveSellerBulkProcurement}
         />
+      )}
+      {showBuyerBulkOffers && requisition && (
+        <Suspense fallback={<Dialog open><DialogTitle>Cargando captura por lotes...</DialogTitle></Dialog>}>
+          <PurchaseOffersBatchModal
+            key={editingBuyerQuoteId || "new"}
+            requisition={requisition}
+            editingSupplierQuoteId={editingBuyerQuoteId}
+            onClose={() => { setShowBuyerBulkOffers(false); setEditingBuyerQuoteId(null); }}
+            onSaved={() => { void detail.refetch(); void requisitionAttachments.refetch(); }}
+          />
+        </Suspense>
       )}
       {requisition && offerItem && currentOfferForm && (
         <OfferModal
@@ -737,41 +841,9 @@ export const PurchaseRequisitionsPage = () => {
   );
 };
 
-const AllocationEditor = ({ item, busy, onAllocate }: {
-  item: RequisitionItem;
-  busy: boolean;
-  onAllocate: (itemId: string, allocations: Array<{ offerId: string; qty: number }>) => Promise<boolean>;
-}) => {
-  const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(
-    item.offers.map((offer) => [offer.id, offer.isSelected ? String(offer.awardedQty ?? item.qty) : ""]),
-  ));
-  const allocations = item.offers.flatMap((offer) => {
-    const qty = Number(quantities[offer.id]);
-    return Number.isFinite(qty) && qty > 0 ? [{ offerId: offer.id, qty }] : [];
-  });
-  const total = allocations.reduce((sum, allocation) => sum + allocation.qty, 0);
-  return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
-      <p className="font-semibold text-slate-900">Repartir {item.qty} {item.unit} entre proveedores</p>
-      <p className="mt-1 text-slate-600">Deja en blanco las propuestas no elegidas. La suma debe ser exactamente {item.qty}.</p>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {item.offers.map((offer) => (
-          <label key={offer.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5">
-            <span>{offer.supplier.name} · {money(offer.unitCost, offer.currency)}/{item.unit} · máx. {offer.qty}</span>
-            <input type="number" min="0" max={offer.qty} step="0.0001" value={quantities[offer.id] || ""} onChange={(event) => setQuantities((current) => ({ ...current, [offer.id]: event.target.value }))} className="w-24 rounded border border-slate-300 px-2 py-1 text-right" aria-label={`Cantidad para ${offer.supplier.name}`} />
-          </label>
-        ))}
-      </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span className={Math.abs(total - item.qty) < 0.00001 ? "text-emerald-700" : "text-red-700"}>Asignado: {total} / {item.qty}</span>
-        <button type="button" disabled={busy || Math.abs(total - item.qty) > 0.00001} onClick={() => void onAllocate(item.id, allocations)} className="rounded bg-blue-700 px-3 py-1.5 font-semibold text-white disabled:opacity-40">Guardar reparto</button>
-      </div>
-    </div>
-  );
-};
-
 const RequisitionDetail = ({
   requisition,
+  itemId,
   role,
   currentUserId,
   selectedCosts,
@@ -785,15 +857,19 @@ const RequisitionDetail = ({
   onDeleteAttachment,
   onAttachOffers,
   onBulkSellerReference,
+  onBulkBuyerOffers,
+  onEditSupplierReference,
   onBack,
+  onOpenItem,
+  onBackToRequisition,
   onEdit,
   onSaveDocument,
-  onChangeOwner,
   onSaveSupplierCode,
   onLinkErp,
   onOffer,
   onSelect,
   onAllocate,
+  onFinalizePrices,
   onGenerate,
   onSubmit,
   onApproveCost,
@@ -801,9 +877,13 @@ const RequisitionDetail = ({
   localPurchaseWithoutErpCodeEnabled,
   canApproveCost,
   buyers,
+  buyersLoading,
+  buyersError,
   onAssign,
+  onDelete,
 }: {
   requisition: PurchaseRequisition;
+  itemId?: string;
   role: string;
   currentUserId: string;
   selectedCosts: Record<Currency, number>;
@@ -817,26 +897,41 @@ const RequisitionDetail = ({
   onDeleteAttachment: (file: FileAttachment) => void;
   onAttachOffers: () => void;
   onBulkSellerReference: () => void;
+  onBulkBuyerOffers: () => void;
+  onEditSupplierReference: (supplierQuoteId: string) => void;
   onBack: () => void;
+  onOpenItem: (item: RequisitionItem) => void;
+  onBackToRequisition: () => void;
   onEdit: (item: RequisitionItem) => void;
   onSaveDocument: (input: UpdateRequisitionDocumentInput) => Promise<boolean>;
-  onChangeOwner: (itemId: string, owner: "SELLER" | "PURCHASING") => Promise<boolean>;
   onSaveSupplierCode: (itemId: string, offerId: string, code: string | null) => Promise<boolean>;
   onLinkErp: (item: RequisitionItem) => void;
   onOffer: (item: RequisitionItem) => void;
   onSelect: (itemId: string, offerId: string) => Promise<boolean>;
   onAllocate: (itemId: string, allocations: Array<{ offerId: string; qty: number }>) => Promise<boolean>;
+  onFinalizePrices: () => Promise<boolean>;
   onGenerate: () => Promise<boolean>;
-  onSubmit: () => Promise<boolean>;
+  onSubmit: (buyerUserId: string) => Promise<boolean>;
   onApproveCost: () => Promise<boolean>;
   canBuy: boolean;
   localPurchaseWithoutErpCodeEnabled: boolean;
   canApproveCost: boolean;
-  buyers: ManagedUser[];
+  buyers: ProcurementUser[];
+  buyersLoading: boolean;
+  buyersError: boolean;
   onAssign: (buyerUserId: string) => Promise<boolean>;
+  onDelete?: () => void;
 }) => {
   const sellerDraft = role === "SELLER" && requisition.status === "DRAFT";
   const hasOffers = requisition.items.some((item) => item.offers.length > 0);
+  const purchasingQuotes = [...new Map(requisition.items.flatMap((item) => item.offers
+    .filter((offer) => offer.source === "PURCHASING" && offer.supplierQuoteId)
+    .map((offer) => [offer.supplierQuoteId!, offer] as const))).entries()].map(([id, offer]) => ({
+      id, offer,
+      lines: requisition.items.flatMap((item) => item.offers
+        .filter((entry) => entry.source === "PURCHASING" && entry.supplierQuoteId === id)
+        .map((entry) => ({ item, offer: entry }))),
+    }));
   const localReadyForSupplierDocument = (item: RequisitionItem) => localPurchaseWithoutErpCodeEnabled
     && item.source === "LOCAL_NEW"
     && !item.erpCode?.trim()
@@ -851,6 +946,9 @@ const RequisitionDetail = ({
     clientItemId?: string;
     position?: number;
   } | null>(null);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [selectedBuyerId, setSelectedBuyerId] = useState("");
   const visibleAttachments = attachmentView?.type === "SELLER_ITEM"
     ? attachments.filter((file) => file.category === "SELLER_SUPPLIER_QUOTE"
       && Boolean(attachmentView.clientItemId)
@@ -859,10 +957,36 @@ const RequisitionDetail = ({
   const attachmentModalTitle = attachmentView?.type === "SELLER_ITEM"
     ? `Archivos cotizados por el vendedor · Partida ${attachmentView.position}`
     : `Expediente de ${requisition.requisitionNumber}`;
+  if (itemId) {
+    const item = requisition.items.find((entry) => entry.id === itemId);
+    if (!item) return <div className="p-6 text-sm text-slate-600">No se encontró esta partida. <button type="button" onClick={onBackToRequisition} className="font-semibold text-blue-700 hover:underline">Volver a la requisición</button></div>;
+    return <RequisitionItemPage
+      requisition={requisition}
+      item={item}
+      role={role}
+      currentUserId={currentUserId}
+      canBuy={canBuy}
+      busy={busy}
+      localPurchaseWithoutErpCodeEnabled={localPurchaseWithoutErpCodeEnabled}
+      attachments={attachments}
+      attachmentsLoading={attachmentsLoading}
+      attachmentItemLabels={attachmentItemLabels}
+      attachmentOfferLabels={attachmentOfferLabels}
+      busyAttachmentId={busyAttachmentId}
+      onDownloadAttachment={onDownloadAttachment}
+      onDeleteAttachment={onDeleteAttachment}
+      onBack={onBackToRequisition}
+      onEdit={onEdit}
+      onLinkErp={onLinkErp}
+      onOffer={onOffer}
+      onSelect={onSelect}
+      onAllocate={onAllocate}
+    />;
+  }
   return (
     <div className="flex h-full min-h-[650px] flex-col">
       <header className="border-b border-slate-200 px-5 py-4">
-        <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 xl:hidden"><ChevronLeft className="h-4 w-4" />Volver</button>
+        <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 rounded-md text-xs font-semibold text-slate-600 hover:text-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"><ChevronLeft className="h-4 w-4" />Volver a requisiciones</button>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -870,6 +994,7 @@ const RequisitionDetail = ({
               <StatusBadge status={requisition.status} />
             </div>
             <p className="mt-1 text-sm text-slate-600">{requisition.customerName}</p>
+            <p className="mt-1 text-sm font-medium text-amber-800">Proveedor: {requisitionSupplierSummary(requisition.items, requisition.supplierName)}</p>
             <p className="mt-1 text-xs text-slate-500">{requisition.branchName} · Solicitó {requisition.requestedBy.fullName}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -882,6 +1007,11 @@ const RequisitionDetail = ({
             {sellerDraft && requisition.items.length > 1 && (
               <button type="button" onClick={onBulkSellerReference} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
                 <PackageCheck className="h-3.5 w-3.5" />Completar compra en lote
+              </button>
+            )}
+            {canBuy && requisition.items.length > 1 && !["DRAFT", "COMPLETED", "CANCELLED"].includes(requisition.status) && (
+              <button type="button" onClick={onBulkBuyerOffers} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
+                <PackageCheck className="h-3.5 w-3.5" />Completar propuestas en lote
               </button>
             )}
             {canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status) && buyers.length > 0 && (
@@ -900,6 +1030,11 @@ const RequisitionDetail = ({
                 <Paperclip className="h-3.5 w-3.5" />Adjuntar a propuestas
               </button>
             )}
+            {onDelete && (
+              <button type="button" onClick={onDelete} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                <Trash2 className="h-3.5 w-3.5" />Eliminar requisición
+              </button>
+            )}
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-xs sm:grid-cols-4">
@@ -911,136 +1046,35 @@ const RequisitionDetail = ({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        {requisition.quoteStatus === "APPROVED" && requisition.items.some((item) => item.source === "LOCAL_NEW" && !item.erpCode?.trim()) && (
+          <Alert severity="warning">
+            El cliente aprobó la cotización. Compras debe dar de alta en Proscai los productos locales y vincular sus códigos antes de generar el TXT del pedido.
+          </Alert>
+        )}
         <RequisitionPaperCard
           requisition={requisition}
           canEditDocument={(role === "SELLER" && sellerDraft) || (canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status))}
-          canChangeOwner={sellerDraft || (canBuy && requisition.status === "DRAFT")}
           busy={busy}
           onSaveDocument={onSaveDocument}
-          onChangeOwner={onChangeOwner}
           canEditOfferCode={(canBuy || sellerDraft) && !requisition.supplierRequisitions?.length}
           role={role}
           onSaveSupplierCode={onSaveSupplierCode}
+          onOpenItem={onOpenItem}
         />
-        {requisition.items.map((item) => {
-          const selected = item.offers.find((offer) => offer.isSelected);
-          const sellerAttachmentCount = item.quoteClientItemId
-            ? attachments.filter((file) => file.category === "SELLER_SUPPLIER_QUOTE" && file.clientItemIds.includes(item.quoteClientItemId!)).length
-            : 0;
-          return (
-            <article key={item.id} className="overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex flex-col gap-3 bg-slate-50 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white">PART. {item.position}</span>
-                    <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${item.source === "LOCAL_NEW" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
-                      {item.source === "LOCAL_NEW" ? "PRODUCTO NUEVO" : "ERP SIN EXISTENCIA"}
-                    </span>
-                  </div>
-                  <h3 className="mt-2 text-sm font-bold leading-5 text-slate-900">{item.customerDescription || item.description}</h3>
-                  {item.erpDescription && <p className="mt-1 text-xs text-slate-500">Producto ERP: {item.erpDescription}</p>}
-                  <p className="mt-1 text-xs text-slate-500">{item.qty} {item.unit} · Código: {item.erpCode || "Pendiente de alta"}</p>
-                  {item.erpEan && <p className="mt-1 text-xs font-medium text-slate-500">EAN: {item.erpEan}</p>}
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  {canBuy && sellerAttachmentCount > 0 && item.quoteClientItemId && (
-                    <button type="button" onClick={() => setAttachmentView({ type: "SELLER_ITEM", clientItemId: item.quoteClientItemId!, position: item.position })} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
-                      <Paperclip className="h-3.5 w-3.5" />Archivos vendedor ({sellerAttachmentCount})
-                    </button>
-                  )}
-                  {(sellerDraft || canBuy) && (
-                    <button type="button" disabled={busy} onClick={() => onEdit(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                      <Pencil className="h-3.5 w-3.5" />Completar
-                    </button>
-                  )}
-                  {canBuy && item.source === "LOCAL_NEW" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
-                    <button type="button" disabled={busy} onClick={() => onLinkErp(item)} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
-                      <Link2 className="h-3.5 w-3.5" />{item.erpCode ? "Cambiar ERP" : "Vincular ERP"}
-                    </button>
-                  )}
-                  {canBuy && requisition.status !== "DRAFT" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
-                    <button type="button" disabled={busy} onClick={() => onOffer(item)} className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-950">
-                      <Plus className="h-3.5 w-3.5" />Propuesta
-                    </button>
-                  )}
-                </div>
+        {purchasingQuotes.length > 0 && <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-900">Referencias de proveedores registradas por Compras</h3>
+          <p className="mt-1 text-xs text-slate-500">Cada referencia reúne partidas de un proveedor y una moneda. Una propuesta registrada no se adjudica automáticamente.</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {purchasingQuotes.map(({ id, offer, lines }) => <div key={id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="min-w-0 text-xs">
+                <p className="font-semibold text-slate-900">{offer.supplier.name} · {offer.currency}</p>
+                <p className="mt-1 text-slate-600">{lines.length} partida(s) · {offer.supplierQuote?.reference || "Sin folio del proveedor"}</p>
+                <p className="mt-1 text-slate-500">{lines.filter(({ offer: line }) => line.isSelected).length} adjudicada(s)</p>
               </div>
-
-              <div className="grid gap-px bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
-                <InfoBlock label={`Costo vendedor · ${sellerCostSourceLabel(item.sellerCostSource)}`} value={item.sellerUnitCost > 0 ? money(item.sellerUnitCost, item.sellerCurrency) : "Pendiente de cotizar"} />
-                <InfoBlock label="Proveedor vendedor" value={item.sellerSupplierName || "No registrado"} />
-                <InfoBlock label="Norma / diámetro" value={[item.standard, item.diameter].filter(Boolean).join(" · ") || "-"} />
-                <InfoBlock label="Marca" value={item.sellerBrand || "-"} />
-                <InfoBlock label="Estado de entrega" value={item.deliveryPlace || "-"} />
-                <InfoBlock label="Entrega proveedor" value={item.sellerDeliveryTime || "-"} />
-              </div>
-              {item.originRestrictions.length > 0 && <p className="border-t border-slate-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900">Restricción de origen: {item.originRestrictions.join(", ")}</p>}
-              {(item.technicalFamily || Object.keys(item.technicalAttributes).length > 0) && (
-                <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Datos técnicos · {item.technicalFamily || "Sin familia"}</p>
-                  {Object.keys(item.technicalAttributes).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {Object.entries(item.technicalAttributes).map(([key, value]) => (
-                        <span key={key} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700">
-                          <strong>{key.replaceAll("_", " ")}:</strong> {value}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-2 p-4">
-                {item.offers.length === 0 && <p className="py-4 text-center text-xs text-slate-500">Compras aún no registra propuestas.</p>}
-                {item.offers.map((offer) => (
-                  <div key={offer.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${offer.isSelected ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-slate-900">{offer.supplier.name}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${offer.source === "SELLER" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
-                          {offer.source === "SELLER" ? "Propuesta del vendedor" : "Propuesta de Compras"}
-                        </span>
-                        {offer.isSelected && <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">Elegida</span>}
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">{offer.brand || "Sin marca"} · Origen: {offer.origin || "No indicado"} · Entrega: {offer.deliveryTime || "-"}</p>
-                      {offer.supplierDescription && <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-700"><span className="font-semibold">Descripción proveedor:</span> {offer.supplierDescription}</p>}
-                      {offer.source === "SELLER" && sellerAttachmentCount > 0 && item.quoteClientItemId && (
-                        <button type="button" onClick={() => setAttachmentView({ type: "SELLER_ITEM", clientItemId: item.quoteClientItemId!, position: item.position })} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline">
-                          <Paperclip className="h-3.5 w-3.5" />Ver cotización adjunta del vendedor
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between gap-4 sm:justify-end">
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-slate-950">{money(offer.unitCost, offer.currency)}</p>
-                        <p className="text-[10px] text-slate-500">por {item.unit}</p>
-                        {offer.currency === "USD" && <p className="text-[10px] text-slate-500">{offer.exchangeRate ? `≈ ${money(offer.unitCost * offer.exchangeRate, "MXN")} al TC ${offer.exchangeRate}` : "Tipo de cambio pendiente"}</p>}
-                        {offer.isSelected && <p className="text-[10px] font-semibold text-emerald-700">Adjudicado: {offer.awardedQty ?? item.qty} {item.unit}</p>}
-                      </div>
-                      {canBuy && !requisition.supplierRequisitions?.length && !offer.isSelected && (
-                        <button type="button" disabled={busy} onClick={() => void onSelect(item.id, offer.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" title="Seleccionar propuesta">
-                          <Check className="h-4 w-4" />{offer.source === "SELLER" ? "Aplicar cotización del vendedor" : "Seleccionar"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {canBuy && !requisition.supplierRequisitions?.length && item.offers.length > 1 && (
-                  <AllocationEditor key={`${item.id}:${item.offers.map((offer) => `${offer.id}-${offer.awardedQty}`).join(":")}`} item={item} busy={busy} onAllocate={onAllocate} />
-                )}
-                {selected && item.source === "LOCAL_NEW" && !item.erpCode && (
-                  <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800">
-                    {localPurchaseWithoutErpCodeEnabled
-                      ? requisition.supplierRequisitions?.length
-                        ? "La requisición al proveedor ya fue emitida. Para generar el TXT de Proscai aún debes vincular este producto."
-                        : "Compras puede emitir la requisición al proveedor sin código ERP. Para generar el TXT de Proscai aún debes vincular este producto."
-                      : "La propuesta ya fue seleccionada. Falta asignar el código ERP."}
-                  </p>
-                )}
-              </div>
-            </article>
-          );
-        })}
+              {canBuy && !requisition.supplierRequisitions?.length && !["DRAFT", "COMPLETED", "CANCELLED"].includes(requisition.status) && <Button size="small" variant="outlined" disabled={busy} onClick={() => onEditSupplierReference(id)}>Editar referencia</Button>}
+            </div>)}
+          </div>
+        </section>}
         {requisition.supplierRequisitions?.length ? (
           <section className="rounded-xl border border-slate-200 bg-white p-4">
             <h3 className="text-sm font-semibold text-slate-900">Requisiciones finales por proveedor y moneda</h3>
@@ -1060,7 +1094,9 @@ const RequisitionDetail = ({
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
         <p className="text-xs text-slate-500">
-          {requisition.status === "READY_FOR_ORDER"
+          {requisition.quoteStatus !== "APPROVED" && requisition.status !== "DRAFT"
+            ? "Consulta de precios: Compras puede cotizar, pero el pedido espera la aprobación del cliente."
+            : requisition.status === "READY_FOR_ORDER"
             ? "La cotización ya puede generar el pedido ERP."
             : requisition.status === "DRAFT"
               ? "Completa los datos requeridos y envía la requisición a Compras."
@@ -1071,19 +1107,65 @@ const RequisitionDetail = ({
               : "El pedido se habilita cuando todas las partidas estén listas."}
         </p>
         {sellerDraft && (
-          <button type="button" disabled={busy} onClick={() => void onSubmit()} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => { setSelectedBuyerId(""); setSubmitOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <Send className="h-4 w-4" />Enviar a Compras
           </button>
+        )}
+        {canBuy && ["DRAFT", "PENDING", "CHANGES_REQUESTED"].includes(requisition.quoteStatus)
+          && !["DRAFT", "CANCELLED", "COMPLETED"].includes(requisition.status) && (
+          <Button variant="contained" size="small" disabled={busy} onClick={() => setFinalizeOpen(true)}>
+            Aplicar costos y avisar al vendedor
+          </Button>
         )}
         {canApproveCost && requisition.status === "COST_REVIEW" && (
           <button type="button" disabled={busy} onClick={() => void onApproveCost()} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             <BadgeDollarSign className="h-4 w-4" />Aprobar mayor costo
           </button>
         )}
-        {canBuy && supplierDocumentsReady && !requisition.supplierRequisitions?.length && (
+        {canBuy && requisition.quoteStatus === "APPROVED" && supplierDocumentsReady && !requisition.supplierRequisitions?.length && (
           <button type="button" disabled={busy} onClick={() => void onGenerate()} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Generar requisiciones por proveedor</button>
         )}
       </footer>
+
+      <Dialog open={finalizeOpen} onClose={busy ? undefined : () => setFinalizeOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Aplicar costos de Compras</DialogTitle>
+        <DialogContent dividers>
+          <p className="text-sm text-slate-600">
+            Se revisarán todas las requisiciones de {requisition.quoteNumber}. Las partidas con una sola propuesta se adjudicarán automáticamente;
+            cuando existan varias, debes elegir una antes de continuar. Los costos pasarán a la cotización y se avisará una sola vez al vendedor.
+            Los productos locales no se darán de alta en Proscai hasta que el cliente acepte. El vendedor revisará el recargo y el precio de venta en la cotización.
+          </p>
+          <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">{requisition.items.filter((item) => item.status !== "CANCELLED").map((item) => <div key={item.id} className="rounded-lg border border-slate-200 p-2"><p className="text-xs font-semibold">#{item.position} {item.erpCode || "Producto local"}</p><p className="truncate text-[11px] text-slate-500">{item.customerDescription || item.description}</p></div>)}</div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFinalizeOpen(false)} disabled={busy}>Cancelar</Button>
+          <Button variant="contained" disabled={busy} onClick={() => {
+            void onFinalizePrices().then((saved) => { if (saved) setFinalizeOpen(false); });
+          }}>
+            Confirmar y avisar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={submitOpen && sellerDraft} onClose={busy ? undefined : () => setSubmitOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Enviar requisición a Compras</DialogTitle>
+        <DialogContent dividers className="space-y-4">
+          <p className="text-sm text-slate-600">Selecciona al responsable de Compras de {requisition.branchName}. La requisición quedará asignada al enviarla.</p>
+          {buyersLoading ? <p className="text-sm text-slate-500">Cargando responsables...</p> : null}
+          {buyersError ? <Alert severity="error">No se pudieron cargar los responsables de esta sucursal. Inténtalo de nuevo.</Alert> : null}
+          {!buyersLoading && !buyersError && buyers.length === 0 ? <Alert severity="warning">No hay un usuario activo de Compras en esta sucursal. Solicita al administrador que asigne uno.</Alert> : null}
+          {buyers.length > 0 ? (
+            <TextField select fullWidth size="small" label="Responsable de Compras" value={selectedBuyerId} onChange={(event) => setSelectedBuyerId(event.target.value)} disabled={busy}>
+              <MenuItem value="">Seleccionar responsable</MenuItem>
+              {buyers.map((buyer) => <MenuItem key={buyer.id} value={buyer.id}>{buyer.fullName}</MenuItem>)}
+            </TextField>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSubmitOpen(false)} disabled={busy}>Cancelar</Button>
+          <Button variant="contained" disabled={busy || buyersLoading || buyersError || !selectedBuyerId} onClick={() => void onSubmit(selectedBuyerId).then((saved) => { if (saved) setSubmitOpen(false); })}>Enviar a Compras</Button>
+        </DialogActions>
+      </Dialog>
 
       {attachmentView && (
         <AttachmentsModal
@@ -1371,5 +1453,4 @@ const StatusBadge = ({ status }: { status: RequisitionStatus }) => (
 );
 
 const Info = ({ label, value }: { label: string; value: string }) => <div><p className="uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 font-semibold text-slate-800">{value}</p></div>;
-const InfoBlock = ({ label, value }: { label: string; value: string }) => <div className="bg-white px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 text-xs font-semibold text-slate-800">{value}</p></div>;
 const Empty = ({ icon, text, large = false }: { icon: React.ReactNode; text: string; large?: boolean }) => <div className={`flex flex-col items-center justify-center gap-3 text-center text-sm text-slate-500 ${large ? "min-h-[650px]" : "px-6 py-16"}`}><span className="text-slate-400">{icon}</span>{text}</div>;

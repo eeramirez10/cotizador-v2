@@ -3,6 +3,7 @@ import {
   PurchaseRequisitionsService,
   type RequisitionStatus,
   type SaveOfferInput,
+  type SaveOffersBatchInput,
   type SaveSupplierInput,
   type UpdateRequisitionItemInput,
   type UpdateRequisitionDocumentInput,
@@ -22,9 +23,10 @@ export const usePurchaseRequisitions = (params: {
   pageSize: number;
   search?: string;
   status?: RequisitionStatus | "ALL";
-}) => useQuery({
+}, enabled = true) => useQuery({
   queryKey: purchaseRequisitionKeys.list(params),
   queryFn: () => PurchaseRequisitionsService.list(params),
+  enabled,
   placeholderData: keepPreviousData,
   staleTime: 10_000,
 });
@@ -40,6 +42,13 @@ export const useQuotePurchaseRequisition = (quoteId?: string, enabled = true) =>
   queryFn: () => PurchaseRequisitionsService.getByQuote(quoteId!),
   enabled: Boolean(quoteId) && enabled,
   retry: false,
+});
+
+export const useQuotePurchasingBuyers = (quoteId?: string, enabled = true) => useQuery({
+  queryKey: [...purchaseRequisitionKeys.all, "quote-buyers", quoteId || ""],
+  queryFn: () => PurchaseRequisitionsService.listBuyersForQuote(quoteId!),
+  enabled: Boolean(quoteId) && enabled,
+  staleTime: 30_000,
 });
 
 export const useSuppliers = (enabled = true, params?: { search?: string; includeInactive?: boolean }) => useQuery({
@@ -75,7 +84,16 @@ export const usePurchaseRequisitionMutations = () => {
       PurchaseRequisitionsService.updateSupplierCode(id, itemId, offerId, supplierProductCode),
     onSuccess: refresh,
   });
-  const submit = useMutation({ mutationFn: PurchaseRequisitionsService.submit, onSuccess: refresh });
+  const submit = useMutation({
+    mutationFn: ({ id, buyerUserId }: { id: string; buyerUserId: string }) =>
+      PurchaseRequisitionsService.submit(id, buyerUserId),
+    onSuccess: refresh,
+  });
+  const deletePermanently = useMutation({
+    mutationFn: ({ id, confirmation }: { id: string; confirmation: string }) =>
+      PurchaseRequisitionsService.deletePermanently(id, confirmation),
+    onSuccess: refresh,
+  });
   const linkItemToErp = useMutation({
     mutationFn: ({ id, itemId, erpCode, erpEan }: { id: string; itemId: string; erpCode: string; erpEan: string }) =>
       PurchaseRequisitionsService.linkItemToErp(id, itemId, { erpCode, erpEan }),
@@ -91,6 +109,22 @@ export const usePurchaseRequisitionMutations = () => {
       PurchaseRequisitionsService.createOffer(id, itemId, input),
     onSuccess: refresh,
   });
+  const createOffersBatch = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: SaveOffersBatchInput }) =>
+      PurchaseRequisitionsService.createOffersBatch(id, input),
+    onSuccess: async (result) => {
+      client.setQueryData(purchaseRequisitionKeys.detail(result.requisition.id), result.requisition);
+      await refresh();
+    },
+  });
+  const updateOffersBatch = useMutation({
+    mutationFn: ({ id, supplierQuoteId, input }: { id: string; supplierQuoteId: string; input: SaveOffersBatchInput }) =>
+      PurchaseRequisitionsService.updateOffersBatch(id, supplierQuoteId, input),
+    onSuccess: async (result) => {
+      client.setQueryData(purchaseRequisitionKeys.detail(result.requisition.id), result.requisition);
+      await refresh();
+    },
+  });
   const selectOffer = useMutation({
     mutationFn: ({ id, itemId, offerId }: { id: string; itemId: string; offerId: string }) =>
       PurchaseRequisitionsService.selectOffer(id, itemId, offerId),
@@ -100,6 +134,12 @@ export const usePurchaseRequisitionMutations = () => {
     mutationFn: ({ id, itemId, allocations }: { id: string; itemId: string; allocations: Array<{ offerId: string; qty: number }> }) =>
       PurchaseRequisitionsService.allocateOffers(id, itemId, allocations),
     onSuccess: refresh,
+  });
+  const finalizePricesForQuote = useMutation({
+    mutationFn: PurchaseRequisitionsService.finalizePricesForQuote,
+    onSuccess: async () => {
+      await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["quotes"] })]);
+    },
   });
   const generateSupplierRequisitions = useMutation({ mutationFn: PurchaseRequisitionsService.generateSupplierRequisitions, onSuccess: refresh });
   const approveCostVariance = useMutation({
@@ -139,18 +179,22 @@ export const usePurchaseRequisitionMutations = () => {
     updateItem,
     linkItemToErp,
     submit,
+    deletePermanently,
     assign,
     createOffer,
+    createOffersBatch,
+    updateOffersBatch,
     selectOffer,
     allocateOffers,
+    finalizePricesForQuote,
     generateSupplierRequisitions,
     approveCostVariance,
     createSupplier,
     updateSupplier,
     setSupplierActive,
     syncErpSupplier,
-    isPending: updateItem.isPending || linkItemToErp.isPending || submit.isPending || assign.isPending || createOffer.isPending
-      || selectOffer.isPending || allocateOffers.isPending || generateSupplierRequisitions.isPending || approveCostVariance.isPending || createSupplier.isPending || updateSupplier.isPending
+    isPending: updateItem.isPending || linkItemToErp.isPending || submit.isPending || deletePermanently.isPending || assign.isPending || createOffer.isPending || createOffersBatch.isPending || updateOffersBatch.isPending
+      || selectOffer.isPending || allocateOffers.isPending || finalizePricesForQuote.isPending || generateSupplierRequisitions.isPending || approveCostVariance.isPending || createSupplier.isPending || updateSupplier.isPending
       || setSupplierActive.isPending || syncErpSupplier.isPending,
   };
 };

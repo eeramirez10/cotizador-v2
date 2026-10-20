@@ -160,7 +160,7 @@ export const SupplierOfferModal = ({
       qty: quantityReadOnly ? value.qty : item.quantity === null ? value.qty : String(item.quantity),
       unitCost: item.netUnitPrice === null ? value.unitCost : String(item.netUnitPrice),
       currency: extraction.header.currency || value.currency,
-      exchangeRate: extraction.header.exchangeRate === null ? value.exchangeRate : String(extraction.header.exchangeRate),
+      exchangeRate: value.exchangeRate,
       brand: item.brand || value.brand,
       origin: item.origin || value.origin,
       deliveryTime: item.deliveryTime || value.deliveryTime,

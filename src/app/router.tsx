@@ -191,6 +191,18 @@ export const appRouter = createBrowserRouter([
         Component: PurchaseRequisitionsPage,
       },
       {
+        path: "procurement/:requisitionId",
+        loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
+        handle: { title: "Detalle de requisición" },
+        Component: PurchaseRequisitionsPage,
+      },
+      {
+        path: "procurement/:requisitionId/items/:itemId",
+        loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
+        handle: { title: "Gestión de partida" },
+        Component: PurchaseRequisitionsPage,
+      },
+      {
         path: "suppliers",
         loader: requireRolesLoader(["admin", "manager", "seller", "purchasing"]),
         handle: { title: "Proveedores" },

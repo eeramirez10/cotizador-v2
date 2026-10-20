@@ -103,6 +103,9 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
     const parsedExchangeRate = Number(offer.exchangeRate);
     if (!offer.supplierId || !offer.supplierName.trim()) return notifier.error("Selecciona el proveedor que cotizó la partida.");
     if (!Number.isFinite(parsedCost) || parsedCost <= 0) return notifier.error("El costo cotizado debe ser mayor a cero.");
+    if (originRestrictions.length === 0) return notifier.error("Selecciona una restricción o Sin restricción.");
+    if (!offer.origin.trim()) return notifier.error("Selecciona el origen del material.");
+    if (offer.currency !== "MXN" && offer.currency !== "USD") return notifier.error("Selecciona la moneda del proveedor.");
     if (offer.currency === "USD" && (!Number.isFinite(parsedExchangeRate) || parsedExchangeRate <= 0)) return notifier.error("Captura un tipo de cambio válido.");
     if (!deliveryState) return notifier.error("Selecciona el estado donde se entregará el material.");
     if (!offer.deliveryTime) return notifier.error("Selecciona el tiempo de entrega ofrecido por el proveedor.");
@@ -231,6 +234,7 @@ export const SellerProcurementPrequoteModal = ({ item, clientDraftId, quoteCurre
           />
         }
       >
+        <p className="mb-3 text-xs text-slate-600">El precio de venta y el recargo se revisan en la cotización.</p>
         <section className="mb-5 grid grid-cols-3 gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
           <div><p className="text-[10px] font-bold uppercase text-slate-500">Solicitado</p><p className="mt-1 text-sm font-bold text-slate-900">{fulfillment.requestedQty} {item.unit}</p></div>
           <div><p className="text-[10px] font-bold uppercase text-slate-500">Stock ERP</p><p className="mt-1 text-sm font-bold text-emerald-700">{fulfillment.stockQty} {item.unit}</p></div>
