@@ -110,8 +110,8 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
   const systemUserId = useRef(user?.id);
   systemUserId.current = user?.id;
   const role = (user?.role || "").trim().toLowerCase();
-  const enabled = ["admin", "manager", "seller"].includes(role);
-  const inboxEnabled = enabled && capabilities.data?.whatsAppInboxEnabled === true
+  const enabled = ["admin", "manager", "seller", "purchasing"].includes(role);
+  const inboxEnabled = ["admin", "manager", "seller"].includes(role) && capabilities.data?.whatsAppInboxEnabled === true
     && user?.whatsappInboxEnabled !== false;
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -161,7 +161,9 @@ export const AppNotificationsProvider = ({ children }: PropsWithChildren) => {
         durationMs: 8_000,
         presentation: { variant: "quote-decision", title: notification.title, occurredAt: notification.occurredAt, tone: "success" },
         action: {
-          label: "Ver expediente",
+          label: notification.kind === "PURCHASE_PRICE_REQUESTED"
+            ? "Ver solicitud"
+            : notification.kind === "PURCHASE_PRICE_READY" ? "Ver cotización" : "Ver expediente",
           onClick: () => {
             void SystemNotificationsService.markRead(notification.sourceId).then(() => {
               setSystemNotifications((current) => current.map((item) => item.id === notification.id

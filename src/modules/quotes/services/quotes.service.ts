@@ -182,6 +182,8 @@ export interface SavedQuoteRecord {
     sourceUnitPrice?: number | null;
     sourceSubtotal?: number | null;
     unitPrice: number;
+    salePriceReviewRequired?: boolean;
+    purchaseSuggestedUnitPrice?: number | null;
     subtotal: number;
     sourceRequiresReview?: boolean;
     importedFromExcel?: boolean;
@@ -243,11 +245,14 @@ interface ApiQuoteItem {
   sourceUnitPrice: number | null;
   sourceSubtotal: number | null;
   unitPrice: number;
+  salePriceReviewRequired: boolean;
+  purchaseSuggestedUnitPrice: number | null;
   subtotal: number;
   sourceRequiresReview: boolean;
   requiresReview: boolean;
   product?: {
     id: string;
+    source?: "ERP" | "LOCAL_TEMP";
     code: string | null;
     ean: string | null;
     description: string;
@@ -624,7 +629,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       id: item.clientItemId || item.id,
       quoteItemId: item.id,
       localProductId: item.productId || item.product?.id || null,
-      erpCode: item.externalProductCode?.trim() || item.product?.code?.trim() || "",
+      erpCode: item.externalProductCode?.trim() || (item.product?.source === "ERP" ? item.product.code?.trim() : "") || "",
       ean: item.ean || item.product?.ean || "",
       customerDescription: item.customerDescription || "",
       customerDescriptionOriginal: item.customerDescriptionOriginal || item.customerDescription || "",
@@ -673,6 +678,8 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       sourceUnitPrice: item.sourceUnitPrice,
       sourceSubtotal: item.sourceSubtotal,
       unitPrice: item.unitPrice,
+      salePriceReviewRequired: item.salePriceReviewRequired ?? false,
+      purchaseSuggestedUnitPrice: item.purchaseSuggestedUnitPrice ?? null,
       subtotal: item.subtotal,
       sourceRequiresReview: item.sourceRequiresReview,
       importedFromExcel: apiQuote.captureMethod === "EXCEL_IMPORT",
@@ -920,6 +927,18 @@ export interface QuoteCustomerChangeRequest {
 }
 
 export class QuotesService {
+  static async reviewSalePrices(quoteId: string, items: Array<{ itemId: string; expectedUnitCost: number; unitPrice: number }>): Promise<SavedQuoteRecord> {
+    try {
+      const { data } = await coreHttpClient.post<ApiQuote>(
+        `/api/quotes/${encodeURIComponent(quoteId)}/sale-prices/review`,
+        { items },
+        { headers: requireAuthHeaders() },
+      );
+      return mapApiQuoteToSavedRecord(data);
+    } catch (error) {
+      throw new Error(mapAxiosErrorMessage(error, "No se pudieron confirmar los precios de venta."));
+    }
+  }
   static async listCustomerChangeRequests(quoteId: string): Promise<QuoteCustomerChangeRequest[]> {
     try {
       const { data } = await coreHttpClient.get<QuoteCustomerChangeRequest[]>(

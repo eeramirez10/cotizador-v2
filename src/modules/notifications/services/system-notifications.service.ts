@@ -4,7 +4,7 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 
 export interface SystemNotificationRecord {
   id: string;
-  type: "CUSTOMER_ONBOARDING_ERP_LINKED";
+  type: "CUSTOMER_ONBOARDING_ERP_LINKED" | "PURCHASE_PRICE_REQUESTED" | "PURCHASE_PRICE_READY";
   title: string;
   message: string;
   reference: string;

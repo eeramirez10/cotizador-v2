@@ -183,7 +183,11 @@ export interface PurchaseRequisition {
   requisitionNumber: string;
   quoteId: string;
   quoteNumber: string;
+  quoteStatus: string;
+  supplierId: string | null;
+  supplierName: string | null;
   quoteCurrency: Currency;
+  quoteExchangeRate: number;
   branchId: string;
   branchName: string;
   branchAddress: string | null;
@@ -336,6 +340,16 @@ export interface SaveOfferInput {
   notes?: string | null;
 }
 
+export interface SaveOffersBatchInput {
+  deliveryState?: string | null;
+  offers: Array<SaveOfferInput & {
+    itemId: string;
+    offerId?: string;
+    itemDetails?: Pick<UpdateRequisitionItemInput,
+      "standard" | "diameter" | "thickness" | "bore" | "technicalFamily" | "technicalAttributes" | "originRestrictions">;
+  }>;
+}
+
 const headers = () => {
   const token = getAuthToken();
   if (!token) throw new Error("Sesión no válida. Inicia sesión nuevamente.");
@@ -377,10 +391,54 @@ export class PurchaseRequisitionsService {
     );
   }
 
+  static deletePermanently(id: string, confirmation: string) {
+    return request(
+      () => coreHttpClient.delete<void>(`/api/purchase-requisitions/${encodeURIComponent(id)}`, {
+        headers: headers(),
+        data: { confirmation },
+      }),
+      "No se pudo eliminar la requisición.",
+    );
+  }
+
+  static listBuyers(id: string) {
+    return request(
+      () => coreHttpClient.get<ProcurementUser[]>(`/api/purchase-requisitions/${encodeURIComponent(id)}/buyers`, { headers: headers() }),
+      "No se pudieron cargar los responsables de Compras.",
+    );
+  }
+
   static getByQuote(quoteId: string) {
     return request(
-      () => coreHttpClient.get<PurchaseRequisition>(`/api/purchase-requisitions/quote/${encodeURIComponent(quoteId)}`, { headers: headers() }),
-      "No se pudo cargar la requisición de la cotización.",
+      () => coreHttpClient.get<PurchaseRequisition[]>(`/api/purchase-requisitions/quote/${encodeURIComponent(quoteId)}`, { headers: headers() }),
+      "No se pudieron cargar las requisiciones de la cotización.",
+    );
+  }
+
+  static finalizePricesForQuote(input: { quoteId: string }) {
+    return request(
+      () => coreHttpClient.post<PurchaseRequisition[]>(
+        `/api/purchase-requisitions/quote/${encodeURIComponent(input.quoteId)}/finalize-prices`,
+        {}, { headers: headers() },
+      ),
+      "No se pudieron finalizar los precios de Compras.",
+    );
+  }
+
+  static listBuyersForQuote(quoteId: string) {
+    return request(
+      () => coreHttpClient.get<ProcurementUser[]>(`/api/purchase-requisitions/quote/${encodeURIComponent(quoteId)}/buyers`, { headers: headers() }),
+      "No se pudieron cargar los responsables de Compras.",
+    );
+  }
+
+  static sendUnquotedItemsToPurchasing(quoteId: string, itemIds: string[], buyerUserId: string) {
+    return request(
+      () => coreHttpClient.post<PurchaseRequisition>(
+        `/api/purchase-requisitions/quote/${encodeURIComponent(quoteId)}/send-to-purchasing`,
+        { itemIds, buyerUserId }, { headers: headers() },
+      ),
+      "No se pudieron enviar las partidas a Compras.",
     );
   }
 
@@ -425,9 +483,9 @@ export class PurchaseRequisitionsService {
     );
   }
 
-  static submit(id: string) {
+  static submit(id: string, buyerUserId: string) {
     return request(
-      () => coreHttpClient.post<PurchaseRequisition>(`/api/purchase-requisitions/${encodeURIComponent(id)}/submit`, {}, { headers: headers() }),
+      () => coreHttpClient.post<PurchaseRequisition>(`/api/purchase-requisitions/${encodeURIComponent(id)}/submit`, { buyerUserId }, { headers: headers() }),
       "No se pudo enviar la requisición.",
     );
   }
@@ -447,6 +505,25 @@ export class PurchaseRequisitionsService {
         { headers: headers() },
       ),
       "No se pudo registrar la propuesta.",
+    );
+  }
+
+  static createOffersBatch(id: string, input: SaveOffersBatchInput) {
+    return request(
+      () => coreHttpClient.post<{ requisition: PurchaseRequisition; offerIds: string[] }>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/offers/batch`, input, { headers: headers() },
+      ),
+      "No se pudieron registrar las propuestas del lote.",
+    );
+  }
+
+  static updateOffersBatch(id: string, supplierQuoteId: string, input: SaveOffersBatchInput) {
+    return request(
+      () => coreHttpClient.put<{ requisition: PurchaseRequisition; offerIds: string[] }>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/supplier-quotes/${encodeURIComponent(supplierQuoteId)}/offers`,
+        input, { headers: headers() },
+      ),
+      "No se pudieron actualizar las propuestas del proveedor.",
     );
   }
 

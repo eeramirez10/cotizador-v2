@@ -35,13 +35,14 @@ const money = (amount: number, currency: string) => new Intl.NumberFormat("es-MX
   style: "currency", currency, maximumFractionDigits: 2,
 }).format(amount);
 
-const CatalogField = ({ label, value, options, onChange }: {
+const CatalogField = ({ label, value, options, onChange, required = false }: {
   label: string;
   value: string;
   options: QuoteCatalogOption[];
   onChange: (value: string) => void;
-}) => <TextField select size="small" label={label} value={value} onChange={(event) => onChange(event.target.value)} sx={{ ...compactFieldSx, minWidth: 112 }}>
-  <MenuItem value="">Sin indicar</MenuItem>
+  required?: boolean;
+}) => <TextField select size="small" required={required} label={label} value={value} onChange={(event) => onChange(event.target.value)} sx={{ ...compactFieldSx, minWidth: 112 }}>
+  <MenuItem value="">{required ? "Seleccionar" : "Sin indicar"}</MenuItem>
   {value && !options.some((option) => optionValue(option) === value) && <MenuItem value={value}>{value}</MenuItem>}
   {options.map((option) => <MenuItem key={option.id} value={optionValue(option)}>{option.label}</MenuItem>)}
 </TextField>;
@@ -77,7 +78,7 @@ export const SellerSupplierReferenceFields = ({ item, deliveryState, deliverySta
           <MenuItem value="">Seleccionar estado</MenuItem>
           {deliveryStates.map((option) => <MenuItem key={option.id} value={optionValue(option)}>{option.label}</MenuItem>)}
         </TextField>
-        {value.currency === "USD" && <TextField size="small" sx={compactFieldSx} type="number" required label="Tipo de cambio" value={value.exchangeRate} onChange={(event) => update("exchangeRate", event.target.value)} inputProps={{ min: 0, step: "any" }} />}
+        {value.currency === "USD" && <TextField size="small" sx={compactFieldSx} type="number" required label="Tipo de cambio cotización" value={value.exchangeRate} onChange={(event) => update("exchangeRate", event.target.value)} inputProps={{ min: 0, step: "any" }} />}
       </div>
     </section>
 
@@ -98,12 +99,12 @@ export const SellerSupplierReferenceFields = ({ item, deliveryState, deliverySta
             <TableCell sx={{ minWidth: 180, maxWidth: 240, overflowWrap: "anywhere" }}>{item.erpDescription || "-"}</TableCell>
             <TableCell sx={{ minWidth: 205 }}><TextField size="small" sx={compactFieldSx} fullWidth multiline minRows={2} label="Descripción proveedor" placeholder="Pendiente de cotización" value={value.supplierDescription} onChange={(event) => update("supplierDescription", event.target.value.toUpperCase())} inputProps={{ maxLength: 500 }} /></TableCell>
             <SupplierTechnicalCell value={technical} onExpand={() => setTechnicalOpen((current) => !current)} onSuggest={onSuggestTechnical} suggesting={suggestingTechnical} />
-            <TableCell><SupplierRestrictionSelect value={restrictions} options={restrictionOptions} onChange={onRestrictionsChange} /></TableCell>
+            <TableCell><SupplierRestrictionSelect required value={restrictions} options={restrictionOptions} onChange={onRestrictionsChange} /></TableCell>
             <TableCell><TextField size="small" type="number" required label="Costo unitario" value={value.unitCost} onChange={(event) => update("unitCost", event.target.value)} sx={{ ...compactFieldSx, minWidth: 105 }} inputProps={{ min: 0, step: "any" }} /></TableCell>
             <TableCell>{value.currency}</TableCell>
             <TableCell><CatalogField label="Marca" value={value.brand} options={brands} onChange={(next) => update("brand", next)} /></TableCell>
-            <TableCell><CatalogField label="Origen" value={value.origin} options={origins} onChange={(next) => update("origin", next)} /></TableCell>
-            <TableCell><CatalogField label="Plazo" value={value.deliveryTime} options={deliveryTimes} onChange={(next) => update("deliveryTime", next)} /></TableCell>
+            <TableCell><CatalogField required label="Origen" value={value.origin} options={origins} onChange={(next) => update("origin", next)} /></TableCell>
+            <TableCell><CatalogField required label="Plazo" value={value.deliveryTime} options={deliveryTimes} onChange={(next) => update("deliveryTime", next)} /></TableCell>
             <TableCell sx={{ minWidth: 110, fontWeight: 600 }}>{value.unitCost !== "" && Number.isFinite(subtotal) ? money(subtotal, value.currency) : "Pendiente"}</TableCell>
           </TableRow><SupplierTechnicalRow colSpan={16} value={technical} onChange={onTechnicalChange} open={technicalOpen} /></TableBody>
         </Table>

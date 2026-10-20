@@ -5,6 +5,8 @@ import type {
   SupplierQuoteExtractionResult,
 } from "../../../modules/procurement/services/supplier-quote-extraction.service";
 import type { ManualQuoteItem } from "../../../store/quote/manual-quote.store";
+
+type MappingItem = Pick<ManualQuoteItem, "id" | "erpCode" | "ean" | "erpDescription" | "customerDescription" | "qty" | "unit" | "customerUnit">;
 import { normalizeMeasurementUnit } from "../../../modules/products/constants/measurement-units";
 
 export interface SupplierQuoteBulkMapping {
@@ -14,7 +16,7 @@ export interface SupplierQuoteBulkMapping {
 
 interface Props {
   result: SupplierQuoteExtractionResult;
-  items: ManualQuoteItem[];
+  items: MappingItem[];
   onApply: (mappings: SupplierQuoteBulkMapping[]) => void;
   onClose: () => void;
 }
@@ -30,7 +32,7 @@ const tokens = (value: string): Set<string> => new Set(
   canonical(value).split(" ").filter((token) => token.length > 1),
 );
 
-const score = (systemItem: ManualQuoteItem, extractedItem: ExtractedSupplierQuoteItem): number => {
+const score = (systemItem: MappingItem, extractedItem: ExtractedSupplierQuoteItem): number => {
   const systemCode = canonical(systemItem.erpCode || systemItem.ean);
   const extractedCodes = [extractedItem.supplierProductCode, ...extractedItem.alternateCodes].map(canonical).filter(Boolean);
   if (systemCode && extractedCodes.includes(systemCode)) return 10;
@@ -49,7 +51,7 @@ const score = (systemItem: ManualQuoteItem, extractedItem: ExtractedSupplierQuot
 };
 
 const automaticMappings = (
-  systemItems: ManualQuoteItem[],
+  systemItems: MappingItem[],
   extractedItems: ExtractedSupplierQuoteItem[],
 ): Record<string, string> => {
   const candidates = systemItems.flatMap((systemItem) => extractedItems.map((extractedItem, index) => ({
