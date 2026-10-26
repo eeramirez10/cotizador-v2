@@ -65,19 +65,33 @@ const mappingItem = (item: RequisitionItem) => ({
   customerUnit: item.unit,
 });
 
-export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, onClose, onSaved }: {
+export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, sellerReferenceQuoteId, onClose, onSaved }: {
   requisition: PurchaseRequisition;
   editingSupplierQuoteId?: string | null;
+  sellerReferenceQuoteId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) => {
   const { createOffersBatch, updateOffersBatch } = usePurchaseRequisitionMutations();
-  const editingOffers = requisition.items.flatMap((item) => item.offers
-    .filter((offer) => offer.source === "PURCHASING" && offer.supplierQuoteId === editingSupplierQuoteId)
+  const sellerOffers = requisition.items.flatMap((item) => item.offers
+    .filter((offer) => Boolean(sellerReferenceQuoteId) && offer.source === "SELLER" && offer.supplierQuoteId === sellerReferenceQuoteId)
     .map((offer) => ({ item, offer })));
-  const existingByItemId = new Map(editingOffers.map(({ item, offer }) => [item.id, offer]));
-  const editingQuote = editingOffers[0]?.offer.supplierQuote || null;
-  const fixedSupplierId = editingOffers[0]?.offer.supplierId || "";
+  const sellerItemIds = new Set(sellerOffers.map(({ item }) => item.id));
+  const sellerSupplierId = sellerOffers[0]?.offer.supplierId;
+  const sellerCurrency = sellerOffers[0]?.offer.currency;
+  const matchedBuyerQuoteId = sellerReferenceQuoteId && !editingSupplierQuoteId
+    ? requisition.items.flatMap((item) => item.offers
+      .filter((offer) => offer.source === "PURCHASING" && sellerItemIds.has(item.id)
+        && offer.supplierId === sellerSupplierId && offer.currency === sellerCurrency))
+      .find((offer) => offer.supplierQuoteId)?.supplierQuoteId || null
+    : null;
+  const activeBuyerQuoteId = editingSupplierQuoteId || matchedBuyerQuoteId;
+  const editingOffers = requisition.items.flatMap((item) => item.offers
+    .filter((offer) => Boolean(activeBuyerQuoteId) && offer.source === "PURCHASING" && offer.supplierQuoteId === activeBuyerQuoteId)
+    .map((offer) => ({ item, offer })));
+  const existingByItemId = new Map([...sellerOffers, ...editingOffers].map(({ item, offer }) => [item.id, offer]));
+  const editingQuote = editingOffers[0]?.offer.supplierQuote || sellerOffers[0]?.offer.supplierQuote || null;
+  const fixedSupplierId = editingOffers[0]?.offer.supplierId || sellerSupplierId || "";
   const editingItemIds = new Set(editingOffers.map(({ item }) => item.id));
   const suppliers = useSuppliers();
   const brands = useQuoteCatalogs("PURCHASE_BRAND");
@@ -86,10 +100,10 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
   const deliveryTimes = useQuoteCatalogs("DELIVERY_TIME");
   const attachments = useRequisitionAttachments(requisition.id);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [stage, setStage] = useState<"SELECT" | "CAPTURE">(editingSupplierQuoteId ? "CAPTURE" : "SELECT");
+  const [stage, setStage] = useState<"SELECT" | "CAPTURE">(activeBuyerQuoteId || sellerReferenceQuoteId ? "CAPTURE" : "SELECT");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(
-    editingSupplierQuoteId
-      ? editingOffers.map(({ item }) => item.id)
+    activeBuyerQuoteId || sellerReferenceQuoteId
+      ? [...editingOffers, ...sellerOffers].map(({ item }) => item.id)
       : requisition.items.filter((item) => !item.offers.some((offer) => offer.source === "PURCHASING")).map((item) => item.id),
   ));
   const [rows, setRows] = useState<Record<string, BulkProcurementItemForm>>(() => Object.fromEntries(
@@ -150,7 +164,7 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
   const busy = saving || extracting || suggestingBatch || suggestingItemId !== null;
 
   const clearDerivedTotals = () => {
-    if (!editingSupplierQuoteId) return;
+    if (!activeBuyerQuoteId && !sellerReferenceQuoteId) return;
     setDocumentSubtotal("");
     setDocumentTax("");
     setDocumentTotal("");
@@ -296,19 +310,19 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
 
   const applyExtraction = (mappings: SupplierQuoteBulkMapping[]) => {
     if (!extraction) return;
-    if (editingSupplierQuoteId && (extraction.supplier.name || extraction.supplier.taxId)) {
+    if ((activeBuyerQuoteId || sellerReferenceQuoteId) && (extraction.supplier.name || extraction.supplier.taxId)) {
       const matched = findDetectedSupplierMatch(extraction.supplier, supplierOptions);
       if (matched && matched.id !== fixedSupplierId) {
         return notifier.warning("El archivo corresponde a otro proveedor. Registra sus partidas en una referencia separada.");
       }
       const normalized = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-      const currentName = editingOffers[0]?.offer.supplier.name || "";
+      const currentName = editingOffers[0]?.offer.supplier.name || sellerOffers[0]?.offer.supplier.name || "";
       if (!matched && extraction.supplier.name && currentName && normalized(extraction.supplier.name) !== normalized(currentName)) {
         return notifier.warning("No se pudo confirmar que el archivo sea del proveedor de esta referencia. Revísalo y captura sus datos manualmente, o crea otra referencia.");
       }
     }
     const mappedIds = new Set(mappings.map((mapping) => mapping.systemItemId));
-    setSelectedIds(editingSupplierQuoteId ? new Set([...editingItemIds, ...mappedIds]) : mappedIds);
+    setSelectedIds(activeBuyerQuoteId ? new Set([...editingItemIds, ...mappedIds]) : mappedIds);
     setBulkCurrency(extraction.header.currency || "");
     setRows((current) => {
       const next = { ...current };
@@ -342,7 +356,7 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
     setDocumentTax(extraction.totals.tax === null ? "" : String(extraction.totals.tax));
     setDocumentTotal(extraction.totals.total === null ? "" : String(extraction.totals.total));
     setTaxIncluded(extraction.totals.taxIncluded === true);
-    if (!editingSupplierQuoteId && (extraction.supplier.name || extraction.supplier.taxId)) {
+    if (!activeBuyerQuoteId && !sellerReferenceQuoteId && (extraction.supplier.name || extraction.supplier.taxId)) {
       setSupplierId("");
       setDetectedSupplier(extraction.supplier);
     }
@@ -352,7 +366,8 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
 
   const save = async () => {
     if (selectedItems.length === 0) return notifier.warning("Selecciona al menos una partida.");
-    if (editingSupplierQuoteId && editingOffers.length === 0) return notifier.error("La referencia del proveedor ya no está disponible.");
+    if (activeBuyerQuoteId && editingOffers.length === 0) return notifier.error("La referencia del proveedor ya no está disponible.");
+    if (sellerReferenceQuoteId && sellerOffers.length === 0) return notifier.error("La referencia del vendedor ya no está disponible.");
     if (!supplierId) return notifier.warning("Selecciona un proveedor para el lote.");
     if (!deliveryState) return notifier.warning("Selecciona el estado de entrega.");
     const rate = Number(taxRate) / 100;
@@ -386,7 +401,7 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
       };
       offers.push({
         itemId: item.id, supplierId, qty: item.qty, unitCost, unit: item.unit,
-        ...(editingSupplierQuoteId && existingByItemId.has(item.id) ? { offerId: existingByItemId.get(item.id)!.id } : {}),
+        ...(activeBuyerQuoteId && existingByItemId.get(item.id)?.source === "PURCHASING" ? { offerId: existingByItemId.get(item.id)!.id } : {}),
         itemDetails: JSON.stringify(itemDetails) === JSON.stringify(originalTechnical) ? undefined : itemDetails,
         supplierProductCode: row.supplierProductCode.trim() || null,
         supplierDescription: row.supplierDescription.trim() || null,
@@ -408,24 +423,24 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
       });
     }
     setSaving(true);
-    const toast = notifier.loading(editingSupplierQuoteId ? "Actualizando referencia del proveedor..." : "Guardando propuestas del lote...");
+    const toast = notifier.loading(activeBuyerQuoteId ? "Actualizando referencia del proveedor..." : "Guardando propuestas del lote...");
     try {
-      const result = editingSupplierQuoteId
-        ? await updateOffersBatch.mutateAsync({ id: requisition.id, supplierQuoteId: editingSupplierQuoteId, input: { offers, deliveryState } })
+      const result = activeBuyerQuoteId
+        ? await updateOffersBatch.mutateAsync({ id: requisition.id, supplierQuoteId: activeBuyerQuoteId, input: { offers, deliveryState } })
         : await createOffersBatch.mutateAsync({ id: requisition.id, input: { offers, deliveryState } });
       if (file) {
         try {
           await AttachmentsService.uploadPurchaseOffer(requisition.id, result.offerIds, file);
         } catch (error) {
           const message = error instanceof Error ? error.message : "No se pudo adjuntar el archivo.";
-          if (toast !== undefined) notifier.update(toast, "warning", `Propuestas guardadas, pero falló el archivo: ${message}. Usa «Adjuntar a propuestas» para reintentar.`);
-          else notifier.warning(`Propuestas guardadas, pero falló el archivo: ${message}. Usa «Adjuntar a propuestas» para reintentar.`);
+          if (toast !== undefined) notifier.update(toast, "warning", `Propuestas guardadas, pero falló el archivo: ${message}. Abre «Editar referencia» para reintentar.`);
+          else notifier.warning(`Propuestas guardadas, pero falló el archivo: ${message}. Abre «Editar referencia» para reintentar.`);
           onSaved();
           onClose();
           return;
         }
       }
-      const message = editingSupplierQuoteId
+      const message = activeBuyerQuoteId
         ? `${offers.length} partida(s) actualizadas en la referencia del proveedor.`
         : `${offers.length} propuestas registradas. Selecciona las ofertas ganadoras para completar la requisición.`;
       if (toast !== undefined) notifier.update(toast, "success", message);
@@ -444,7 +459,7 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
   if (stage === "SELECT") return <Dialog open onClose={onClose} maxWidth="md" fullWidth>
     <DialogTitle>Seleccionar partidas para el proveedor</DialogTitle>
     <DialogContent dividers>
-      <p className="mb-3 text-xs text-slate-600">{editingSupplierQuoteId ? "Las partidas existentes se conservan. Puedes agregar otras del mismo proveedor; para otro proveedor crea una referencia distinta." : "Elige todas o solo las partidas de la misma cotización. Las propuestas anteriores se conservarán."}</p>
+      <p className="mb-3 text-xs text-slate-600">{activeBuyerQuoteId ? "Las partidas existentes se conservan. Puedes agregar otras del mismo proveedor; para otro proveedor crea una referencia distinta." : "Elige todas o solo las partidas de la misma cotización. Las propuestas anteriores se conservarán."}</p>
       <label className="mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold">
         <Checkbox size="small" checked={allSelected} indeterminate={selectedIds.size > 0 && !allSelected} onChange={() => setSelectedIds(allSelected ? new Set(editingItemIds) : new Set(requisition.items.map((item) => item.id)))} />Seleccionar todas
         <span className="ml-auto text-slate-500">{selectedIds.size} de {requisition.items.length}</span>
@@ -460,7 +475,7 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
   return (
     <Dialog open onClose={busy ? undefined : onClose} maxWidth="xl" fullWidth PaperProps={{ sx: { maxWidth: "min(1500px, 96vw)", maxHeight: "94vh" } }}>
       <DialogTitle sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1, fontSize: 16 }}>
-        <span>{editingSupplierQuoteId ? "Editar referencia de un proveedor" : "Referencia de un proveedor"} · {selectedItems.length} partida(s) <span className="text-xs font-normal text-slate-500">{requisition.requisitionNumber}</span></span>
+        <span>{activeBuyerQuoteId || sellerReferenceQuoteId ? "Revisar referencia de un proveedor" : "Referencia de un proveedor"} · {selectedItems.length} partida(s) <span className="text-xs font-normal text-slate-500">{requisition.requisitionNumber}</span></span>
         <span className="flex flex-wrap items-center gap-2">
           <input ref={fileInputRef} type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="sr-only" aria-label="Seleccionar cotización del proveedor" onChange={(event) => {
             const selected = event.currentTarget.files?.[0];
@@ -478,11 +493,12 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
       </DialogTitle>
       <DialogContent dividers sx={{ maxHeight: "74vh" }}>
         <section className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-semibold text-slate-800">Proveedor y documento</h3>{!editingSupplierQuoteId && <Button size="small" variant="outlined" startIcon={<Plus size={14} />} onClick={() => { setSupplierInitialValues(undefined); setSupplierModalOpen(true); }} sx={{ fontSize: 11, textTransform: "none" }}>Nuevo proveedor</Button>}</div>
+          {sellerReferenceQuoteId && <p className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-900">Referencia del vendedor precargada. Compras guardará su propia revisión sin cambiar la captura original de Ventas.</p>}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-semibold text-slate-800">Proveedor y documento</h3>{!activeBuyerQuoteId && !sellerReferenceQuoteId && <Button size="small" variant="outlined" startIcon={<Plus size={14} />} onClick={() => { setSupplierInitialValues(undefined); setSupplierModalOpen(true); }} sx={{ fontSize: 11, textTransform: "none" }}>Nuevo proveedor</Button>}</div>
           <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField select size="small" required label="Proveedor" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} disabled={busy || Boolean(editingSupplierQuoteId)} helperText={editingSupplierQuoteId ? "Para otro proveedor, crea una referencia separada." : undefined} sx={{ ...compactFieldSx, minWidth: 0 }}>
+            <TextField select size="small" required label="Proveedor" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} disabled={busy || Boolean(activeBuyerQuoteId || sellerReferenceQuoteId)} helperText={activeBuyerQuoteId || sellerReferenceQuoteId ? "Para otro proveedor, crea una referencia separada." : undefined} sx={{ ...compactFieldSx, minWidth: 0 }}>
               <MenuItem value="">Seleccionar proveedor</MenuItem>
-              {editingSupplierQuoteId && supplierId && !supplierOptions.some((supplier) => supplier.id === supplierId && supplier.isActive) && <MenuItem value={supplierId}>{editingOffers[0]?.offer.supplier.name || "Proveedor actual"}</MenuItem>}
+              {(activeBuyerQuoteId || sellerReferenceQuoteId) && supplierId && !supplierOptions.some((supplier) => supplier.id === supplierId && supplier.isActive) && <MenuItem value={supplierId}>{editingOffers[0]?.offer.supplier.name || sellerOffers[0]?.offer.supplier.name || "Proveedor actual"}</MenuItem>}
               {supplierOptions.filter((supplier) => supplier.isActive).map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.erpCode ? `${supplier.erpCode} · ` : ""}{supplier.name}</MenuItem>)}
             </TextField>
             <TextField select size="small" required label="Estado de entrega" value={deliveryState} onChange={(event) => setDeliveryState(event.target.value)} sx={compactFieldSx}><MenuItem value="">Seleccionar estado</MenuItem>{(deliveryStates.data || []).map((option) => <MenuItem key={option.id} value={optionValue(option)}>{option.label}</MenuItem>)}</TextField>
@@ -534,9 +550,9 @@ export const PurchaseOffersBatchModal = ({ requisition, editingSupplierQuoteId, 
         </section>
         <TextField size="small" multiline minRows={2} fullWidth label="Notas y condiciones del proveedor" value={selectedItems.length > 0 && selectedItems.every((item) => rows[item.id].notes === rows[selectedItems[0].id].notes) ? rows[selectedItems[0].id].notes : ""} onChange={(event) => selectedItems.forEach((item) => updateRow(item.id, { notes: event.target.value }))} sx={{ ...compactFieldSx, mt: 2 }} />
         {(suppliers.isLoading || brands.isLoading || restrictions.isLoading || deliveryStates.isLoading || deliveryTimes.isLoading) && <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500"><Loader2 size={14} className="animate-spin" />Cargando proveedores y catálogos...</p>}
-        <p className="mt-2 flex items-center gap-1 text-[11px] text-slate-500"><FileSearch size={13} />Puedes registrar el lote sin archivo y adjuntarlo después desde «Adjuntar a propuestas».</p>
+        <p className="mt-2 flex items-center gap-1 text-[11px] text-slate-500"><FileSearch size={13} />Puedes registrar el lote sin archivo y adjuntarlo después desde «Editar referencia».</p>
       </DialogContent>
-      <DialogActions><Button onClick={onClose} disabled={saving || extracting}>Cancelar</Button><Button variant="contained" disabled={saving || extracting || selectedIds.size === 0} onClick={() => void save()}>{saving ? "Guardando..." : editingSupplierQuoteId ? "Guardar cambios" : `Guardar ${selectedIds.size} propuesta(s)`}</Button></DialogActions>
+      <DialogActions><Button onClick={onClose} disabled={saving || extracting}>Cancelar</Button><Button variant="contained" disabled={saving || extracting || selectedIds.size === 0} onClick={() => void save()}>{saving ? "Guardando..." : activeBuyerQuoteId ? "Guardar cambios" : sellerReferenceQuoteId ? "Guardar revisión de Compras" : `Guardar ${selectedIds.size} propuesta(s)`}</Button></DialogActions>
       <Dialog open={attachmentsOpen} onClose={() => setAttachmentsOpen(false)} fullWidth maxWidth="md">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Cotizaciones del proveedor</DialogTitle>
         <DialogContent dividers>

@@ -68,7 +68,6 @@ export const RequisitionPaperCard = ({ requisition, canEditDocument, canEditOffe
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canEditDocument && <Button size="small" variant="outlined" startIcon={<Pencil size={15} />} onClick={() => { setForm(initialDocument(requisition)); setEditing(true); }}>Referencias</Button>}
-          {sellerCount > 0 && <Button size="small" variant="outlined" startIcon={<FileDown size={15} />} disabled={Boolean(exporting)} onClick={() => void exportPdf("COTIZACION")}>PDF cotización</Button>}
           {purchasingCount > 0 && <Button size="small" variant="outlined" startIcon={<FileDown size={15} />} disabled={Boolean(exporting)} onClick={() => void exportPdf("REQUISICION")}>PDF solicitud a Compras</Button>}
         </div>
       </div>

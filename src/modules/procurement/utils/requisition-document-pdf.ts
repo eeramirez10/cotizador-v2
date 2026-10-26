@@ -5,7 +5,10 @@ export type RequisitionDocumentKind = "COTIZACION" | "REQUISICION";
 
 const fileName = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, "_");
 
-export const downloadRequisitionDocument = async (requisition: PurchaseRequisition, kind: RequisitionDocumentKind) => {
+export const requisitionDocumentFileName = (requisitionNumber: string, kind: RequisitionDocumentKind) =>
+  `${kind === "COTIZACION" ? "Solicitud-Cotizacion" : "Requisicion-Compra"}-${fileName(requisitionNumber)}.pdf`;
+
+const buildRequisitionDocument = async (requisition: PurchaseRequisition, kind: RequisitionDocumentKind) => {
   const items = requisition.items.filter((item) => item.quotationOwner === (kind === "COTIZACION" ? "SELLER" : "PURCHASING"));
   if (items.length === 0) throw new Error("No hay partidas para este documento.");
   const { jsPDF } = await import("jspdf");
@@ -114,7 +117,14 @@ export const downloadRequisitionDocument = async (requisition: PurchaseRequisiti
   pdf.text(`Compras: ${requisition.assignedBuyer?.fullName || "Pendiente"}`, right - 220, pageHeight - 44);
   pdf.setFontSize(7);
   pdf.text("Documento generado por el sistema. Las lineas anteriores son espacios para firma; no implican firma electronica.", left, pageHeight - 22);
-  pdf.save(`${kind === "COTIZACION" ? "Solicitud-Cotizacion" : "Requisicion-Compra"}-${fileName(requisition.requisitionNumber)}.pdf`);
+  return pdf;
+};
+
+export const createRequisitionDocumentBlob = async (requisition: PurchaseRequisition, kind: RequisitionDocumentKind): Promise<Blob> =>
+  (await buildRequisitionDocument(requisition, kind)).output("blob");
+
+export const downloadRequisitionDocument = async (requisition: PurchaseRequisition, kind: RequisitionDocumentKind) => {
+  (await buildRequisitionDocument(requisition, kind)).save(requisitionDocumentFileName(requisition.requisitionNumber, kind));
 };
 
 export const downloadSupplierRequisition = async (requisition: PurchaseRequisition, document: SupplierRequisition) => {

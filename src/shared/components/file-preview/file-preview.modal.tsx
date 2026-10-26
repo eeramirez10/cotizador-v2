@@ -18,14 +18,14 @@ export const FilePreviewModal = ({
   file: PreviewableFile | null;
   onClose: () => void;
   getBlob: (file: PreviewableFile) => Promise<Blob>;
-  downloadFile: (file: PreviewableFile) => Promise<void>;
+  downloadFile?: (file: PreviewableFile) => Promise<void>;
 }) => {
   const { preview, loading, error } = useFilePreview({ file, getBlob });
   const [downloading, setDownloading] = useState(false);
   const colors = FilePreviewService.colors(file || { id: "", originalName: "", mimeType: "" });
 
   const download = async () => {
-    if (!file) return;
+    if (!file || !downloadFile) return;
     setDownloading(true);
     try {
       await downloadFile(file);
@@ -82,9 +82,11 @@ export const FilePreviewModal = ({
           </DialogContent>
           <DialogActions sx={{ px: 2, py: 1.25 }}>
             <Button onClick={onClose} color="inherit">Cerrar</Button>
-            <Button variant="contained" onClick={() => void download()} disabled={downloading} startIcon={downloading ? <CircularProgress size={15} color="inherit" /> : <Download size={16} />} sx={{ bgcolor: "#172033", "&:hover": { bgcolor: "#26334d" } }}>
-              Descargar original
-            </Button>
+            {downloadFile && (
+              <Button variant="contained" onClick={() => void download()} disabled={downloading} startIcon={downloading ? <CircularProgress size={15} color="inherit" /> : <Download size={16} />} sx={{ bgcolor: "#172033", "&:hover": { bgcolor: "#26334d" } }}>
+                Descargar original
+              </Button>
+            )}
           </DialogActions>
         </>
       )}

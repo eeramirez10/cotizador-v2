@@ -1,10 +1,12 @@
 import { useState } from "react";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import { Check, ChevronLeft, ExternalLink, Link2, Paperclip, Pencil, Plus } from "lucide-react";
 import { NavLink } from "react-router";
 import type { Currency, PurchaseRequisition, RequisitionItem } from "../../modules/procurement/services/purchase-requisitions.service";
 import type { FileAttachment } from "../../modules/attachments/services/attachments.service";
 import { sellerCostSourceLabel } from "../../modules/quotes/utils/seller-cost-source";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
+import { ErpProductDraftDialog } from "./erp-product-draft.dialog";
 
 const money = (value: number, currency: Currency) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
@@ -38,6 +40,7 @@ export const RequisitionItemPage = ({
   onDownloadAttachment, onDeleteAttachment, onBack, onEdit, onLinkErp, onOffer, onSelect, onAllocate,
 }: RequisitionItemPageProps) => {
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [erpDraftOpen, setErpDraftOpen] = useState(false);
   const selectedOffer = item.offers.find((offer) => offer.isSelected);
   const itemFiles = attachments.filter((file) =>
     (file.category === "SELLER_SUPPLIER_QUOTE" && Boolean(item.quoteClientItemId && file.clientItemIds.includes(item.quoteClientItemId)))
@@ -47,7 +50,7 @@ export const RequisitionItemPage = ({
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
+      <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-amber-800">
             <ChevronLeft className="h-4 w-4" />Volver a {requisition.requisitionNumber}
@@ -56,33 +59,37 @@ export const RequisitionItemPage = ({
           <h2 className="mt-1 max-w-4xl text-xl font-semibold leading-snug text-slate-950">{item.customerDescription || item.description}</h2>
           <p className="mt-2 text-xs text-slate-500">{item.qty} {item.unit} · {item.erpCode || "Producto local sin código ERP"} · {requisition.customerName}</p>
         </div>
-        <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
-          Ver {requisition.quoteNumber}<ExternalLink className="h-3.5 w-3.5" />
-        </NavLink>
+        <div className="flex flex-wrap items-center gap-2 lg:max-w-[640px] lg:justify-end">
+          <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+            Ver {requisition.quoteNumber}<ExternalLink className="h-3.5 w-3.5" />
+          </NavLink>
+          {itemFiles.length > 0 && (
+            <button type="button" onClick={() => setAttachmentsOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+              <Paperclip className="h-3.5 w-3.5" />Archivos de la partida ({itemFiles.length})
+            </button>
+          )}
+          {item.source === "LOCAL_NEW" && (
+            <button type="button" onClick={() => setErpDraftOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+              <Inventory2OutlinedIcon sx={{ fontSize: 16 }} />Ficha de alta ERP
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" disabled={busy} onClick={() => onEdit(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              <Pencil className="h-3.5 w-3.5" />Completar
+            </button>
+          )}
+          {canBuy && item.source === "LOCAL_NEW" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
+            <button type="button" disabled={busy} onClick={() => onLinkErp(item)} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+              <Link2 className="h-3.5 w-3.5" />{item.erpCode ? "Cambiar ERP" : "Vincular ERP"}
+            </button>
+          )}
+          {canBuy && requisition.status !== "DRAFT" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
+            <button type="button" disabled={busy} onClick={() => onOffer(item)} className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-300 disabled:opacity-50">
+              <Plus className="h-3.5 w-3.5" />Propuesta
+            </button>
+          )}
+        </div>
       </header>
-
-      <div className="flex flex-wrap gap-2">
-        {itemFiles.length > 0 && (
-          <button type="button" onClick={() => setAttachmentsOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
-            <Paperclip className="h-3.5 w-3.5" />Archivos de la partida ({itemFiles.length})
-          </button>
-        )}
-        {canEdit && (
-          <button type="button" disabled={busy} onClick={() => onEdit(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <Pencil className="h-3.5 w-3.5" />Completar
-          </button>
-        )}
-        {canBuy && item.source === "LOCAL_NEW" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
-          <button type="button" disabled={busy} onClick={() => onLinkErp(item)} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
-            <Link2 className="h-3.5 w-3.5" />{item.erpCode ? "Cambiar ERP" : "Vincular ERP"}
-          </button>
-        )}
-        {canBuy && requisition.status !== "DRAFT" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
-          <button type="button" disabled={busy} onClick={() => onOffer(item)} className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-300 disabled:opacity-50">
-            <Plus className="h-3.5 w-3.5" />Propuesta
-          </button>
-        )}
-      </div>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3"><h3 className="text-sm font-semibold text-slate-900">Material y condiciones</h3></div>
@@ -148,6 +155,18 @@ export const RequisitionItemPage = ({
           </p>
         )}
       </section>
+
+      {item.source === "LOCAL_NEW" && (
+        <ErpProductDraftDialog
+          requisitionId={requisition.id}
+          item={item}
+          branchCode={requisition.branchCode}
+          branchName={requisition.branchName}
+          editable={Boolean(!item.erpLinkedAt && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (canBuy || (role === "SELLER" && requisition.status === "DRAFT" && requisition.requestedByUserId === currentUserId)))}
+          open={erpDraftOpen}
+          onClose={() => setErpDraftOpen(false)}
+        />
+      )}
 
       {attachmentsOpen && (
         <AttachmentsModal

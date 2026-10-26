@@ -5,9 +5,11 @@ import {
   ChevronRight,
   ClipboardList,
   ExternalLink,
+  FileText,
   Loader2,
   PackageCheck,
   Paperclip,
+  Pencil,
   Search,
   Send,
   Trash2,
@@ -31,6 +33,7 @@ import {
   type UpdateRequisitionDocumentInput,
 } from "../../modules/procurement/services/purchase-requisitions.service";
 import { RequisitionPaperCard } from "./requisition-paper-card";
+import { createRequisitionDocumentBlob, requisitionDocumentFileName } from "../../modules/procurement/utils/requisition-document-pdf";
 import { RequisitionItemPage } from "./requisition-item.page";
 import { requisitionSupplierSummary } from "../../modules/procurement/utils/requisition-supplier-display";
 import {
@@ -50,6 +53,7 @@ import { useRequisitionAttachments } from "../../queries/attachments/use-attachm
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
 import { AttachmentsPanel } from "../../shared/components/attachments/attachments-panel";
 import { PdfAttachmentViewerModal } from "../../shared/components/attachments/pdf-attachment-viewer.modal";
+import { FilePreviewModal } from "../../shared/components/file-preview/file-preview.modal";
 import { AttachmentsService, type FileAttachment } from "../../modules/attachments/services/attachments.service";
 import { TechnicalDataService } from "../../modules/procurement/services/technical-data.service";
 import { SelectOrCreateSupplierModal } from "../../shared/components/modals/select-or-create-supplier.modal";
@@ -173,13 +177,13 @@ export const PurchaseRequisitionsPage = () => {
   const [offerItem, setOfferItem] = useState<RequisitionItem | null>(null);
   const [currentOfferForm, setCurrentOfferForm] = useState<OfferForm | null>(null);
   const [offerAttachmentFile, setOfferAttachmentFile] = useState<File | null>(null);
-  const [showOfferAttachmentModal, setShowOfferAttachmentModal] = useState(false);
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [sellerProcurementItemId, setSellerProcurementItemId] = useState<string | null>(null);
   const [showSellerBulkProcurement, setShowSellerBulkProcurement] = useState(false);
   const [showBuyerBulkOffers, setShowBuyerBulkOffers] = useState(false);
   const [editingBuyerQuoteId, setEditingBuyerQuoteId] = useState<string | null>(null);
+  const [sellerReferenceQuoteId, setSellerReferenceQuoteId] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [supplierInitialValues, setSupplierInitialValues] = useState<Partial<SaveSupplierInput> | undefined>();
@@ -516,24 +520,6 @@ export const PurchaseRequisitionsPage = () => {
     }
   };
 
-  const attachPurchaseOfferFile = async (file: File, offerIds: string[]) => {
-    if (!requisition) return false;
-    const toast = notifier.loading("Guardando archivo de propuestas...");
-    try {
-      await AttachmentsService.uploadPurchaseOffer(requisition.id, offerIds, file);
-      await requisitionAttachments.refetch();
-      if (toast !== undefined) notifier.update(toast, "success", "Archivo ligado a las propuestas seleccionadas.");
-      else notifier.success("Archivo ligado a las propuestas seleccionadas.");
-      setShowOfferAttachmentModal(false);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo guardar el archivo.";
-      if (toast !== undefined) notifier.update(toast, "error", message);
-      else notifier.error(message);
-      return false;
-    }
-  };
-
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
@@ -646,10 +632,13 @@ export const PurchaseRequisitionsPage = () => {
               busyAttachmentId={busyAttachmentId}
               onDownloadAttachment={(file) => { void downloadAttachment(file); }}
               onDeleteAttachment={(file) => { void deleteAttachment(file); }}
-              onAttachOffers={() => setShowOfferAttachmentModal(true)}
               onBulkSellerReference={() => setShowSellerBulkProcurement(true)}
-              onBulkBuyerOffers={() => { setEditingBuyerQuoteId(null); setShowBuyerBulkOffers(true); }}
-              onEditSupplierReference={(supplierQuoteId) => { setEditingBuyerQuoteId(supplierQuoteId); setShowBuyerBulkOffers(true); }}
+              onBulkBuyerOffers={() => { setEditingBuyerQuoteId(null); setSellerReferenceQuoteId(null); setShowBuyerBulkOffers(true); }}
+              onEditSupplierReference={(supplierQuoteId, source) => {
+                setEditingBuyerQuoteId(source === "PURCHASING" ? supplierQuoteId : null);
+                setSellerReferenceQuoteId(source === "SELLER" ? supplierQuoteId : null);
+                setShowBuyerBulkOffers(true);
+              }}
               onBack={() => navigate(backTo)}
               onOpenItem={(item) => navigate(`/procurement/${requisition.id}/items/${item.id}`, { state: { returnTo: backTo } })}
               onBackToRequisition={() => navigate(`/procurement/${requisition.id}`, { state: { returnTo: backTo } })}
@@ -669,7 +658,9 @@ export const PurchaseRequisitionsPage = () => {
               onSelect={(itemId, offerId) => run(
                 "Seleccionando propuesta...",
                 () => mutations.selectOffer.mutateAsync({ id: requisition.id, itemId, offerId }),
-                "Propuesta seleccionada.",
+                requisition.items.find((item) => item.id === itemId)?.source === "LOCAL_NEW"
+                  ? "Cotización aplicada. La ficha ERP quedó preparada para revisión; aún no se ha dado de alta en Proscai."
+                  : "Propuesta seleccionada.",
               )}
               onAllocate={(itemId, allocations) => run(
                 "Repartiendo partida...",
@@ -762,10 +753,11 @@ export const PurchaseRequisitionsPage = () => {
       {showBuyerBulkOffers && requisition && (
         <Suspense fallback={<Dialog open><DialogTitle>Cargando captura por lotes...</DialogTitle></Dialog>}>
           <PurchaseOffersBatchModal
-            key={editingBuyerQuoteId || "new"}
+            key={`${editingBuyerQuoteId || "new"}:${sellerReferenceQuoteId || "none"}`}
             requisition={requisition}
             editingSupplierQuoteId={editingBuyerQuoteId}
-            onClose={() => { setShowBuyerBulkOffers(false); setEditingBuyerQuoteId(null); }}
+            sellerReferenceQuoteId={sellerReferenceQuoteId}
+            onClose={() => { setShowBuyerBulkOffers(false); setEditingBuyerQuoteId(null); setSellerReferenceQuoteId(null); }}
             onSaved={() => { void detail.refetch(); void requisitionAttachments.refetch(); }}
           />
         </Suspense>
@@ -798,14 +790,6 @@ export const PurchaseRequisitionsPage = () => {
           }}
           onClose={() => { setOfferItem(null); setCurrentOfferForm(null); setOfferAttachmentFile(null); }}
           onSubmit={saveOffer}
-        />
-      )}
-      {showOfferAttachmentModal && requisition && (
-        <PurchaseOfferAttachmentModal
-          requisition={requisition}
-          busy={Boolean(busyAttachmentId)}
-          onClose={() => setShowOfferAttachmentModal(false)}
-          onSubmit={attachPurchaseOfferFile}
         />
       )}
       {supplierOpen && (
@@ -855,7 +839,6 @@ const RequisitionDetail = ({
   busyAttachmentId,
   onDownloadAttachment,
   onDeleteAttachment,
-  onAttachOffers,
   onBulkSellerReference,
   onBulkBuyerOffers,
   onEditSupplierReference,
@@ -895,10 +878,9 @@ const RequisitionDetail = ({
   busyAttachmentId: string | null;
   onDownloadAttachment: (file: FileAttachment) => void;
   onDeleteAttachment: (file: FileAttachment) => void;
-  onAttachOffers: () => void;
   onBulkSellerReference: () => void;
   onBulkBuyerOffers: () => void;
-  onEditSupplierReference: (supplierQuoteId: string) => void;
+  onEditSupplierReference: (supplierQuoteId: string, source: "SELLER" | "PURCHASING") => void;
   onBack: () => void;
   onOpenItem: (item: RequisitionItem) => void;
   onBackToRequisition: () => void;
@@ -923,7 +905,6 @@ const RequisitionDetail = ({
   onDelete?: () => void;
 }) => {
   const sellerDraft = role === "SELLER" && requisition.status === "DRAFT";
-  const hasOffers = requisition.items.some((item) => item.offers.length > 0);
   const purchasingQuotes = [...new Map(requisition.items.flatMap((item) => item.offers
     .filter((offer) => offer.source === "PURCHASING" && offer.supplierQuoteId)
     .map((offer) => [offer.supplierQuoteId!, offer] as const))).entries()].map(([id, offer]) => ({
@@ -932,6 +913,16 @@ const RequisitionDetail = ({
         .filter((entry) => entry.source === "PURCHASING" && entry.supplierQuoteId === id)
         .map((entry) => ({ item, offer: entry }))),
     }));
+  const sellerQuotes = [...new Map(requisition.items.flatMap((item) => item.offers
+    .filter((offer) => offer.source === "SELLER" && offer.supplierQuoteId)
+    .map((offer) => [offer.supplierQuoteId!, offer] as const))).entries()].map(([id, offer]) => ({
+      id, offer,
+      lines: requisition.items.flatMap((item) => item.offers
+        .filter((entry) => entry.source === "SELLER" && entry.supplierQuoteId === id)
+        .map((entry) => ({ item, offer: entry }))),
+    }));
+  const editableQuotes = [...purchasingQuotes.map((entry) => ({ ...entry, source: "PURCHASING" as const })),
+    ...sellerQuotes.map((entry) => ({ ...entry, source: "SELLER" as const }))];
   const localReadyForSupplierDocument = (item: RequisitionItem) => localPurchaseWithoutErpCodeEnabled
     && item.source === "LOCAL_NEW"
     && !item.erpCode?.trim()
@@ -946,9 +937,23 @@ const RequisitionDetail = ({
     clientItemId?: string;
     position?: number;
   } | null>(null);
+  const [quotePreviewOpen, setQuotePreviewOpen] = useState(false);
+  const quotePreviewFile = useMemo(() => ({
+    id: `${requisition.id}-quotation-preview`,
+    originalName: requisitionDocumentFileName(requisition.requisitionNumber, "COTIZACION"),
+    mimeType: "application/pdf",
+  }), [requisition.id, requisition.requisitionNumber]);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [editReferencePickerOpen, setEditReferencePickerOpen] = useState(false);
   const [selectedBuyerId, setSelectedBuyerId] = useState("");
+  const canEditBuyerReferences = canBuy && editableQuotes.length > 0
+    && !requisition.supplierRequisitions?.length
+    && !["DRAFT", "COMPLETED", "CANCELLED"].includes(requisition.status);
+  const openBuyerReferenceEditor = () => {
+    if (editableQuotes.length === 1) onEditSupplierReference(editableQuotes[0].id, editableQuotes[0].source);
+    else setEditReferencePickerOpen(true);
+  };
   const visibleAttachments = attachmentView?.type === "SELLER_ITEM"
     ? attachments.filter((file) => file.category === "SELLER_SUPPLIER_QUOTE"
       && Boolean(attachmentView.clientItemId)
@@ -987,20 +992,28 @@ const RequisitionDetail = ({
     <div className="flex h-full min-h-[650px] flex-col">
       <header className="border-b border-slate-200 px-5 py-4">
         <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 rounded-md text-xs font-semibold text-slate-600 hover:text-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"><ChevronLeft className="h-4 w-4" />Volver a requisiciones</button>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-slate-950">{requisition.requisitionNumber}</h2>
               <StatusBadge status={requisition.status} />
             </div>
             <p className="mt-1 text-sm text-slate-600">{requisition.customerName}</p>
-            <p className="mt-1 text-sm font-medium text-amber-800">Proveedor: {requisitionSupplierSummary(requisition.items, requisition.supplierName)}</p>
-            <p className="mt-1 text-xs text-slate-500">{requisition.branchName} · Solicitó {requisition.requestedBy.fullName}</p>
+            {(selectedCosts.MXN > 0 || selectedCosts.USD > 0) && (
+              <p className="mt-2 text-xs text-slate-600">
+                Compra seleccionada: <span className="font-semibold text-slate-800">{[selectedCosts.MXN > 0 && money(selectedCosts.MXN, "MXN"), selectedCosts.USD > 0 && money(selectedCosts.USD, "USD")].filter(Boolean).join(" · ")}</span>
+              </p>
+            )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+          <div className="flex flex-wrap items-center gap-2 lg:max-w-[640px] lg:justify-end">
+            <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">
               Ver {requisition.quoteNumber}<ExternalLink className="h-3.5 w-3.5" />
             </NavLink>
+            {requisition.items.some((item) => item.quotationOwner === "SELLER") && (
+              <button type="button" onClick={() => setQuotePreviewOpen(true)} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">
+                <FileText className="h-3.5 w-3.5" />PDF cotización
+              </button>
+            )}
             <button type="button" onClick={() => setAttachmentView({ type: "ALL" })} className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
               <Paperclip className="h-3.5 w-3.5" />Expediente ({attachments.length})
             </button>
@@ -1014,21 +1027,22 @@ const RequisitionDetail = ({
                 <PackageCheck className="h-3.5 w-3.5" />Completar propuestas en lote
               </button>
             )}
+            {canEditBuyerReferences && (
+              <button type="button" onClick={openBuyerReferenceEditor} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                <Pencil className="h-3.5 w-3.5" />Editar referencias de proveedor
+              </button>
+            )}
             {canBuy && !["COMPLETED", "CANCELLED"].includes(requisition.status) && buyers.length > 0 && (
               <select
                 value={requisition.assignedBuyerUserId || ""}
                 onChange={(event) => { if (event.target.value) void onAssign(event.target.value); }}
                 disabled={busy}
+                aria-label="Asignar comprador"
                 className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
               >
                 <option value="">Asignar comprador...</option>
                 {buyers.map((buyer) => <option key={buyer.id} value={buyer.id}>{buyer.fullName}</option>)}
               </select>
-            )}
-            {canBuy && hasOffers && (
-              <button type="button" onClick={onAttachOffers} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 disabled:opacity-50">
-                <Paperclip className="h-3.5 w-3.5" />Adjuntar a propuestas
-              </button>
             )}
             {onDelete && (
               <button type="button" onClick={onDelete} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
@@ -1036,12 +1050,6 @@ const RequisitionDetail = ({
               </button>
             )}
           </div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-xs sm:grid-cols-4">
-          <Info label="Comprador" value={requisition.assignedBuyer?.fullName || "Sin asignar"} />
-          <Info label="Destino" value={requisition.deliveryState || "Definido por partida"} />
-          <Info label="Partidas" value={String(requisition.items.length)} />
-          <Info label="Compra seleccionada" value={selectedCosts.MXN || selectedCosts.USD ? [selectedCosts.MXN && money(selectedCosts.MXN, "MXN"), selectedCosts.USD && money(selectedCosts.USD, "USD")].filter(Boolean).join(" · ") : "Pendiente"} />
         </div>
       </header>
 
@@ -1071,7 +1079,7 @@ const RequisitionDetail = ({
                 <p className="mt-1 text-slate-600">{lines.length} partida(s) · {offer.supplierQuote?.reference || "Sin folio del proveedor"}</p>
                 <p className="mt-1 text-slate-500">{lines.filter(({ offer: line }) => line.isSelected).length} adjudicada(s)</p>
               </div>
-              {canBuy && !requisition.supplierRequisitions?.length && !["DRAFT", "COMPLETED", "CANCELLED"].includes(requisition.status) && <Button size="small" variant="outlined" disabled={busy} onClick={() => onEditSupplierReference(id)}>Editar referencia</Button>}
+              {canBuy && !requisition.supplierRequisitions?.length && !["DRAFT", "COMPLETED", "CANCELLED"].includes(requisition.status) && <Button size="small" variant="outlined" disabled={busy} onClick={() => onEditSupplierReference(id, "PURCHASING")}>Editar referencia</Button>}
             </div>)}
           </div>
         </section>}
@@ -1147,6 +1155,24 @@ const RequisitionDetail = ({
         </DialogActions>
       </Dialog>
 
+      <Dialog open={editReferencePickerOpen && canEditBuyerReferences} onClose={() => setEditReferencePickerOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Elegir referencia de proveedor</DialogTitle>
+        <DialogContent dividers>
+          <p className="mb-3 text-sm text-slate-600">Cada proveedor y moneda tiene su propia referencia. Selecciona cuál deseas corregir en la tabla.</p>
+          <div className="space-y-2">
+            {editableQuotes.map(({ id, offer, lines, source }) => (
+              <button key={id} type="button" onClick={() => { setEditReferencePickerOpen(false); onEditSupplierReference(id, source); }}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-left hover:border-amber-400 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">
+                <span className="min-w-0"><span className="block text-sm font-semibold text-slate-900">{offer.supplier.name} · {offer.currency}</span>
+                  <span className="mt-1 block text-xs text-slate-600">{source === "SELLER" ? "Capturada por Ventas" : "Capturada por Compras"} · {lines.length} partida(s) · {offer.supplierQuote?.reference || "Sin folio del proveedor"}</span></span>
+                <Pencil className="h-4 w-4 shrink-0 text-amber-700" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setEditReferencePickerOpen(false)}>Cancelar</Button></DialogActions>
+      </Dialog>
+
       <Dialog open={submitOpen && sellerDraft} onClose={busy ? undefined : () => setSubmitOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Enviar requisición a Compras</DialogTitle>
         <DialogContent dividers className="space-y-4">
@@ -1182,6 +1208,13 @@ const RequisitionDetail = ({
           onClose={() => setAttachmentView(null)}
           onDownload={onDownloadAttachment}
           onDelete={onDeleteAttachment}
+        />
+      )}
+      {quotePreviewOpen && (
+        <FilePreviewModal
+          file={quotePreviewFile}
+          onClose={() => setQuotePreviewOpen(false)}
+          getBlob={() => createRequisitionDocumentBlob(requisition, "COTIZACION")}
         />
       )}
     </div>
@@ -1369,61 +1402,6 @@ const OfferModal = ({ requisition, item, form, setForm, suppliers, brands, origi
   </>;
 };
 
-const PurchaseOfferAttachmentModal = ({ requisition, busy, onClose, onSubmit }: {
-  requisition: PurchaseRequisition;
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (file: File, offerIds: string[]) => Promise<boolean>;
-}) => {
-  const offers = requisition.items.flatMap((item) => item.offers.map((offer) => ({ item, offer })));
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(offers.map(({ offer }) => offer.id)));
-  const [file, setFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const toggle = (offerId: string) => setSelectedIds((current) => {
-    const next = new Set(current);
-    if (next.has(offerId)) next.delete(offerId);
-    else next.add(offerId);
-    return next;
-  });
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!file) return setError("Selecciona el archivo de la propuesta.");
-    if (selectedIds.size === 0) return setError("Selecciona al menos una propuesta.");
-    setSaving(true);
-    setError("");
-    const saved = await onSubmit(file, [...selectedIds]);
-    if (!saved) setSaving(false);
-  };
-
-  return (
-    <Modal title="Adjuntar archivo a propuestas" subtitle="Un mismo archivo se guardará una vez y quedará ligado a todas las propuestas seleccionadas." onClose={onClose}>
-      <form onSubmit={submit}>
-        <label className="block rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-4 text-xs font-semibold text-slate-700">
-          <span className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-amber-700" />Archivo *</span>
-          <input type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp" disabled={saving || busy} onChange={(event) => setFile(event.currentTarget.files?.[0] || null)} className="mt-3 w-full text-xs font-normal file:mr-3 file:rounded-md file:border-0 file:bg-amber-400 file:px-3 file:py-2 file:font-semibold file:text-slate-950" />
-        </label>
-
-        <div className="mt-4 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
-          {offers.map(({ item, offer }) => (
-            <label key={offer.id} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-slate-50">
-              <input type="checkbox" checked={selectedIds.has(offer.id)} disabled={saving || busy} onChange={() => toggle(offer.id)} className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400" />
-              <span className="min-w-0">
-                <span className="block text-xs font-bold text-slate-900">Partida {item.position} · {offer.supplier.name}</span>
-                <span className="block truncate text-[11px] text-slate-500">{item.description} · {money(offer.unitCost, offer.currency)}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>}
-        <ModalActions busy={saving || busy} onClose={onClose} label={`Adjuntar a ${selectedIds.size} propuesta(s)`} />
-      </form>
-    </Modal>
-  );
-};
-
 const Modal = ({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) => (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4">
     <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
@@ -1452,5 +1430,4 @@ const StatusBadge = ({ status }: { status: RequisitionStatus }) => (
   <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold ${STATUS[status].color}`}>{STATUS[status].label}</span>
 );
 
-const Info = ({ label, value }: { label: string; value: string }) => <div><p className="uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 font-semibold text-slate-800">{value}</p></div>;
 const Empty = ({ icon, text, large = false }: { icon: React.ReactNode; text: string; large?: boolean }) => <div className={`flex flex-col items-center justify-center gap-3 text-center text-sm text-slate-500 ${large ? "min-h-[650px]" : "px-6 py-16"}`}><span className="text-slate-400">{icon}</span>{text}</div>;

@@ -3,6 +3,66 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 
 export type Currency = "MXN" | "USD";
+export interface ErpProductDraftData {
+  code?: string;
+  description?: string;
+  extendedDescription?: string;
+  classifications?: Record<string, string>;
+  satCode?: string;
+  productType?: 0 | 1 | 2 | 3 | 4;
+  familyCode?: string;
+  unitCode?: string;
+  ean?: string;
+  upc?: string;
+  supplierProductCode?: string;
+  quotedUnitCost?: number;
+  quotedCurrency?: Currency;
+  salePrice1?: number;
+  salePrice2?: number;
+  salePrice3?: number;
+  saleCurrency1?: Currency;
+  saleCurrency2?: Currency;
+  saleCurrency3?: Currency;
+  minimumStock?: number;
+  maximumStock?: number;
+  location?: string;
+  adValorem?: number;
+  primaryAccount?: string;
+  secondaryAccount?: string;
+  costAccount?: string;
+  notes?: string;
+  erpCurrency?: 1 | 2;
+  weight?: number;
+  noLayers?: boolean;
+  salesProfile?: string;
+  purchaseProfile?: string;
+  ivaType?: 0 | 1 | 2;
+}
+
+export interface ErpProductDraft {
+  data: ErpProductDraftData;
+  updatedAt: string;
+  updatedByUserId: string;
+}
+export interface SatCatalogOption {
+  code: string;
+  description: string;
+  preferred: boolean;
+}
+export interface ErpProductCatalogs {
+  units: Array<{ id: number; code: string; description: string; satCode: string | null; inactive: boolean }>;
+  groups: Array<{
+    code: string;
+    label: string;
+    options: Array<{ code: string; description: string; parentCode: string | null; satCode: string | null }>;
+  }>;
+}
+export interface ErpClassificationSuggestion {
+  group: string;
+  code: string;
+  confidence: number;
+  evidence: string;
+}
 export type RequisitionStatus =
   | "DRAFT"
   | "SUBMITTED"
@@ -189,6 +249,7 @@ export interface PurchaseRequisition {
   quoteCurrency: Currency;
   quoteExchangeRate: number;
   branchId: string;
+  branchCode: string;
   branchName: string;
   branchAddress: string | null;
   branchPhone: string | null;
@@ -369,6 +430,43 @@ const request = async <T>(operation: () => Promise<{ data: T }>, fallback: strin
 };
 
 export class PurchaseRequisitionsService {
+  static getErpProductCatalogs() {
+    return request(
+      () => coreHttpClient.get<ErpProductCatalogs>("/api/erp-product-catalogs", { headers: headers() }),
+      "No se pudieron cargar las unidades y clasificaciones del ERP.",
+    );
+  }
+
+  static suggestErpProductClassifications(description: string) {
+    return request(
+      () => coreHttpClient.post<{ suggestions: ErpClassificationSuggestion[] }>(
+        "/api/erp-product-catalogs/suggest", { description }, { headers: headers() },
+      ),
+      "No se pudieron sugerir las clasificaciones ERP.",
+    );
+  }
+
+  static searchSatCatalog(query: string) {
+    return request(
+      () => coreHttpClient.post<{ items: SatCatalogOption[] }>("/api/sat-catalog/search", { query }, { headers: headers() }),
+      "No se pudo consultar el catálogo SAT.",
+    );
+  }
+
+  static getErpDraft(id: string, itemId: string) {
+    return request(
+      () => coreHttpClient.get<ErpProductDraft | null>(`/api/purchase-requisitions/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/erp-draft`, { headers: headers() }),
+      "No se pudo cargar la ficha ERP.",
+    );
+  }
+
+  static saveErpDraft(id: string, itemId: string, data: ErpProductDraftData) {
+    return request(
+      () => coreHttpClient.put<ErpProductDraft>(`/api/purchase-requisitions/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/erp-draft`, { data }, { headers: headers() }),
+      "No se pudo guardar la ficha ERP.",
+    );
+  }
+
   static list(params: { page: number; pageSize: number; search?: string; status?: RequisitionStatus | "ALL" }) {
     return request(
       () => coreHttpClient.get<PaginatedRequisitions>("/api/purchase-requisitions", {
