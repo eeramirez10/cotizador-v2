@@ -14,12 +14,14 @@ import {
   PurchaseRequisitionsService,
   type ErpProductCatalogs,
   type ErpClassificationSuggestion,
+  type ErpEanSuggestion,
   type ErpProductDraftData,
   type RequisitionItem,
   type SatCatalogOption,
 } from "../../modules/procurement/services/purchase-requisitions.service";
 import { resolveBranchCode } from "../../modules/branches/branch.utils";
 import { notifier } from "../../shared/notifications/notifier";
+import { ErpEanSuggestionPanel } from "./erp-ean-suggestion.panel";
 
 const profiles: Record<string, { primaryAccount: string; salesProfile: string }> = {
   "01": { primaryAccount: "1115001", salesProfile: "VG" },
@@ -39,9 +41,10 @@ const branchDefaults = (branchCode: string, branchName: string): Partial<ErpProd
 
 const draftDefaults = (item: RequisitionItem): ErpProductDraftData => {
   const selected = item.offers.find((offer) => offer.isSelected);
+  const requisitionDescription = item.customerDescription?.trim() || item.description.trim();
   return {
     description: item.description.trim().slice(0, 60),
-    extendedDescription: item.description.trim().slice(0, 4800),
+    extendedDescription: requisitionDescription.slice(0, 4800),
     unitCode: item.unit,
     ean: item.erpEan || undefined,
     productType: 1,
@@ -82,6 +85,7 @@ export const ErpProductDraftDialog = ({ requisitionId, item, branchCode, branchN
     onError: (cause) => notifier.error(cause instanceof Error ? cause.message : "No se pudo guardar la ficha ERP."),
   });
   const fixedValues = branchDefaults(branchCode, branchName);
+  const initialData = draftDefaults(item);
 
   return (
     <Dialog open={open} onClose={mutation.isPending ? undefined : onClose} keepMounted fullWidth maxWidth="md" scroll="paper"
@@ -98,7 +102,7 @@ export const ErpProductDraftDialog = ({ requisitionId, item, branchCode, branchN
         {isPending ? <CircularProgress size={22} /> : error ? <Alert severity="error">No se pudo cargar la ficha ERP. Intenta de nuevo.</Alert> : (
           <ErpProductDraftFields
             key={`${item.id}:${draft?.updatedAt || "new"}`}
-            initial={{ ...draftDefaults(item), ...draft?.data, ...(draft ? { extendedDescription: draft.data.extendedDescription || "" } : {}), ...fixedValues, productType: 1 }}
+            initial={{ ...initialData, ...draft?.data, extendedDescription: draft?.data.extendedDescription?.trim() || initialData.extendedDescription, ...fixedValues, productType: 1 }}
             catalogs={catalogs.data}
             catalogsLoading={catalogs.isPending}
             catalogsError={catalogs.isError}
@@ -136,6 +140,17 @@ const ErpProductDraftFields = ({ initial, catalogs, catalogsLoading, catalogsErr
   const [satOpen, setSatOpen] = useState(false);
   const [satSelection, setSatSelection] = useState<SatCatalogOption | null>(null);
   const [suggestionDetails, setSuggestionDetails] = useState<ErpClassificationSuggestion[]>([]);
+  const [eanSuggestion, setEanSuggestion] = useState<ErpEanSuggestion | null>(null);
+  const [eanOrigin, setEanOrigin] = useState<"" | "NATIONAL" | "IMPORTED">("");
+  const eanMutation = useMutation({
+    mutationFn: (description: string) => PurchaseRequisitionsService.suggestErpEan(description, eanOrigin || undefined),
+    onSuccess: (result) => {
+      setEanSuggestion(result);
+      if (!result.candidate) notifier.info("Revisa el desglose y las referencias del catálogo de México para completar la propuesta.");
+      else if (!result.canApply) notifier.warning("La propuesta requiere revisión; no se aplicó al campo EAN.");
+    },
+    onError: (cause) => notifier.error(cause instanceof Error ? cause.message : "No se pudo sugerir el EAN."),
+  });
   const suggestion = useMutation({
     mutationFn: (description: string) => PurchaseRequisitionsService.suggestErpProductClassifications(description),
     onSuccess: (result) => {
@@ -165,8 +180,9 @@ const ErpProductDraftFields = ({ initial, catalogs, catalogsLoading, catalogsErr
     enabled: tab === 0 && satOpen && satQuery.length >= 2,
     staleTime: 5 * 60_000,
   });
-  const blocked = !editable || saving || suggestion.isPending;
+  const blocked = !editable || saving || suggestion.isPending || eanMutation.isPending;
   const setField = <K extends keyof ErpProductDraftData>(key: K, value: ErpProductDraftData[K]) => {
+    if (key === "description" || key === "extendedDescription") setEanSuggestion(null);
     setData((current) => ({ ...current, [key]: value }));
     setDirty(true);
   };
@@ -249,7 +265,24 @@ const ErpProductDraftFields = ({ initial, catalogs, catalogsLoading, catalogsErr
       </Tabs>
       {tab === 0 && <Box sx={{ display: "grid", gap: 2 }} role="tabpanel" aria-label="General">
         <Box sx={grid}>
-          {textField("ean", "EAN (IEAN)", 120)}
+          <Box sx={{ display: "grid", gap: 1, alignContent: "start" }}>
+            {textField("ean", "EAN (IEAN)", 120)}
+            <TextField label="Origen para sugerir EAN" select size="small" value={eanOrigin} disabled={blocked}
+              onChange={(event) => { setEanOrigin(event.target.value as typeof eanOrigin); setEanSuggestion(null); }} fullWidth>
+              <MenuItem value="">Usar el origen de la descripción</MenuItem>
+              <MenuItem value="NATIONAL">Nacional</MenuItem>
+              <MenuItem value="IMPORTED">Importación</MenuItem>
+            </TextField>
+            <Button variant="outlined" size="small" startIcon={eanMutation.isPending ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+              disabled={blocked || (data.extendedDescription || "").trim().length < 5}
+              onClick={() => {
+                setEanSuggestion(null);
+                eanMutation.mutate((data.extendedDescription || "").trim());
+              }} sx={{ justifySelf: "start", textTransform: "none" }}>
+              {eanMutation.isPending ? "Analizando descripción..." : "Sugerir EAN con IA"}
+            </Button>
+            <Typography variant="caption" color="text.secondary">Usa la descripción extendida. La propuesta no se guarda automáticamente.</Typography>
+          </Box>
           <Box sx={{ display: "grid", gap: 0.5 }}>
             <Autocomplete<SatCatalogOption, false, false, true>
               freeSolo disabled={blocked} open={satOpen} onOpen={() => setSatOpen(true)} onClose={() => setSatOpen(false)}
@@ -285,6 +318,8 @@ const ErpProductDraftFields = ({ initial, catalogs, catalogsLoading, catalogsErr
             <MenuItem value={1}>1 · Pesos (MXN)</MenuItem><MenuItem value={2}>2 · Dólares (USD)</MenuItem>
           </TextField>
         </Box>
+        {eanSuggestion && <ErpEanSuggestionPanel key={eanMutation.submittedAt} suggestion={eanSuggestion}
+          currentEan={data.ean || ""} editable={editable} blocked={blocked} onApply={(ean) => setField("ean", ean)} />}
         <Box sx={grid}>
           {readOnly("Cuenta primaria (ICTA)", data.primaryAccount || "Sin configurar")}
           {readOnly("Cuenta secundaria (ICTADEV)", data.secondaryAccount || "Sin configurar")}

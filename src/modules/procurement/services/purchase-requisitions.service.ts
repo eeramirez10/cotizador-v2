@@ -63,6 +63,23 @@ export interface ErpClassificationSuggestion {
   confidence: number;
   evidence: string;
 }
+export interface ErpEanSuggestion {
+  candidate: string | null;
+  segments: Array<{ label: string; code: string; evidence: string }>;
+  warnings: string[];
+  notices?: string[];
+  attributes: Array<{ key: string; value: string; evidence: string; confidence: number }>;
+  matches: Array<{ code: string; ean: string; description: string; productType: number }>;
+  hasMore: boolean;
+  canApply: boolean;
+  complete: boolean;
+  missingFields: string[];
+  referenceBranch: "01";
+  references: Array<{
+    code: string; ean: string; description: string; family: string; branchCode: "01";
+    agreements: string[]; checks: string[];
+  }>;
+}
 export type RequisitionStatus =
   | "DRAFT"
   | "SUBMITTED"
@@ -443,6 +460,15 @@ export class PurchaseRequisitionsService {
         "/api/erp-product-catalogs/suggest", { description }, { headers: headers() },
       ),
       "No se pudieron sugerir las clasificaciones ERP.",
+    );
+  }
+
+  static suggestErpEan(description: string, origin?: "NATIONAL" | "IMPORTED") {
+    return request(
+      () => coreHttpClient.post<ErpEanSuggestion>(
+        "/api/erp-product-catalogs/suggest-ean", { description, origin }, { headers: headers() },
+      ),
+      "No se pudo sugerir el EAN del producto.",
     );
   }
 

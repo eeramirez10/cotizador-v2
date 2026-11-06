@@ -16,7 +16,20 @@ for (const [key, expectedPath] of [
     throw new Error(`${key} must use HTTPS and the ${expectedPath} staging path`);
   }
 }
-if (env.VITE_ERP_API_URL) {
-  throw new Error("VITE_ERP_API_URL must remain empty until a staging-safe ERP endpoint is configured.");
+const core = new URL(env.VITE_CORE_API_URL);
+for (const key of ["VITE_ERP_API_URL", "VITE_ERP_USERS_API_URL"]) {
+  const url = new URL(env[key]);
+  if (url.origin !== core.origin || url.pathname.replace(/\/$/, "") !== "/cotizador-staging/api/staging/erp") {
+    throw new Error(`${key} must point to the authenticated staging core ERP bridge.`);
+  }
+}
+for (const [key, expected] of [["VITE_ERP_PRODUCTS_BASE_PATH", "/products"],
+  ["VITE_ERP_CUSTOMERS_BASE_PATH", "/customers"], ["VITE_ERP_USERS_BASE_PATH", "/users"]]) {
+  if (env[key] !== expected) throw new Error(`${key} must be ${expected} in staging.`);
+}
+for (const [key, value] of Object.entries(env)) {
+  if (value && /(SECRET|TOKEN|PASSWORD|API_KEY|JWT_SEED)/i.test(key)) {
+    throw new Error(`Do not include server secrets in browser environment variable ${key}.`);
+  }
 }
 console.log("Staging frontend URLs validated.");
