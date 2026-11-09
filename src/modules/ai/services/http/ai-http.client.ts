@@ -3,18 +3,14 @@ import { envs } from "../../../../config/envs";
 import { getAuthToken } from "../../../../store/auth/auth.store";
 import { handleCoreUnauthorizedError } from "../../../core/services/http/core-http.client";
 import { preferApiErrorMessage } from "../../../../shared/utils/api-error-message";
+import { isSameApiBaseUrl } from "../../../../shared/utils/api-base-url";
 
 export const aiHttpClient = axios.create({
   baseURL: envs.AI_API_URL || undefined,
 });
 
-const usesAuthenticatedCoreProxy = (() => {
-  try {
-    return new URL(envs.AI_API_URL).origin === new URL(envs.CORE_API_URL).origin;
-  } catch {
-    return false;
-  }
-})();
+// A shared gateway hostname does not imply a shared authentication boundary.
+const usesAuthenticatedCoreProxy = isSameApiBaseUrl(envs.AI_API_URL, envs.CORE_API_URL);
 
 aiHttpClient.interceptors.request.use((config) => {
   if (!usesAuthenticatedCoreProxy) return config;

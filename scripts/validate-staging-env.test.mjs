@@ -10,7 +10,7 @@ function validate(change = {}) {
   const root = mkdtempSync(resolve(tmpdir(), "staging-frontend-"));
   const core = "https://gateway.example/cotizador-staging";
   const values = {
-    VITE_CORE_API_URL: core, VITE_AI_API_URL: "https://gateway.example/ia-staging",
+    VITE_CORE_API_URL: core, VITE_AI_API_URL: core,
     VITE_ERP_API_URL: `${core}/api/staging/erp`, VITE_ERP_USERS_API_URL: `${core}/api/staging/erp`,
     VITE_ERP_PRODUCTS_BASE_PATH: "/products", VITE_ERP_CUSTOMERS_BASE_PATH: "/customers", VITE_ERP_USERS_BASE_PATH: "/users", ...change,
   };
@@ -21,9 +21,17 @@ function validate(change = {}) {
     return spawnSync(process.execPath, [validator], { cwd: root, encoding: "utf8", env });
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
-test("staging browser uses only staging APIs and authenticated ERP bridge", () => {
+test("staging browser uses authenticated core for AI and ERP", () => {
   const result = validate();
   assert.equal(result.status, 0, result.stderr);
+});
+test("staging browser rejects direct AI access and a different AI gateway", () => {
+  for (const VITE_AI_API_URL of [
+    "https://gateway.example/ia-staging",
+    "https://another-gateway.example/cotizador-staging",
+    "http://ai-api:4700",
+    "https://gateway.example/cotizador",
+  ]) assert.notEqual(validate({ VITE_AI_API_URL }).status, 0);
 });
 test("staging browser rejects production URLs and direct ERP access", () => {
   for (const change of [{ VITE_CORE_API_URL: "https://gateway.example/cotizador" },

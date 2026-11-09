@@ -3,7 +3,7 @@ import { loadEnv } from "vite";
 const env = loadEnv("staging", process.cwd(), "VITE_");
 for (const [key, expectedPath] of [
   ["VITE_CORE_API_URL", "/cotizador-staging"],
-  ["VITE_AI_API_URL", "/ia-staging"],
+  ["VITE_AI_API_URL", "/cotizador-staging"],
 ]) {
   const value = env[key];
   let url;
@@ -17,6 +17,10 @@ for (const [key, expectedPath] of [
   }
 }
 const core = new URL(env.VITE_CORE_API_URL);
+const ai = new URL(env.VITE_AI_API_URL);
+if (ai.origin !== core.origin) {
+  throw new Error("VITE_AI_API_URL must use the same authenticated core staging endpoint as VITE_CORE_API_URL, not the internal AI API.");
+}
 for (const key of ["VITE_ERP_API_URL", "VITE_ERP_USERS_API_URL"]) {
   const url = new URL(env[key]);
   if (url.origin !== core.origin || url.pathname.replace(/\/$/, "") !== "/cotizador-staging/api/staging/erp") {
