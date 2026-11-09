@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { QuoteItemLoadingStatus } from "../../shared/components/quotes/quote-item-loading-status";
 import { Menu, MenuItem } from "@mui/material";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
@@ -1746,7 +1747,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               </tr>
             )}
 
-            {visibleItems.map((item) => {
+            {visibleItems.map((item, index) => {
+              const isCreatingLocal = Boolean(creatingLocalItems[item.id]);
               const marginVisual = getMarginVisual(item.marginPct);
               const reviewIssues = getQuoteItemReviewIssues(item);
               const fulfillment = getQuoteItemFulfillment(item);
@@ -1760,7 +1762,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
               return (
                 <Fragment key={item.id}>
-                <tr className={isCompactView ? "align-middle hover:bg-amber-50/30" : undefined}>
+                {isCreatingLocal && <QuoteItemLoadingStatus colSpan={tableColSpan} position={index + 1} />}
+                <tr aria-busy={isCreatingLocal} inert={isCreatingLocal}
+                  className={isCreatingLocal ? "quote-item--creating" : isCompactView ? "align-middle hover:bg-amber-50/30" : undefined}>
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
                   {shouldShowSecondaryColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>}
                   {shouldShowSecondaryColumns && <td className="px-4 py-2">
@@ -1998,7 +2002,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                   </td>
                 </tr>
                 {isCompactView && openCompactActionsItemId === item.id && (
-                  <tr className="bg-gray-50/90">
+                  <tr inert={isCreatingLocal} className={isCreatingLocal ? "quote-item--creating" : "bg-gray-50/90"}>
                     <td colSpan={tableColSpan} className="border-t border-gray-100 px-3 py-2">
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         <span className="mr-auto text-[10px] font-semibold uppercase tracking-wide text-gray-500">Acciones de la partida</span>
