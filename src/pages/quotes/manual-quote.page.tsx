@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Menu, MenuItem } from "@mui/material";
+import { Checkbox, Menu, MenuItem } from "@mui/material";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
@@ -11,6 +11,8 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { QuoteItemOrderModal } from "../../shared/components/modals/quote-item-order.modal";
+import { QuoteItemsDeleteModal } from "../../shared/components/modals/quote-items-delete.modal";
+import { useQuoteItemSelection } from "./use-quote-item-selection";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
 import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
@@ -438,6 +440,21 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
     return draft.items;
   }, [draft.items, originFilter]);
+  const itemSelection = useQuoteItemSelection({
+    draft,
+    visibleItems,
+    scope: `${draft.id}:${quoteIdFromQuery || "new"}:${originFilter}`,
+    disabled: saving || isExcelFlow,
+    onRemoved: (ids) => {
+      const removed = new Set(ids);
+      const remainingDrafts = (current: Record<string, string>) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => !removed.has(id)));
+      setQtyDrafts(remainingDrafts);
+      setPriceDrafts(remainingDrafts);
+      setMarginDrafts(remainingDrafts);
+      setOpenCompactActionsItemId(null);
+    },
+  });
   const erpTargetItem = useMemo(() => {
     if (!erpTargetItemId) return null;
     return draft.items.find((item) => item.id === erpTargetItemId) ?? null;
@@ -480,7 +497,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [draft.items]);
   const shouldShowCustomerColumns = showCustomerExtractionColumns && showCustomerOrderColumns;
   const shouldShowSecondaryColumns = !isCompactView || showCompactSecondaryColumns;
-  const tableColSpan = 12 + (shouldShowSecondaryColumns ? 2 : 0) + (shouldShowCustomerColumns ? 2 : 0);
+  const tableColSpan = 12 + (shouldShowSecondaryColumns ? 2 : 0) + (shouldShowCustomerColumns ? 2 : 0) + (itemSelection.canRemove ? 1 : 0);
 
   const quoteOrigin = useMemo<"MANUAL" | "FILE_UPLOAD" | "TEXT_INPUT">(() => {
     if (sourceParam === "file") return "FILE_UPLOAD";
@@ -937,6 +954,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       <button
         type="button"
         onClick={() => removeItem(item.id)}
+        disabled={!itemSelection.canRemove || saving}
         className={compactDrawer
           ? "inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
           : "rounded-md border border-gray-300 p-1 text-gray-500 hover:bg-gray-100"}
@@ -1583,7 +1601,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2">
         <div className="flex items-center gap-2 text-xs">
           <button
-            onClick={() => setOriginFilter("ALL")}
+            onClick={() => { if (originFilter !== "ALL") { itemSelection.clearSelection(); setOriginFilter("ALL"); } }}
             className={`rounded-full px-3 py-1 font-semibold ${originFilter === "ALL"
               ? "bg-gray-800 text-white"
               : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
@@ -1592,7 +1610,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             Todas ({draft.items.length})
           </button>
           <button
-            onClick={() => setOriginFilter("UNLINKED")}
+            onClick={() => { if (originFilter !== "UNLINKED") { itemSelection.clearSelection(); setOriginFilter("UNLINKED"); } }}
             className={`rounded-full px-3 py-1 font-semibold ${originFilter === "UNLINKED"
               ? "bg-amber-600 text-white"
               : "border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1602,6 +1620,23 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           </button>
 	        </div>
 	        <div className="flex flex-wrap items-center gap-2">
+	          {itemSelection.canRemove && draft.items.length > 0 && (
+	            <>
+	              {itemSelection.count > 0 && (
+	                <span className="text-xs font-semibold text-gray-600" role="status">{itemSelection.count} seleccionadas</span>
+	              )}
+	              <button type="button" onClick={itemSelection.requestRemoval} disabled={saving || itemSelection.count === 0}
+	                className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
+	                <Trash2 className="h-3.5 w-3.5" /> Eliminar seleccionadas ({itemSelection.count})
+	              </button>
+	              {itemSelection.count > 0 && (
+	                <button type="button" onClick={itemSelection.clearSelection} disabled={saving}
+	                  className="rounded-md px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+	                  Limpiar selección
+	                </button>
+	              )}
+	            </>
+	          )}
 	          {draft.status === "BORRADOR" && draft.items.length > 1 && (
 	            <button
 	              type="button"
@@ -1705,6 +1740,12 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
         <table className={`min-w-full divide-y divide-gray-200 ${isCompactView ? "[&_td]:px-2 [&_td]:py-1.5 [&_td]:text-[11px] [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[9px]" : ""}`}>
           <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_0_#e5e7eb]">
             <tr>
+              {itemSelection.canRemove && <th scope="col" className="w-9 px-2 py-2 text-center">
+                <Checkbox size="small" color="warning" sx={{ p: 0.5 }} checked={itemSelection.allVisibleSelected}
+                  indeterminate={itemSelection.someVisibleSelected} disabled={saving || visibleItems.length === 0}
+                  onChange={(_, checked) => itemSelection.selectVisible(checked)}
+                  slotProps={{ input: { "aria-label": "Seleccionar todas las partidas visibles" } }} />
+              </th>}
               <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código ERP</th>
               {shouldShowSecondaryColumns && <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>}
               {shouldShowSecondaryColumns && <th className="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500">Origen</th>}
@@ -1760,7 +1801,12 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
               return (
                 <Fragment key={item.id}>
-                <tr className={isCompactView ? "align-middle hover:bg-amber-50/30" : undefined}>
+                <tr className={`${isCompactView ? "align-middle " : ""}${itemSelection.selectedSet.has(item.id) ? "bg-rose-50/60" : isCompactView ? "hover:bg-amber-50/30" : ""}`}>
+                  {itemSelection.canRemove && <td className="w-9 px-2 py-2 text-center">
+                    <Checkbox size="small" color="warning" sx={{ p: 0.5 }} checked={itemSelection.selectedSet.has(item.id)}
+                      disabled={saving} onChange={(_, checked) => itemSelection.toggleItem(item.id, checked)}
+                      slotProps={{ input: { "aria-label": `Seleccionar partida: ${item.customerDescription || item.erpDescription || item.erpCode || "Sin descripción"}` } }} />
+                  </td>}
                   <td className="px-4 py-2 text-xs font-semibold text-gray-700">{item.erpCode || "-"}</td>
                   {shouldShowSecondaryColumns && <td className="px-4 py-2 text-xs text-gray-700">{item.ean || "-"}</td>}
                   {shouldShowSecondaryColumns && <td className="px-4 py-2">
@@ -2065,6 +2111,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             </div>
           </div>
         </div>
+      )}
+
+      {itemSelection.confirmationOpen && (
+        <QuoteItemsDeleteModal open items={itemSelection.itemsToRemove}
+          totalItems={draft.items.length} disabled={saving} onClose={itemSelection.closeConfirmation} onConfirm={itemSelection.confirmRemoval} />
       )}
 
       {showOrderModal && (

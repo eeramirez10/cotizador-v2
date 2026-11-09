@@ -12,6 +12,7 @@ import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
 import { getQuoteItemEffectiveCost } from "../../modules/quotes/utils/quote-fulfillment";
 import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
+import { canRemoveQuoteItems, removeQuoteItems } from "../../modules/quotes/utils/quote-item-selection";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type SellerCostSource = "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
@@ -246,6 +247,7 @@ interface ManualQuoteState {
   setItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
   addItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
   removeItem: (itemId: string) => void;
+  removeItems: (itemIds: readonly string[]) => void;
   setItemQty: (itemId: string, qty: number) => void;
   setItemMargin: (itemId: string, marginPct: number) => void;
   setItemUnitPrice: (itemId: string, unitPrice: number) => void;
@@ -838,6 +840,13 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         items: state.draft.items.filter((item) => item.id !== itemId),
       },
     })),
+
+  removeItems: (itemIds) =>
+    set((state) => {
+      if (!canRemoveQuoteItems(state.draft)) return state;
+      const items = removeQuoteItems(state.draft.items, itemIds);
+      return items === state.draft.items ? state : { draft: { ...state.draft, items } };
+    }),
 
   setItemQty: (itemId, qty) =>
     set((state) => ({
