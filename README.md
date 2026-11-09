@@ -1,5 +1,16 @@
 # React + TypeScript + Vite
 
+## Development workflow
+
+Read [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md) and [AGENTS.md](AGENTS.md)
+before changing this project. Create all work branches from `development` and
+promote through `development -> staging -> main`. Production promotion requires
+approval of the same commits in staging; deployment is manual.
+
+Staging Hosting project: `cotizador-tuvansa-staging`. Production Hosting project:
+`cotizador-tuvansa`. Do not change the default project or publish a staging build
+to production.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
