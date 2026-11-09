@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, Unlink2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, MenuItem } from "@mui/material";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
@@ -11,6 +11,8 @@ import { QuoteExtractionModal } from "../../shared/components/modals/quote-extra
 import { QuotedExcelImportModal } from "../../shared/components/modals/quoted-excel-import.modal";
 import { SelectQuoteProviderModal } from "../../shared/components/modals/select-quote-provider.modal";
 import { QuoteItemOrderModal } from "../../shared/components/modals/quote-item-order.modal";
+import { QuoteItemUnlinkErpModal } from "../../shared/components/modals/quote-item-unlink-erp.modal";
+import { useUnlinkQuoteErp } from "./use-unlink-quote-erp";
 import { LocalProductDedupModal } from "../../shared/components/modals/local-product-dedup.modal";
 import { SellerProcurementBulkPrequoteModal } from "../../shared/components/modals/seller-procurement-bulk-prequote.modal";
 import { SellerProcurementPrequoteModal } from "../../shared/components/modals/seller-procurement-prequote.modal";
@@ -234,9 +236,10 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
+  const requisitionQuoteId = quoteIdFromQuery || draft.savedQuoteId;
   const requisitionsQuery = useQuotePurchaseRequisition(
-    quoteIdFromQuery || undefined,
-    Boolean(quoteIdFromQuery && draft.savedQuoteId === quoteIdFromQuery && draft.captureMethod === "SYSTEM"),
+    requisitionQuoteId || undefined,
+    Boolean(requisitionQuoteId && draft.savedQuoteId === requisitionQuoteId && draft.captureMethod === "SYSTEM"),
   );
   const requisitions = requisitionsQuery.data || [];
   const selectedClientContact = draft.client?.contacts?.find((contact) =>
@@ -438,6 +441,22 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
     return draft.items;
   }, [draft.items, originFilter]);
+  const erpUnlink = useUnlinkQuoteErp({
+    draft, requisitions,
+    checkingRequisitions: Boolean(requisitionQuoteId) && requisitionsQuery.isPending,
+    requisitionsError: requisitionsQuery.isError,
+    disabled: saving || isExcelFlow,
+    onUnlinked: (id) => {
+      const clearInput = (current: Record<string, string>) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      };
+      setPriceDrafts(clearInput);
+      setMarginDrafts(clearInput);
+      setOpenCompactActionsItemId(null);
+    },
+  });
   const erpTargetItem = useMemo(() => {
     if (!erpTargetItemId) return null;
     return draft.items.find((item) => item.id === erpTargetItemId) ?? null;
@@ -912,6 +931,12 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
       >
         {item.erpCode ? "Cambiar ERP" : "Buscar ERP"}
       </button>
+      {erpUnlink.canUnlink(item) && (
+        <button type="button" onClick={() => erpUnlink.requestUnlink(item)} disabled={saving}
+          className="inline-flex items-center gap-1 rounded-md border border-amber-300 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60">
+          <Unlink2 className="h-3.5 w-3.5" /> Desvincular ERP
+        </button>
+      )}
       {!item.erpCode.trim() && !(item.localProductId || "").trim() && (
         <button
           type="button"
@@ -2065,6 +2090,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             </div>
           </div>
         </div>
+      )}
+
+      {erpUnlink.requestItem && (
+        <QuoteItemUnlinkErpModal item={erpUnlink.requestItem} disabled={saving}
+          onClose={erpUnlink.close} onConfirm={erpUnlink.confirmUnlink} />
       )}
 
       {showOrderModal && (
