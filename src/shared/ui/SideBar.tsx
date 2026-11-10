@@ -52,6 +52,7 @@ export const SideBar = () => {
     ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Indicadores", to: "/analytics", icon: <BarChart3 /> }] : []),
     ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Clientes", to: "/clients", icon: <ContactRound /> }] : []),
     ...(canAccessCommercial && role !== "credit_collections" ? [{ name: "Productos", to: "/products", icon: <Package /> }] : []),
+    { name: "Inventario ERP", to: "/inventory/erp", icon: <Warehouse /> },
     ...(canAccessProcurement ? [{ name: "Proveedores", to: "/suppliers", icon: <Truck /> }] : []),
     ...(canAccessProcurement ? [{ name: "Requisiciones", to: "/procurement", icon: <ShoppingCart /> }] : []),
     ...(canAccessBranches ? [{ name: "Sucursales", to: "/branches", icon: <Building2 /> }] : []),

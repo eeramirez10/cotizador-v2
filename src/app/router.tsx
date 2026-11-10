@@ -146,6 +146,14 @@ export const appRouter = createBrowserRouter([
         Component: ProductsPage,
       },
       {
+        path: "inventory/erp",
+        handle: { title: "Inventario ERP" },
+        lazy: async () => {
+          const { ErpInventoryPage } = await import("../pages/inventory/erp-inventory.page");
+          return { Component: ErpInventoryPage };
+        },
+      },
+      {
         path: "branches",
         loader: requireRolesLoader(["admin"]),
         handle: { title: "Sucursales" },
