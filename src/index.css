@@ -11,6 +11,25 @@ body {
   display: none;
 }
 
+.quote-item--creating {
+  background-color: var(--color-amber-50);
+  background-image: linear-gradient(100deg, transparent 30%, var(--color-amber-100) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: quote-item-creating 1.8s linear infinite;
+}
+
+@keyframes quote-item-creating {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quote-item--creating {
+    animation: none;
+    background-image: none;
+  }
+}
+
 @media print {
   @page {
     size: Letter;

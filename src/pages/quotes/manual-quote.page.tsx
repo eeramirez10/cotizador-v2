@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, Unlink2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Menu, MenuItem } from "@mui/material";
+import { QuoteItemLoadingStatus } from "../../shared/components/quotes/quote-item-loading-status";
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
@@ -1812,7 +1813,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               </tr>
             )}
 
-            {visibleItems.map((item) => {
+            {visibleItems.map((item, index) => {
+              const isCreatingLocal = Boolean(creatingLocalItems[item.id]);
               const marginVisual = getMarginVisual(item.marginPct);
               const reviewIssues = getQuoteItemReviewIssues(item);
               const fulfillment = getQuoteItemFulfillment(item);
@@ -1826,7 +1828,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
 
               return (
                 <Fragment key={item.id}>
-                <tr className={`${isCompactView ? "align-middle " : ""}${itemSelection.selectedSet.has(item.id) ? "bg-rose-50/60" : isCompactView ? "hover:bg-amber-50/30" : ""}`}>
+                {isCreatingLocal && <QuoteItemLoadingStatus colSpan={tableColSpan} position={index + 1} />}
+                <tr aria-busy={isCreatingLocal} inert={isCreatingLocal}
+                  className={isCreatingLocal ? "quote-item--creating" : `${isCompactView ? "align-middle " : ""}${itemSelection.selectedSet.has(item.id) ? "bg-rose-50/60" : isCompactView ? "hover:bg-amber-50/30" : ""}`}>
                   {itemSelection.canRemove && <td className="w-9 px-2 py-2 text-center">
                     <Checkbox size="small" color="warning" sx={{ p: 0.5 }} checked={itemSelection.selectedSet.has(item.id)}
                       disabled={saving} onChange={(_, checked) => itemSelection.toggleItem(item.id, checked)}
@@ -2069,7 +2073,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
                   </td>
                 </tr>
                 {isCompactView && openCompactActionsItemId === item.id && (
-                  <tr className="bg-gray-50/90">
+                  <tr inert={isCreatingLocal} className={isCreatingLocal ? "quote-item--creating" : "bg-gray-50/90"}>
                     <td colSpan={tableColSpan} className="border-t border-gray-100 px-3 py-2">
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         <span className="mr-auto text-[10px] font-semibold uppercase tracking-wide text-gray-500">Acciones de la partida</span>
