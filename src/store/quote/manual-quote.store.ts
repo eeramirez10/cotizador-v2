@@ -13,6 +13,7 @@ import { getQuoteItemEffectiveCost } from "../../modules/quotes/utils/quote-fulf
 import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
 import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 import { canRemoveQuoteItems, removeQuoteItems } from "../../modules/quotes/utils/quote-item-selection";
+import { canUnlinkQuoteErpProduct, clearQuoteErpLink } from "../../modules/quotes/utils/quote-erp-link";
 
 export type QuoteCurrency = "MXN" | "USD";
 export type SellerCostSource = "ERP_COST" | "SELLER_SUPPLIER_QUOTE" | "PRICE_LIST" | "ESTIMATED";
@@ -238,6 +239,7 @@ interface ManualQuoteState {
   setProvidedBy: (providedBy: QuoteProvider | null) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
+  unlinkErpProductFromItem: (itemId: string) => void;
   assignLocalProductToItem: (
     itemId: string,
     localProduct: LocalProductBatchResultItem["product"]
@@ -737,6 +739,16 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           items: recalcItems(nextItems, state.draft.currency, state.draft.exchangeRate),
         },
       };
+    }),
+
+  unlinkErpProductFromItem: (itemId) =>
+    set((state) => {
+      const target = state.draft.items.find((item) => item.id === itemId);
+      if (!target || !canUnlinkQuoteErpProduct(state.draft, target)) return state;
+      const items = state.draft.items.map((item) => item.id === itemId
+        ? computeItem(clearQuoteErpLink(item), state.draft.currency, state.draft.exchangeRate)
+        : item);
+      return { draft: { ...state.draft, items } };
     }),
 
   assignLocalProductToItem: (itemId, localProduct) =>
