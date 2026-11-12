@@ -7,7 +7,7 @@ import {
 } from "@mui/material";
 import {
   AutorenewRounded, ChatRounded, InfoOutlined, Inventory2Rounded, ReceiptLongRounded,
-  RestartAltRounded, SaveRounded, SettingsSuggestRounded, ShieldOutlined,
+  RestartAltRounded, SaveRounded, SettingsSuggestRounded, ShieldOutlined, WarehouseRounded,
 } from "@mui/icons-material";
 import type {
   ManagedSystemSetting, SystemSettingCategory, SystemSettingKey,
@@ -16,12 +16,14 @@ import {
   useResetSystemSettings, useSystemSettings, useUpdateSystemSettings,
 } from "../../queries/system/use-system-settings";
 import { notifier } from "../../shared/notifications/notifier";
+import { ErpInventorySettingsPanel } from "./erp-inventory-settings.panel";
 
 type DraftValues = Partial<Record<SystemSettingKey, boolean | number>>;
 type PendingAction = "SAVE" | "RESET" | null;
+type SettingsSection = SystemSettingCategory | "ERP_INVENTORY";
 
 const categories: Array<{
-  key: SystemSettingCategory;
+  key: SettingsSection;
   label: string;
   description: string;
   icon: ReactNode;
@@ -29,6 +31,7 @@ const categories: Array<{
   { key: "QUOTES", label: "Cotizaciones", description: "Aprobaciones y métodos de captura", icon: <ReceiptLongRounded /> },
   { key: "PROCUREMENT", label: "Compras", description: "Requisiciones y archivos de pedido", icon: <Inventory2Rounded /> },
   { key: "WHATSAPP", label: "WhatsApp", description: "Bandeja, asistente y control humano", icon: <ChatRounded /> },
+  { key: "ERP_INVENTORY", label: "Inventario ERP", description: "Almacenes visibles para consulta", icon: <WarehouseRounded /> },
 ];
 
 const sameValue = (left: boolean | number | undefined, right: boolean | number) => left === right;
@@ -48,7 +51,7 @@ export const SystemSettingsPage = () => {
   const settingsQuery = useSystemSettings();
   const updateMutation = useUpdateSystemSettings();
   const resetMutation = useResetSystemSettings();
-  const [category, setCategory] = useState<SystemSettingCategory>("QUOTES");
+  const [category, setCategory] = useState<SettingsSection>("QUOTES");
   const [draft, setDraft] = useState<DraftValues>({});
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
@@ -144,7 +147,7 @@ export const SystemSettingsPage = () => {
                 labelId="settings-category-label"
                 label="Área"
                 value={category}
-                onChange={(event) => setCategory(event.target.value as SystemSettingCategory)}
+                onChange={(event) => setCategory(event.target.value as SettingsSection)}
               >
                 {categories.map((item) => <MenuItem key={item.key} value={item.key}>{item.label}</MenuItem>)}
               </Select>
@@ -182,7 +185,7 @@ export const SystemSettingsPage = () => {
           </Box>
         </Paper>
 
-        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", minWidth: 0 }}>
+        {category === "ERP_INVENTORY" ? <ErpInventorySettingsPanel /> : <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", minWidth: 0 }}>
           <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={2} sx={{ px: { xs: 2, md: 3 }, py: 2.5 }}>
             <Box>
               <Typography variant="h6" fontWeight={750}>{currentCategory.label}</Typography>
@@ -299,7 +302,7 @@ export const SystemSettingsPage = () => {
               </Stack>
             )}
           </Box>
-        </Paper>
+        </Paper>}
       </Box>
 
       <Dialog open={pendingAction !== null} onClose={() => !busy && setPendingAction(null)} maxWidth="sm" fullWidth>

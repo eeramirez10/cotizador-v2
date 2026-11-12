@@ -38,8 +38,11 @@ export const ErpInventoryPage = () => {
   useEffect(() => {
     if (warehouseError) notifier.error(warehouseError.message, { id: "erp-inventory-warehouses-error", action: { label: "Reintentar", onClick: () => { void refetchWarehouses(); } } });
   }, [warehouseError, warehouseErrorUpdatedAt, refetchWarehouses]);
-  const result = !searchChanging && !inventory.isError ? inventory.data : undefined;
-  if (result && result.page === filters.page && result.page > Math.max(1, result.totalPages)) {
+  const result = !searchChanging && !inventory.isFetching && !inventory.isError ? inventory.data : undefined;
+  const invalidWarehouse = filters.warehouseCode && warehouses.isSuccess && !warehouses.data.some(({ code }) => code === filters.warehouseCode);
+  if (invalidWarehouse) {
+    setFilters({ ...filters, warehouseCode: "", page: 1 });
+  } else if (result && result.page === filters.page && result.page > Math.max(1, result.totalPages)) {
     setFilters({ ...filters, page: 1 });
   }
   const busy = searchChanging || inventory.isFetching || inventory.isPending;
@@ -69,9 +72,9 @@ export const ErpInventoryPage = () => {
           <TextField label="Buscar por EAN, código o descripción" value={search} size="small" fullWidth
             slotProps={{ htmlInput: { maxLength: 160 }, input: { startAdornment: <Search size={16} aria-hidden="true" style={{ marginRight: 8, flexShrink: 0 }} /> } }}
             onChange={event => { setSearch(event.target.value); changeFilter({}); }} />
-          <TextField select label="Almacén" value={filters.warehouseCode} size="small" sx={{ minWidth: { md: 240 } }}
+          <TextField select label="Almacén" value={warehouses.data?.some(({ code }) => code === filters.warehouseCode) ? filters.warehouseCode : ""} size="small" sx={{ minWidth: { md: 240 } }}
             slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-            disabled={!warehouses.data?.length && (warehouses.isPending || warehouses.isError)} onChange={event => changeFilter({ warehouseCode: event.target.value })}>
+            disabled={!warehouses.data?.length} onChange={event => changeFilter({ warehouseCode: event.target.value })}>
             <MenuItem value="">Todos los almacenes</MenuItem>
             {(warehouses.data || []).map(warehouse => <MenuItem key={warehouse.code} value={warehouse.code}>{warehouse.code} · {warehouse.name}</MenuItem>)}
           </TextField>
@@ -120,7 +123,7 @@ export const ErpInventoryPage = () => {
       </Paper>
       <Typography variant="caption" color="text.secondary" aria-live="polite">
         {result ? `Última consulta: ${new Date(result.fetchedAt).toLocaleString("es-MX")}. ` : ""}
-        Consulta de todos los almacenes. No modifica inventarios ni permisos de cotización.
+        La consulta respeta los almacenes habilitados en Configuración. No modifica inventarios ni permisos de cotización.
       </Typography>
     </Box>
   );

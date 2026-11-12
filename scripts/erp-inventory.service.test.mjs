@@ -16,7 +16,10 @@ const bundled = await build({
     build.onResolve({ filter: /auth\.store$|core-http\.client$/ }, args => ({ path: args.path, namespace: "fixture" }));
     build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({ contents: `
       export const getAuthToken = () => globalThis.${fixtureKey}.token;
-      export const coreHttpClient = { get: (...args) => globalThis.${fixtureKey}.get(...args) };
+      export const coreHttpClient = {
+        get: (...args) => globalThis.${fixtureKey}.get(...args),
+        put: (...args) => globalThis.${fixtureKey}.put(...args),
+      };
     ` }));
   } }],
 });
@@ -66,4 +69,23 @@ test("inventory errors preserve useful server messages and request cancellations
   const cancellation = { __CANCEL__: true };
   globalThis[fixtureKey].get = async () => { throw cancellation; };
   await assert.rejects(ErpInventoryService.list(filters), error => error === cancellation);
+});
+
+test("visibility settings use the authenticated core endpoint and preserve all, empty and selected modes", async () => {
+  const warehouses = [{ code: "06", name: "Cancún" }, { code: "|", name: "Almacén |" }];
+  globalThis[fixtureKey] = { token: "admin", get: async (path, options) => {
+    assert.equal(path, "/api/inventory/erp/settings");
+    assert.deepEqual(options.headers, { Authorization: "Bearer admin" });
+    return { data: { warehouseCodes: null, warehouses } };
+  }, put: async (path, body, options) => {
+    assert.equal(path, "/api/inventory/erp/settings");
+    assert.deepEqual(options.headers, { Authorization: "Bearer admin" });
+    return { data: { ...body, warehouses } };
+  } };
+  assert.deepEqual(await ErpInventoryService.settings(), { warehouseCodes: null, warehouses });
+  for (const warehouseCodes of [null, [], ["06", "|"]]) {
+    assert.deepEqual(await ErpInventoryService.saveSettings(warehouseCodes), { warehouseCodes, warehouses });
+  }
+  globalThis[fixtureKey] = { token: "", put: () => assert.fail("Must not request with no token") };
+  await assert.rejects(ErpInventoryService.saveSettings(null), /Inicia sesión/);
 });

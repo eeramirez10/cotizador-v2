@@ -25,6 +25,11 @@ Sin datos disponibles se mantiene el error con reintento. Todos los codigos
 reales, incluidos ANOID y |, se presentan sin inventar nombres de sucursal.
 En movil los filtros se apilan y la tabla permite scroll horizontal y vertical.
 
+En Configuracion del sistema > Inventario ERP, el administrador puede mostrar
+todos los almacenes (predeterminado) o elegir una lista global. Una seleccion
+vacia oculta todo el inventario. Al guardar se renuevan los datos y opciones
+de la consulta, sin afectar Almacenes ERP ni los permisos para cotizar.
+
 Pruebas: `node --test scripts/*.test.mjs`, lint de los archivos modificados y
 `npm run build:staging`. No hay migraciones, paquetes ni variables nuevas.
 Actualizar primero backend ERP y core, y validar en staging antes de produccion.

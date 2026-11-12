@@ -31,21 +31,34 @@ export interface InventoryPage {
   fetchedAt: string;
 }
 export interface InventoryWarehouse { code: string; name: string }
+export interface InventorySettings {
+  warehouseCodes: string[] | null;
+  warehouses: InventoryWarehouse[];
+}
 
 export const normalizeInventorySearch = (value: string): string => value.normalize("NFC").trim().toUpperCase();
 
-async function get<T>(path: string, signal?: AbortSignal, params?: InventoryFilters): Promise<T> {
+function authHeaders() {
   const token = getAuthToken();
   if (!token) throw new Error("Inicia sesión nuevamente para consultar el inventario.");
+  return { Authorization: `Bearer ${token}` };
+}
+
+function rethrow(error: unknown, fallback: string): never {
+  if (axios.isCancel(error)) throw error;
+  const message = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
+  throw new Error(typeof message === "string" ? message : fallback);
+}
+
+async function get<T>(path: string, signal?: AbortSignal, params?: InventoryFilters): Promise<T> {
+  const headers = authHeaders();
   try {
     const { data } = await coreHttpClient.get<T>(`/api/inventory/erp${path}`, {
-      params, signal, headers: { Authorization: `Bearer ${token}` },
+      params, signal, headers,
     });
     return data;
   } catch (error) {
-    if (axios.isCancel(error)) throw error;
-    const message = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
-    throw new Error(typeof message === "string" ? message : "No se pudo consultar el inventario ERP. Intenta nuevamente.");
+    rethrow(error, "No se pudo consultar el inventario ERP. Intenta nuevamente.");
   }
 }
 
@@ -54,4 +67,14 @@ export const ErpInventoryService = {
     ...filters, query: normalizeInventorySearch(filters.query),
   }),
   warehouses: (signal?: AbortSignal) => get<InventoryWarehouse[]>("/warehouses", signal),
+  settings: (signal?: AbortSignal) => get<InventorySettings>("/settings", signal),
+  saveSettings: async (warehouseCodes: string[] | null): Promise<InventorySettings> => {
+    const headers = authHeaders();
+    try {
+      const { data } = await coreHttpClient.put<InventorySettings>("/api/inventory/erp/settings", { warehouseCodes }, { headers });
+      return data;
+    } catch (error) {
+      rethrow(error, "No se pudo guardar la configuración de inventario ERP.");
+    }
+  },
 };
