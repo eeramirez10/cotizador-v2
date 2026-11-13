@@ -83,6 +83,7 @@ export interface SavedQuoteRecord {
   taxRate: number;
   deliveryPlace: string;
   paymentTerms: string;
+  customerReference?: string | null;
   commercialConditions: string | null;
   validityDays: number;
   sourceChannel: QuoteSourceChannel;
@@ -321,6 +322,7 @@ interface ApiQuote {
   taxRate: number;
   deliveryPlace: string | null;
   paymentTerms: string;
+  customerReference?: string | null;
   commercialConditions: string | null;
   validityDays: number;
   validUntil: string;
@@ -573,6 +575,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     deliveryPlace: apiQuote.deliveryPlace || "L.A.B. OBRA",
     paymentTerms: apiQuote.paymentTerms || "CONTADO",
     commercialConditions: apiQuote.commercialConditions || null,
+    customerReference: apiQuote.customerReference ?? null,
     validityDays: apiQuote.validityDays || 10,
     sourceChannel: apiQuote.sourceChannel || "UNSPECIFIED",
     whatsappLeadId: apiQuote.whatsappLeadId || null,
@@ -637,7 +640,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
       customerDescriptionEditedByUser: item.customerDescriptionEditedByUser,
       customerUnit: item.customerUnit || "",
       erpDescription: item.erpDescription || item.product?.description || "",
-      unit: normalizeMeasurementUnit(item.unit || item.product?.unit) ?? (item.unit || item.product?.unit || ""),
+      unit: item.product?.source === "LOCAL_TEMP" ? item.unit || item.product.unit : normalizeMeasurementUnit(item.unit || item.product?.unit) ?? (item.unit || item.product?.unit || ""),
       qty: item.qty,
       stock: item.stock ?? 0,
       deliveryTime: item.deliveryTime || "Por definir",
@@ -810,7 +813,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     customerDescriptionEditedAt: item.customerDescriptionEditedAt || null,
     customerUnit: item.customerUnit?.trim() ? item.customerUnit.trim() : null,
     erpDescription: erpDescriptionForPayload,
-    unit: normalizeMeasurementUnit(item.unit) ?? "N/A",
+    unit: localProductId ? item.unit : normalizeMeasurementUnit(item.unit) ?? (item.unit?.trim() || "N/A"),
     qty: safeQty,
     stock: Number.isFinite(item.stock) ? item.stock : null,
     deliveryTime: item.deliveryTime?.trim() ? item.deliveryTime.trim() : null,
@@ -1119,6 +1122,7 @@ export class QuotesService {
         deliveryPlace: draft.deliveryPlace,
         paymentTerms: draft.paymentTerms,
         commercialConditions: draft.commercialConditions || null,
+        customerReference: draft.customerReference?.trim() || null,
         validityDays: draft.validityDays,
         origin,
         sourceChannel: draft.sourceChannel,

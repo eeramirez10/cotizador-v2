@@ -1,5 +1,5 @@
 import { Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   LOCAL_PRODUCT_COST_SOURCE_OPTIONS,
@@ -14,7 +14,7 @@ import {
   getLocalProductBrandOptions,
   getLocalProductTechnicalOptions,
 } from "../../modules/products/constants/local-product-technical-options";
-import { MEASUREMENT_UNIT_OPTIONS, MEASUREMENT_UNIT_VALUES, normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
+import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import { type LocalProduct, type UpdateLocalProductInput } from "../../modules/products/services/local-products.service";
 import { useDeleteLocalProduct, useLocalProducts, useUpdateLocalProduct } from "../../queries/products/use-local-products";
 import { notifier } from "../../shared/notifications/notifier";
@@ -32,6 +32,7 @@ interface ProductFormState {
   brand: string;
   technicalAttributes: Record<string, string>;
   unit: string;
+  originalUnit: string;
   currency: "MXN" | "USD";
   averageCost: string;
   lastCost: string;
@@ -52,6 +53,7 @@ const EMPTY_FORM: ProductFormState = {
   brand: "",
   technicalAttributes: {},
   unit: "",
+  originalUnit: "",
   currency: "USD",
   averageCost: "",
   lastCost: "",
@@ -78,7 +80,8 @@ const mapProductToForm = (product: LocalProduct): ProductFormState => ({
   subfamily: product.subfamily || "",
   brand: product.brand || "",
   technicalAttributes: product.technicalAttributes || {},
-  unit: normalizeMeasurementUnit(product.unit) ?? product.unit,
+  unit: product.unit,
+  originalUnit: product.unit,
   currency: product.currency,
   averageCost:
     typeof product.averageCost === "number" && Number.isFinite(product.averageCost)
@@ -151,14 +154,12 @@ export const ProductsPage = () => {
   const totalPages = data?.totalPages || 1;
 
   const canSubmit = Boolean(form.id) && !updateMutation.isPending;
-  const unitOptions = useMemo(() => {
-    if (!form.unit.trim()) return MEASUREMENT_UNIT_OPTIONS;
-    if (MEASUREMENT_UNIT_VALUES.includes(form.unit.trim().toUpperCase() as (typeof MEASUREMENT_UNIT_VALUES)[number])) {
-      return MEASUREMENT_UNIT_OPTIONS;
-    }
-
-    return [{ value: form.unit.trim().toUpperCase(), label: `${form.unit.trim().toUpperCase()} - Actual` }, ...MEASUREMENT_UNIT_OPTIONS];
-  }, [form.unit]);
+  const unitsQuery = useQuoteCatalogs("MEASUREMENT_UNIT");
+  const currentUnit = form.originalUnit;
+  const unitOptions = (unitsQuery.data ?? []).map(option => ({ value: option.code, label: `${option.code} - ${option.label}` }));
+  if (currentUnit && !unitOptions.some(option => option.value === currentUnit)) {
+    unitOptions.unshift({ value: currentUnit, label: `${currentUnit} - Unidad actual` });
+  }
 
   const resetForm = () => setForm(EMPTY_FORM);
   const closeEditModal = () => {
@@ -175,7 +176,7 @@ export const ProductsPage = () => {
     if (!form.id) return "Selecciona un producto para editar.";
     if (!form.description.trim()) return "La descripción es obligatoria.";
     if (!form.unit.trim()) return "La unidad es obligatoria.";
-    if (!MEASUREMENT_UNIT_VALUES.includes(form.unit.trim().toUpperCase() as (typeof MEASUREMENT_UNIT_VALUES)[number])) {
+    if (form.unit !== currentUnit && !unitsQuery.data?.some(option => option.code === form.unit)) {
       return "La unidad debe seleccionarse del listado.";
     }
 
@@ -222,7 +223,7 @@ export const ProductsPage = () => {
       subfamily: form.subfamily.trim() || null,
       brand: form.brand.trim() || null,
       technicalAttributes: form.technicalAttributes,
-      unit: form.unit.trim().toUpperCase(),
+      ...(form.unit === currentUnit ? {} : { unit: form.unit }),
       currency: form.currency,
       ...(form.costStatus === "CONFIRMED"
         ? {}
@@ -503,10 +504,11 @@ export const ProductsPage = () => {
                     />
                     <div>
                       <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">Unidad *</label>
-                      <select value={form.unit} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
+                      <select aria-label="Unidad de medida" value={form.unit} disabled={unitsQuery.isPending || unitsQuery.isError} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700">
                         <option value="">Selecciona una unidad</option>
                         {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
+                      {unitsQuery.isError && <button type="button" onClick={() => void unitsQuery.refetch()} className="mt-1 text-xs text-red-700 underline">Reintentar carga de unidades</button>}
                     </div>
                   </div>
                 </section>

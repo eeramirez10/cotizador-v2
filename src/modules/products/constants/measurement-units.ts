@@ -1,6 +1,7 @@
 export const MEASUREMENT_UNIT_OPTIONS = [
   { value: "PZ", label: "PZ - Pieza" },
   { value: "K", label: "K - Kilo" },
+  { value: "TON", label: "TON - Tonelada" },
   { value: "M", label: "M - Metro" },
   { value: "ML", label: "ML - Metro lineal" },
   { value: "L", label: "L - Litro" },
@@ -23,6 +24,7 @@ const UNIT_ALIASES = new Map<string, MeasurementUnit>([
   ["PC", "PZ"], ["PCS", "PZ"], ["PIECE", "PZ"], ["PIECES", "PZ"],
   ["K", "K"], ["KG", "K"], ["KGS", "K"], ["KILO", "K"], ["KILOS", "K"],
   ["KILOGRAMO", "K"], ["KILOGRAMOS", "K"], ["KILOGRAM", "K"], ["KILOGRAMS", "K"],
+  ["TON", "TON"], ["TONELADA", "TON"], ["TONELADAS", "TON"],
   ["M", "M"], ["MT", "M"], ["MTS", "M"], ["MTR", "M"], ["MTRS", "M"],
   ["METRO", "M"], ["METROS", "M"],
   ["ML", "ML"], ["M L", "ML"], ["MTL", "ML"], ["MTLS", "ML"],

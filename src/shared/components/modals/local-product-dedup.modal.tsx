@@ -1,5 +1,8 @@
 import { AlertTriangle, CheckCircle2, Loader2, PackageSearch, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useQuoteCatalogs } from "../../../queries/quote-catalogs/use-quote-catalogs";
+import { normalizeMeasurementUnit } from "../../../modules/products/constants/measurement-units";
 import {
   LocalProductsService,
   type SimilarLocalProductCandidate,
@@ -9,49 +12,39 @@ interface LocalProductDedupModalProps {
   open: boolean;
   description: string;
   originalDescription: string;
-  unit: string;
+  suggestedUnit: string;
   onClose: () => void;
   onReuse: (candidate: SimilarLocalProductCandidate) => void;
-  onCreateNew: (description: string) => void;
+  onCreateNew: (description: string, unit: string) => void;
 }
 
 export const LocalProductDedupModal = ({
   open,
   description,
   originalDescription,
-  unit,
+  suggestedUnit,
   onClose,
   onReuse,
   onCreateNew,
 }: LocalProductDedupModalProps) => {
-  const [loading, setLoading] = useState(true);
-  const [semanticAvailable, setSemanticAvailable] = useState(true);
-  const [items, setItems] = useState<SimilarLocalProductCandidate[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const unitsQuery = useQuoteCatalogs("MEASUREMENT_UNIT");
+  const options = unitsQuery.data ?? [];
+  const proposed = normalizeMeasurementUnit(suggestedUnit) ?? suggestedUnit.trim().toUpperCase();
+  const [selectedUnit, setSelectedUnit] = useState<string>();
+  const candidateUnit = selectedUnit ?? proposed;
+  const unit = options.some(option => option.code === candidateUnit) ? candidateUnit : "";
   const [localDescription, setLocalDescription] = useState(description.trim().toUpperCase());
-  const hasExactMatch = useMemo(() => items.some((item) => item.matchType === "EXACT"), [items]);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-
-    void LocalProductsService.searchSimilar({ description, unit })
-      .then((result) => {
-        if (cancelled) return;
-        setSemanticAvailable(result.semanticAvailable);
-        setItems(result.items);
-      })
-      .catch((requestError: unknown) => {
-        if (cancelled) return;
-        setSemanticAvailable(false);
-        setError(requestError instanceof Error ? requestError.message : "No se pudo consultar el catálogo local.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [description, open, unit]);
+  const matches = useQuery({
+    queryKey: ["local-product-duplicates", description, unit],
+    queryFn: () => LocalProductsService.searchSimilar({ description, unit }),
+    enabled: open && Boolean(unit) && !unitsQuery.isError,
+    retry: false,
+  });
+  const loading = matches.isFetching;
+  const items = matches.data?.items ?? [];
+  const semanticAvailable = matches.data?.semanticAvailable ?? false;
+  const error = matches.error?.message;
+  const hasExactMatch = items.some(item => item.matchType === "EXACT");
 
   if (!open) return null;
 
@@ -81,7 +74,7 @@ export const LocalProductDedupModal = ({
                 <p className="mt-1 text-xs leading-5 text-gray-600">{originalDescription}</p>
               </div>
             )}
-            <p className="mt-1 text-xs text-gray-600">Unidad: {unit}</p>
+            {suggestedUnit && <p className="mt-1 text-xs text-gray-600">Unidad solicitada: {suggestedUnit}</p>}
           </div>
 
           <div className="mt-4">
@@ -101,6 +94,17 @@ export const LocalProductDedupModal = ({
             </p>
           </div>
 
+          <div className="mt-4">
+            <label htmlFor="local-product-unit" className="text-xs font-semibold text-gray-700">Unidad del producto local</label>
+            <select id="local-product-unit" value={unit} onChange={event => setSelectedUnit(event.target.value)}
+              disabled={unitsQuery.isPending || unitsQuery.isError}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option value="">{unitsQuery.isPending ? "Cargando unidades..." : "Selecciona una unidad"}</option>
+              {options.map(option => <option key={option.code} value={option.code}>{option.code} - {option.label}</option>)}
+            </select>
+            {unitsQuery.isError && <button type="button" onClick={() => void unitsQuery.refetch()} className="mt-1 text-xs text-red-700 underline">Reintentar carga de unidades</button>}
+          </div>
+
           {loading && (
             <div className="flex flex-col items-center justify-center py-10 text-sm text-gray-500">
               <Loader2 className="mb-3 h-7 w-7 animate-spin text-blue-600" />
@@ -108,14 +112,14 @@ export const LocalProductDedupModal = ({
             </div>
           )}
 
-          {!loading && (!semanticAvailable || error) && (
+          {unit && !loading && !unitsQuery.isError && (!semanticAvailable || error) && (
             <div className="mt-4 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <p>{error || "La búsqueda semántica no está disponible. Puedes continuar, pero revisa manualmente antes de crear."}</p>
             </div>
           )}
 
-          {!loading && semanticAvailable && !error && items.length === 0 && (
+          {unit && !loading && semanticAvailable && !error && items.length === 0 && (
             <div className="py-8 text-center">
               <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
               <p className="mt-2 text-sm font-semibold text-gray-700">No encontramos productos locales similares.</p>
@@ -123,7 +127,7 @@ export const LocalProductDedupModal = ({
             </div>
           )}
 
-          {!loading && items.length > 0 && (
+          {unit && !loading && !unitsQuery.isError && items.length > 0 && (
             <div className="mt-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Coincidencias encontradas</p>
               {items.map((candidate) => (
@@ -158,8 +162,8 @@ export const LocalProductDedupModal = ({
           {!hasExactMatch && (
             <button
               type="button"
-              onClick={() => onCreateNew(localDescription.trim())}
-              disabled={loading || !localDescription.trim()}
+              onClick={() => onCreateNew(localDescription.trim(), unit)}
+              disabled={!unit || unitsQuery.isError || loading || !localDescription.trim()}
               className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Crear producto nuevo

@@ -6,6 +6,7 @@ import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 
 const TYPES: Array<{ value: QuoteCatalogType; label: string; needsValue?: boolean; needsNumber?: boolean; reason?: boolean }> = [
+  { value: "MEASUREMENT_UNIT", label: "Unidades de medida" },
   { value: "VALIDITY_DAYS", label: "Vigencias", needsNumber: true },
   { value: "PAYMENT_TERMS", label: "Condiciones de pago", needsValue: true },
   { value: "COMMERCIAL_CONDITIONS", label: "Condiciones comerciales", needsValue: true },
@@ -26,7 +27,7 @@ export const QuoteCatalogsPage = () => {
   const isAdmin = (user?.role || "").toLowerCase() === "admin";
   const isPurchasing = (user?.role || "").toLowerCase() === "purchasing";
   const isManager = (user?.role || "").toLowerCase() === "manager";
-  const visibleTypes = TYPES.filter((item) => isPurchasing ? PROCUREMENT_TYPES.has(item.value) : isManager ? !PROCUREMENT_TYPES.has(item.value) : true);
+  const visibleTypes = TYPES.filter((item) => item.value === "MEASUREMENT_UNIT" ? isAdmin : isPurchasing ? PROCUREMENT_TYPES.has(item.value) : isManager ? !PROCUREMENT_TYPES.has(item.value) : true);
   const initialType: QuoteCatalogType = isPurchasing ? "PURCHASE_BRAND" : "VALIDITY_DAYS";
   const [type, setType] = useState<QuoteCatalogType>(initialType);
   const [editing, setEditing] = useState<QuoteCatalogOption | null>(null);
@@ -39,6 +40,7 @@ export const QuoteCatalogsPage = () => {
   const deactivate = useDeactivateQuoteCatalogOption();
   const suggestCode = useSuggestQuoteCatalogCode();
   const selected = TYPES.find((item) => item.value === type)!;
+  const isUnit = type === "MEASUREMENT_UNIT";
   const rows = useMemo(() => (query.data || []).filter((option) => option.type === type), [query.data, type]);
   const pending = create.isPending || update.isPending || suggestCode.isPending;
   const canManage = (option: QuoteCatalogOption) => isAdmin || (isPurchasing && PROCUREMENT_TYPES.has(option.type)) || option.branchId === user?.branchId;
@@ -71,6 +73,7 @@ export const QuoteCatalogsPage = () => {
   };
   const submit = async () => {
     if (!form.label.trim()) return notifier.warning("Indica el nombre de la opción.");
+    if (isUnit && !/^[A-Z0-9]{1,30}$/.test(form.code)) return notifier.warning("Captura un código de 1 a 30 letras o números.");
     if (!editing && !form.code.trim()) return notifier.warning("Genera el código interno antes de guardar.");
     const input = { type: form.type, code: form.code || undefined, label: form.label.trim(), value: selected.needsValue ? form.value.trim() || form.label.trim() : null, numericValue: selected.needsNumber ? Number(form.numericValue) : null, requiresComment: selected.reason && form.requiresComment, sortOrder: Number(form.sortOrder) || 0, isActive: form.isActive };
     try { if (editing) await update.mutateAsync({ id: editing.id, input }); else await create.mutateAsync(input); notifier.success(editing ? "Opción actualizada." : "Opción creada."); close(); } catch (error) { notifier.error(error instanceof Error ? error.message : "No se pudo guardar."); }
@@ -129,7 +132,7 @@ export const QuoteCatalogsPage = () => {
             <div className="mt-5 space-y-4">
               <div>
                 <label className="text-xs font-semibold uppercase text-gray-500">Nombre visible</label>
-                <input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value, code: editing ? form.code : "" })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Ej. Crédito 90 días" />
+                <input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value, code: editing || isUnit ? form.code : "" })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder={isUnit ? "Ej. Tonelada" : "Ej. Crédito 90 días"} />
               </div>
               {selected.needsNumber && <div><label className="text-xs font-semibold uppercase text-gray-500">Días de vigencia</label><input type="number" min="1" value={form.numericValue} onChange={(event) => setForm({ ...form, numericValue: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>}
               {selected.needsValue && <div><label className="text-xs font-semibold uppercase text-gray-500">Texto que se guardará en la cotización</label><textarea value={form.value} onChange={(event) => setForm({ ...form, value: event.target.value })} className="mt-1 min-h-24 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>}
@@ -137,13 +140,21 @@ export const QuoteCatalogsPage = () => {
               <div><label className="text-xs font-semibold uppercase text-gray-500">Orden</label><input type="number" min="0" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: event.target.value })} className="mt-1 w-32 rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
               {editing && <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />Opción activa</label>}
 
-              <div className="border-t border-gray-200 pt-4">
+              {isUnit ? (
+                <div className="border-t border-gray-200 pt-4">
+                  <label htmlFor="measurement-unit-code" className="text-xs font-semibold uppercase text-gray-500">Código de unidad</label>
+                  <input id="measurement-unit-code" value={form.code} readOnly={Boolean(editing)} maxLength={30}
+                    onChange={event => setForm({ ...form, code: event.target.value.trim().toUpperCase() })}
+                    placeholder="Ej. TON" className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm" />
+                  <p className="mt-1 text-xs text-gray-500">Código global. No se puede cambiar después de crear la unidad.</p>
+                </div>
+              ) : <div className="border-t border-gray-200 pt-4">
                 <div className="flex items-center justify-between gap-3">
                   <div><label className="text-xs font-semibold uppercase text-gray-500">Código interno</label><p className="mt-0.5 text-xs text-gray-400">Identificador técnico en inglés.</p></div>
                   {!editing && <button type="button" onClick={() => void generateInternalCode()} disabled={!form.label.trim() || suggestCode.isPending} className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">{suggestCode.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}Generar código interno</button>}
                 </div>
                 <input readOnly value={form.code} className="mt-2 w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm uppercase text-gray-700" placeholder="La IA generará el código aquí" />
-              </div>
+              </div>}
             </div>
 
             <div className="mt-6 flex justify-end gap-2">

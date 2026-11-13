@@ -491,6 +491,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
             <p style={{ color: muted }}>Contacto: {contactName || "-"}</p>
             <p style={{ color: muted }}>Correo: {quote.client?.email || "-"}</p>
             <p style={{ color: muted }}>WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
+            {quote.customerReference && <p className="break-words text-xs"><strong>Referencia del cliente:</strong> {quote.customerReference}</p>}
           </div>
 
           <div className="border-l-[3px] p-3" style={{ borderColor: brand, backgroundColor: brandSoft }}>
@@ -636,6 +637,7 @@ const QuotePrintableDocument = forwardRef<HTMLElement, QuotePrintableDocumentPro
           <p className="text-xs text-gray-600">Contacto: {contactName || "-"}</p>
           <p className="text-xs text-gray-600">Correo: {quote.client?.email || "-"}</p>
           <p className="text-xs text-gray-600">WhatsApp: {quote.client?.whatsappPhone || "-"}</p>
+          {quote.customerReference && <p className="break-words text-xs"><strong>Referencia del cliente:</strong> {quote.customerReference}</p>}
         </div>
 
         <div className="rounded-md border border-gray-200 p-3">
@@ -1706,6 +1708,7 @@ export const QuoteDetailPage = () => {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Cotización {quote.quoteNumber}</h2>
+          {quote.customerReference && <p className="break-words text-sm text-gray-700"><strong>Referencia del cliente:</strong> {quote.customerReference}</p>}
           <p className="text-xs text-gray-500">Creada: {new Date(quote.createdAt).toLocaleString("es-MX")}</p>
         </div>
 

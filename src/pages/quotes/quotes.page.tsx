@@ -67,7 +67,7 @@ export const QuotesPage = () => {
           <input
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="Buscar por cotización, folio ERP o cliente"
+            placeholder="Buscar por cotización, folio ERP, cliente o referencia"
             className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-9 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
           />
           {searchDraft && (

@@ -697,7 +697,7 @@ export const WhatsAppInboxPage = () => {
         );
       }
 
-      setItemsFromExtraction(result.items);
+      setItemsFromExtraction(result.items, result.customer_reference);
       if (toastId !== undefined) {
         notifier.update(toastId, "success", `Se cargaron ${result.items.length} partidas en la cotización.`);
       } else {

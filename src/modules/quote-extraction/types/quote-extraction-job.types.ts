@@ -58,6 +58,7 @@ export interface ExtractionJobResultPayload {
   items_count: number;
   items: ExtractedQuoteItem[];
   detected_customer?: ExtractedPartyData | null;
+  customer_reference?: string | null;
 }
 
 export interface ExtractionJobResultResponse {

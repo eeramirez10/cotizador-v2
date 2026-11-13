@@ -29,6 +29,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetec
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<ExtractedQuoteItem[] | null>(null);
   const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
+  const [pendingReference, setPendingReference] = useState<string | null>(null);
   const [pendingCustomer, setPendingCustomer] = useState<ExtractedPartyData | null>(null);
   const isFile = mode === "file";
   const requiresManualOcr = errorMessage?.toLowerCase().includes("aplica ocr") ?? false;
@@ -50,6 +51,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetec
     setPendingItems(null);
     setPendingAttachmentId(null);
     setPendingCustomer(null);
+    setPendingReference(null);
     onClose();
   };
 
@@ -57,9 +59,9 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetec
     if (!pendingItems) return;
 
     if (action === "append") {
-      addItemsFromExtraction(pendingItems);
+      addItemsFromExtraction(pendingItems, pendingReference);
     } else {
-      setItemsFromExtraction(pendingItems);
+      setItemsFromExtraction(pendingItems, pendingReference);
     }
 
     setPendingItems(null);
@@ -68,6 +70,7 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetec
     setInputText("");
     if (pendingCustomer) onDetectedCustomer?.(pendingCustomer);
     setPendingCustomer(null);
+    setPendingReference(null);
     onCompleted(mode);
   };
 
@@ -108,12 +111,13 @@ export const QuoteExtractionModal = ({ mode, open, onClose, onCompleted, onDetec
       if (draftItemsCount > 0) {
         setPendingAttachmentId(uploadedAttachmentId);
         setPendingCustomer(detectedCustomer);
+        setPendingReference(result.result?.customer_reference ?? null);
         setStatusText(`Se extrajeron ${extractedItems.length} partidas. Elige cómo incorporarlas.`);
         setPendingItems(extractedItems);
         return;
       }
 
-      setItemsFromExtraction(extractedItems);
+      setItemsFromExtraction(extractedItems, result.result?.customer_reference);
       setStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);
       setSelectedFile(null);
       setInputText("");

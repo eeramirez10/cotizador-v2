@@ -58,7 +58,7 @@ export const NewQuotePage = () => {
 
       clearDraft();
       initializeDraft(user);
-      setItemsFromExtraction(extractedItems);
+      setItemsFromExtraction(extractedItems, result.result?.customer_reference);
 
       setFileJobProgress(100);
       setFileJobStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);
@@ -104,7 +104,7 @@ export const NewQuotePage = () => {
 
       clearDraft();
       initializeDraft(user);
-      setItemsFromExtraction(extractedItems);
+      setItemsFromExtraction(extractedItems, result.result?.customer_reference);
 
       setTextJobProgress(100);
       setTextJobStatusText(`Listo. Se cargaron ${extractedItems.length} partidas.`);

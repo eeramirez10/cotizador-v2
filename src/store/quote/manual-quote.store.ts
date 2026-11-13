@@ -1,3 +1,4 @@
+import { applyExtractedCustomerReference } from "../../modules/quotes/utils/customer-reference";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { User } from "../../interfaces/user.interface";
@@ -131,6 +132,8 @@ type EmptyProcurementPrequoteData = Omit<ProcurementPrequoteData, "sellerCostSou
 };
 
 export interface ManualQuoteDraft {
+  customerReference: string;
+  detectedCustomerReference: string | null;
   id: string;
   savedQuoteId: string | null;
   status: QuoteStatus;
@@ -157,6 +160,7 @@ export interface ManualQuoteDraft {
 }
 
 interface StoredQuote {
+  customerReference?: string | null;
   quoteId: string;
   quoteDraftId: string;
   status: QuoteStatus;
@@ -201,6 +205,7 @@ interface HydrateQuoteClient {
 }
 
 interface HydrateQuoteInput {
+  customerReference?: string | null;
   quoteId: string;
   quoteDraftId: string;
   status: QuoteStatus;
@@ -244,8 +249,8 @@ interface ManualQuoteState {
     itemId: string,
     localProduct: LocalProductBatchResultItem["product"]
   ) => void;
-  setItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
-  addItemsFromExtraction: (items: ExtractedQuoteItem[]) => void;
+  setItemsFromExtraction: (items: ExtractedQuoteItem[], customerReference?: string | null) => void;
+  addItemsFromExtraction: (items: ExtractedQuoteItem[], customerReference?: string | null) => void;
   setItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
   addItemsFromQuotedExcel: (items: ExtractedQuotedExcelItem[], currency: QuoteCurrency) => void;
   removeItem: (itemId: string) => void;
@@ -259,6 +264,8 @@ interface ManualQuoteState {
   setItemProcurementPrequote: (itemId: string, data: ProcurementPrequoteData) => void;
   setItemsProcurementPrequote: (updates: ProcurementPrequoteUpdate[]) => void;
   setClient: (client: Client | null) => void;
+  setCustomerReference: (value: string) => void;
+  useDetectedCustomerReference: () => void;
   hydrateDraftFromQuote: (quote: HydrateQuoteInput) => void;
   loadQuoteForEdit: (quoteId: string) => boolean;
   subtotal: () => number;
@@ -324,6 +331,8 @@ const newDraft = (): ManualQuoteDraft => ({
   deliveryPlace: "",
   paymentTerms: "",
   commercialConditions: "",
+  customerReference: "",
+  detectedCustomerReference: null,
   validityDays: 0,
   sourceChannel: "UNSPECIFIED",
   whatsappLeadId: null,
@@ -479,7 +488,7 @@ const createItemsFromExtraction = (
   exchangeRate: number
 ): ManualQuoteItem[] =>
   items.map((item) => {
-    const normalizedUnit = normalizeMeasurementUnit(item.unidad_normalizada ?? item.unidad_original);
+    const normalizedUnit = normalizeMeasurementUnit(item.unidad_original) ?? normalizeMeasurementUnit(item.unidad_normalizada);
     return computeItem(
       {
         id: `itm_${Math.random().toString(36).slice(2, 10)}`,
@@ -763,10 +772,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           ean: localProduct.ean || item.ean,
           customerDescription: item.customerDescription.trim() || localProduct.description.trim(),
           erpDescription: "",
-          unit:
-            normalizeMeasurementUnit(item.unit)
-            ?? normalizeMeasurementUnit(localProduct.unit)
-            ?? (localProduct.unit.trim() || "PZ"),
+          unit: localProduct.unit,
           marginPct: item.marginPct > 0 ? item.marginPct : 15,
           sourceRequiresReview: false,
           manualUnitPrice: item.importedFromExcel ? item.manualUnitPrice : undefined,
@@ -781,7 +787,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       };
     }),
 
-  setItemsFromExtraction: (items) =>
+  setItemsFromExtraction: (items, customerReference) =>
     set((state) => {
       const nextItems = createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate);
 
@@ -790,16 +796,18 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           ...state.draft,
           status: "BORRADOR",
           items: nextItems,
+          ...applyExtractedCustomerReference(state.draft, customerReference),
         },
       };
     }),
 
-  addItemsFromExtraction: (items) =>
+  addItemsFromExtraction: (items, customerReference) =>
     set((state) => ({
       draft: {
         ...state.draft,
         status: "BORRADOR",
         items: [...state.draft.items, ...createItemsFromExtraction(items, state.draft.currency, state.draft.exchangeRate)],
+        ...applyExtractedCustomerReference(state.draft, customerReference),
       },
     })),
 
@@ -1000,6 +1008,14 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       };
     }),
 
+  setCustomerReference: (customerReference) =>
+    set((state) => ({ draft: { ...state.draft, customerReference, detectedCustomerReference: null } })),
+
+  useDetectedCustomerReference: () =>
+    set((state) => state.draft.detectedCustomerReference
+      ? { draft: { ...state.draft, customerReference: state.draft.detectedCustomerReference } }
+      : state),
+
   setClient: (client) =>
     set((state) => ({
       draft: {
@@ -1012,7 +1028,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
     set((state) => {
       const normalizedItems = quote.items.map((item) => ({
         ...item,
-        unit: normalizeMeasurementUnit(item.unit) ?? item.unit,
+        unit: item.localProductId ? item.unit : normalizeMeasurementUnit(item.unit) ?? item.unit,
         localProductId: item.localProductId || null,
         ean: item.ean || item.erpCode,
         customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
@@ -1083,6 +1099,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
           deliveryPlace: quote.deliveryPlace,
           paymentTerms: quote.paymentTerms,
           commercialConditions: quote.commercialConditions || "",
+          customerReference: quote.customerReference ?? "",
+          detectedCustomerReference: null,
           validityDays: quote.validityDays,
           sourceChannel: quote.sourceChannel || "UNSPECIFIED",
           whatsappLeadId: quote.whatsappLeadId || null,
@@ -1105,7 +1123,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 
     const normalizedItems = stored.items.map((item) => ({
       ...item,
-      unit: normalizeMeasurementUnit(item.unit) ?? item.unit,
+      unit: item.localProductId ? item.unit : normalizeMeasurementUnit(item.unit) ?? item.unit,
       localProductId: item.localProductId || null,
       ean: item.ean || item.erpCode,
       customerDescription: item.customerDescription || (!item.erpCode ? item.erpDescription || "" : ""),
@@ -1165,6 +1183,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         deliveryPlace: stored.deliveryPlace || "L.A.B. OBRA",
         paymentTerms: stored.paymentTerms || "CONTADO",
         commercialConditions: stored.commercialConditions || "",
+        customerReference: stored.customerReference ?? "",
+        detectedCustomerReference: null,
         validityDays: Number.isFinite(stored.validityDays) && stored.validityDays > 0 ? stored.validityDays : 10,
         sourceChannel: stored.sourceChannel || "UNSPECIFIED",
         whatsappLeadId: stored.whatsappLeadId || null,
@@ -1216,6 +1236,7 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       deliveryPlace: state.draft.deliveryPlace,
       paymentTerms: state.draft.paymentTerms,
       commercialConditions: state.draft.commercialConditions,
+      customerReference: state.draft.customerReference.trim() || null,
       validityDays: state.draft.validityDays,
       sourceChannel: state.draft.sourceChannel,
       whatsappLeadId: state.draft.whatsappLeadId,
@@ -1254,6 +1275,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
 
     const migratedDraft = {
       ...persisted.draft,
+      customerReference: persisted.draft.customerReference ?? "",
+      detectedCustomerReference: persisted.draft.detectedCustomerReference ?? null,
       items: persisted.draft.items.map((item) => {
         const hasErpProduct = Boolean(item.erpCode?.trim());
         return {

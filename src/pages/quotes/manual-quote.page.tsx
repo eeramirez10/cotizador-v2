@@ -1,3 +1,4 @@
+import { CustomerReferenceField } from "./customer-reference-field";
 import { ChevronDown, ChevronUp, FileCheck2, FileText, FileUp, LayoutList, ListOrdered, Loader2, MessageSquare, MessageSquareText, MoreHorizontal, Paperclip, Pencil, Plus, Rows3, RotateCcw, Search, ShoppingCart, Trash2, Unlink2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Menu, MenuItem } from "@mui/material";
@@ -42,7 +43,6 @@ import { clientWithSelectedContact } from "../../modules/clients/utils/customer-
 import { useClientsStore } from "../../store/clients/clients.store";
 import { DetectedCustomerModal } from "../../shared/components/modals/detected-customer.modal";
 import { ErpCustomerOnboardingModal } from "../../shared/components/modals/erp-customer-onboarding.modal";
-import { normalizeMeasurementUnit } from "../../modules/products/constants/measurement-units";
 import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
 
 type OriginFilter = "ALL" | "UNLINKED";
@@ -50,9 +50,6 @@ type QuoteEditorView = "classic" | "compact";
 
 const QUOTE_EDITOR_VIEW_STORAGE_KEY = "tuvansa.quote-editor-view";
 
-const getLocalProductUnit = (value: string): string => {
-  return normalizeMeasurementUnit(value) ?? "PZ";
-};
 
 const SOURCE_CHANNEL_OPTIONS: Array<{ value: QuoteSourceChannel; label: string }> = [
   { value: "UNSPECIFIED", label: "Seleccionar origen" },
@@ -624,7 +621,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
     setExchangeRateDraft(null);
   };
 
-  const handleCreateLocalProduct = async (itemId: string, descriptionOverride?: string) => {
+  const handleCreateLocalProduct = async (itemId: string, unit: string, descriptionOverride?: string) => {
     const currentItem = draft.items.find((item) => item.id === itemId);
     if (!currentItem) return;
     if (currentItem.erpCode.trim() || (currentItem.localProductId || "").trim()) return;
@@ -641,7 +638,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
               currentItem.customerDescription.trim() ||
               currentItem.erpDescription.trim() ||
               `PRODUCTO TEMPORAL ${currentItem.id}`,
-            unit: getLocalProductUnit(currentItem.customerUnit),
+            unit,
             family: currentItem.technicalFamily || null,
             technicalAttributes: currentItem.technicalAttributes || {},
           },
@@ -1387,6 +1384,8 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             )}
           </div>
         </div>
+
+        <CustomerReferenceField compact={isCompactView} />
 
         <div className={`${isCompactView && !showCompactQuoteDetails ? "hidden" : ""} ${isCompactView ? "lg:col-span-6" : "lg:col-span-2"}`}>
           <div className={`flex items-center justify-between ${isCompactView ? "h-4" : ""}`}>
@@ -2521,17 +2520,17 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
           originalDescription={
             localProductConfirmationItem.customerDescriptionOriginal || localProductConfirmationItem.customerDescription
           }
-          unit={getLocalProductUnit(localProductConfirmationItem.customerUnit)}
+          suggestedUnit={localProductConfirmationItem.customerUnit}
           onClose={() => setLocalProductConfirmationItemId(null)}
           onReuse={(candidate) => {
             assignLocalProductToItem(localProductConfirmationItem.id, candidate.product);
             setLocalProductConfirmationItemId(null);
             notifier.success("Producto local existente vinculado a la partida.");
           }}
-          onCreateNew={(localDescription) => {
+          onCreateNew={(localDescription, unit) => {
             const itemId = localProductConfirmationItem.id;
             setLocalProductConfirmationItemId(null);
-            void handleCreateLocalProduct(itemId, localDescription);
+            void handleCreateLocalProduct(itemId, unit, localDescription);
           }}
         />
       )}
