@@ -3,6 +3,7 @@ import { getAuthToken } from "../../../store/auth/auth.store";
 import { coreHttpClient } from "../../core/services/http/core-http.client";
 
 export type Currency = "MXN" | "USD";
+export type ErpProductIdentity = { code: string; ean: string; description: string; unit: string };
 export interface ErpProductDraftData {
   code?: string;
   description?: string;
@@ -232,6 +233,8 @@ export interface RequisitionItem {
   unit: string;
   description: string;
   customerDescription: string | null;
+  productDescription?: string | null;
+  productTechnicalAttributes?: Record<string, string>;
   erpDescription: string | null;
   standard: string | null;
   diameter: string | null;
@@ -260,6 +263,7 @@ export interface PurchaseRequisition {
   requisitionNumber: string;
   quoteId: string;
   quoteNumber: string;
+  quoteErpLinkLocked?: boolean;
   quoteStatus: string;
   supplierId: string | null;
   supplierName: string | null;
@@ -593,6 +597,16 @@ export class PurchaseRequisitionsService {
         { supplierProductCode }, { headers: headers() },
       ),
       "No se pudo actualizar el código del proveedor.",
+    );
+  }
+
+  static verifyErpIdentity(id: string, itemId: string, code: string) {
+    return request(
+      () => coreHttpClient.get<ErpProductIdentity>(
+        `/api/purchase-requisitions/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/erp-identity`,
+        { params: { code }, headers: headers() },
+      ),
+      "No se pudo verificar el código en Proscai.",
     );
   }
 

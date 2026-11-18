@@ -46,8 +46,8 @@ import { notifier } from "../../shared/notifications/notifier";
 import { useAuthStore } from "../../store/auth/auth.store";
 import { useQuoteCatalogs } from "../../queries/quote-catalogs/use-quote-catalogs";
 import type { QuoteCatalogOption } from "../../modules/quote-catalogs/services/quote-catalogs.service";
-import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
-import type { ErpProduct } from "../../modules/products/types/erp-product.types";
+import { ConfirmErpIdentityDialog } from "./confirm-erp-identity.dialog";
+import type { ErpProductIdentity } from "../../modules/procurement/services/purchase-requisitions.service";
 import { useSystemCapabilities } from "../../queries/system/use-system-capabilities";
 import { useRequisitionAttachments } from "../../queries/attachments/use-attachments";
 import { AttachmentsModal } from "../../shared/components/attachments/attachments.modal";
@@ -361,7 +361,7 @@ export const PurchaseRequisitionsPage = () => {
     }
   };
 
-  const linkErpProduct = async (product: ErpProduct) => {
+  const linkErpProduct = async (product: ErpProductIdentity) => {
     if (!requisition || !linkingItem) return;
     const linked = await run(
       "Validando y vinculando producto ERP...",
@@ -807,20 +807,16 @@ export const PurchaseRequisitionsPage = () => {
           }}
         />
       )}
-      <AddErpProductsModal
-        open={Boolean(linkingItem)}
-        onClose={() => { if (!mutations.linkItemToErp.isPending) setLinkingItem(null); }}
-        onSelect={(product) => { void linkErpProduct(product); }}
-        title="Vincular partida con producto ERP"
-        subtitle="Busca y selecciona el producto oficial. La consulta utiliza exclusivamente la sucursal México."
-        actionLabel="Vincular"
-        customerDescription={linkingItem?.description || ""}
-        customerUnit={linkingItem?.unit || ""}
-        initialMode="erp"
-        fixedErpBranchCode="01"
-        erpOnly
-        selectionDisabled={mutations.linkItemToErp.isPending}
-      />
+      {requisition && linkingItem && <ConfirmErpIdentityDialog
+        key={linkingItem.id}
+        requisitionId={requisition.id}
+        itemId={linkingItem.id}
+        branchName={requisition.branchName}
+        unit={linkingItem.unit}
+        confirming={mutations.linkItemToErp.isPending}
+        onClose={() => setLinkingItem(null)}
+        onConfirm={linkErpProduct}
+      />}
     </div>
   );
 };

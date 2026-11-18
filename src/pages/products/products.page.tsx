@@ -1,3 +1,4 @@
+import { ProductErpLinksDialog } from "../../modules/products/components/product-erp-links.dialog";
 import { Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -23,7 +24,6 @@ const PAGE_SIZE = 20;
 
 interface ProductFormState {
   id: string | null;
-  code: string;
   ean: string;
   description: string;
   commercialDescription: string;
@@ -44,7 +44,6 @@ interface ProductFormState {
 
 const EMPTY_FORM: ProductFormState = {
   id: null,
-  code: "",
   ean: "",
   description: "",
   commercialDescription: "",
@@ -72,7 +71,6 @@ const toNumberOrNull = (value: string): number | null => {
 
 const mapProductToForm = (product: LocalProduct): ProductFormState => ({
   id: product.id,
-  code: product.code || "",
   ean: product.ean || "",
   description: product.description,
   commercialDescription: product.commercialDescription || "",
@@ -127,6 +125,7 @@ export const ProductsPage = () => {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [form, setForm] = useState<ProductFormState>(EMPTY_FORM);
+  const [erpLinksProduct, setErpLinksProduct] = useState<LocalProduct | null>(null);
   const [openEditModal, setOpenEditModal] = useState(false);
 
   const subfamilyOptions = LOCAL_PRODUCT_SUBFAMILIES[form.family] || [];
@@ -215,7 +214,6 @@ export const ProductsPage = () => {
     const lastCost = toNumberOrNull(form.lastCost);
     const hasEstimatedCost = Math.max(averageCost ?? 0, lastCost ?? 0) > 0;
     const input: UpdateLocalProductInput = {
-      code: form.code.trim() || null,
       ean: form.ean.trim() || null,
       description: form.description.trim(),
       commercialDescription: form.commercialDescription.trim() || null,
@@ -320,7 +318,7 @@ export const ProductsPage = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Código</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Vínculos ERP</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">EAN</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Descripción</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Familia</th>
@@ -354,7 +352,9 @@ export const ProductsPage = () => {
 
               {products.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-xs text-gray-700">{product.code || "-"}</td>
+                  <td className="px-3 py-2 text-xs">
+                    <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={() => setErpLinksProduct(product)}>Consultar</button>
+                  </td>
                   <td className="px-3 py-2 text-xs text-gray-700">{product.ean || "-"}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{product.description}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">
@@ -439,6 +439,7 @@ export const ProductsPage = () => {
         </div>
       </section>
 
+      {erpLinksProduct && <ProductErpLinksDialog productId={erpLinksProduct.id} description={erpLinksProduct.description} onClose={() => setErpLinksProduct(null)} />}
       {openEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
@@ -553,7 +554,7 @@ export const ProductsPage = () => {
                 <section className="rounded-lg border border-gray-200 p-4">
                   <h3 className="text-sm font-semibold text-gray-800">Preparación para Proscai</h3>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <Input label="Código ERP" value={form.code} onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))} />
+
                     <Input label="EAN / Clave" value={form.ean} onChange={(value) => setForm((prev) => ({ ...prev, ean: value.toUpperCase() }))} />
                   </div>
                 </section>

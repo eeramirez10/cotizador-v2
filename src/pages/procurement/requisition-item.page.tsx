@@ -41,6 +41,10 @@ export const RequisitionItemPage = ({
 }: RequisitionItemPageProps) => {
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [erpDraftOpen, setErpDraftOpen] = useState(false);
+  const canConfirmErp = canBuy && item.source === "LOCAL_NEW" && item.status !== "CANCELLED"
+    && requisition.quoteStatus === "APPROVED" && !requisition.quoteErpLinkLocked
+    && !["COMPLETED", "CANCELLED"].includes(requisition.status)
+    && !(requisition.supplierRequisitions?.length && item.erpCode);
   const selectedOffer = item.offers.find((offer) => offer.isSelected);
   const itemFiles = attachments.filter((file) =>
     (file.category === "SELLER_SUPPLIER_QUOTE" && Boolean(item.quoteClientItemId && file.clientItemIds.includes(item.quoteClientItemId)))
@@ -58,6 +62,9 @@ export const RequisitionItemPage = ({
           <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Gestión de partida · #{item.position}</p>
           <h2 className="mt-1 max-w-4xl text-xl font-semibold leading-snug text-slate-950">{item.customerDescription || item.description}</h2>
           <p className="mt-2 text-xs text-slate-500">{item.qty} {item.unit} · {item.erpCode || "Producto local sin código ERP"} · {requisition.customerName}</p>
+          {item.source === "LOCAL_NEW" && !item.erpCode && requisition.quoteStatus !== "APPROVED" && (
+            <p className="mt-1 text-xs text-slate-500">Puedes preparar la ficha. Compras confirmará el código después de la aprobación del cliente.</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:max-w-[640px] lg:justify-end">
           <NavLink to={`/quotes/${requisition.quoteId}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
@@ -78,9 +85,9 @@ export const RequisitionItemPage = ({
               <Pencil className="h-3.5 w-3.5" />Completar
             </button>
           )}
-          {canBuy && item.source === "LOCAL_NEW" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (
+          {canConfirmErp && (
             <button type="button" disabled={busy} onClick={() => onLinkErp(item)} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
-              <Link2 className="h-3.5 w-3.5" />{item.erpCode ? "Cambiar ERP" : "Vincular ERP"}
+              <Link2 className="h-3.5 w-3.5" />Confirmar código ERP
             </button>
           )}
           {canBuy && requisition.status !== "DRAFT" && !["COMPLETED", "CANCELLED"].includes(requisition.status) && (

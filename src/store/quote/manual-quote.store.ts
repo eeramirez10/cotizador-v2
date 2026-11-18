@@ -8,7 +8,7 @@ import type {
   ExtractedQuoteItem,
   ExtractedQuotedExcelItem,
 } from "../../modules/quote-extraction/types/quote-extraction-job.types";
-import type { LocalProductBatchResultItem } from "../../modules/products/services/local-products.service";
+import type { LocalProductBatchResultItem, LocalProductErpLink } from "../../modules/products/services/local-products.service";
 import { convertQuoteAmount } from "../../modules/quotes/utils/quote-currency";
 import { getQuoteItemEffectiveCost } from "../../modules/quotes/utils/quote-fulfillment";
 import { getQuoteItemReviewIssues } from "../../modules/quotes/utils/quote-item-review";
@@ -244,6 +244,7 @@ interface ManualQuoteState {
   setProvidedBy: (providedBy: QuoteProvider | null) => void;
   addProductFromErp: (product: ErpProduct) => void;
   assignErpProductToItem: (itemId: string, product: ErpProduct) => void;
+  applyLocalProductErpLink: (itemId: string, productId: string, link: LocalProductErpLink) => void;
   unlinkErpProductFromItem: (itemId: string) => void;
   assignLocalProductToItem: (
     itemId: string,
@@ -750,6 +751,16 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       };
     }),
 
+  applyLocalProductErpLink: (itemId, productId, link) =>
+    set((state) => {
+      if (state.draft.captureMethod !== "SYSTEM" || !["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(state.draft.status)
+        || state.draft.branchId && state.draft.branchId !== link.branch.id) return state;
+      const items = state.draft.items.map(item => item.id === itemId && item.localProductId === productId && !item.erpCode
+        ? { ...item, erpCode: link.erpCode, ean: link.erpEan ?? "", erpDescription: link.erpDescription }
+        : item);
+      return { draft: { ...state.draft, items } };
+    }),
+
   unlinkErpProductFromItem: (itemId) =>
     set((state) => {
       const target = state.draft.items.find((item) => item.id === itemId);
@@ -1063,8 +1074,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         technicalFamily: item.technicalFamily || "",
         technicalAttributes: item.technicalAttributes || {},
         erpDescription: item.erpCode ? item.erpDescription : "",
-        costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
-        erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode ? item.costCurrency || "MXN" : null),
+        costCurrency: item.erpCode && !item.localProductId ? "MXN" : item.costCurrency || "MXN",
+        erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode && !item.localProductId ? item.costCurrency || "MXN" : null),
         sourceRequiresReview: item.sourceRequiresReview || false,
         sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? quote.currency : item.sourceCurrency,
         sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
@@ -1158,8 +1169,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
       technicalFamily: item.technicalFamily || "",
       technicalAttributes: item.technicalAttributes || {},
       erpDescription: item.erpCode ? item.erpDescription : "",
-      costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
-      erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode ? item.costCurrency || "MXN" : null),
+      costCurrency: item.erpCode && !item.localProductId ? "MXN" : item.costCurrency || "MXN",
+      erpSaleCurrency: item.erpSaleCurrency ?? (item.erpCode && !item.localProductId ? item.costCurrency || "MXN" : null),
       sourceRequiresReview: item.sourceRequiresReview || false,
       sourceCurrency: item.importedFromExcel ? item.sourceCurrency ?? stored.currency : item.sourceCurrency,
       sourceUnitPrice: item.importedFromExcel ? item.sourceUnitPrice ?? item.unitPrice : item.sourceUnitPrice,
@@ -1281,8 +1292,8 @@ export const useManualQuoteStore = create<ManualQuoteState>()(persist((set, get)
         const hasErpProduct = Boolean(item.erpCode?.trim());
         return {
           ...item,
-          costCurrency: hasErpProduct ? "MXN" as const : item.costCurrency || "MXN",
-          erpSaleCurrency: item.erpSaleCurrency ?? (hasErpProduct ? item.costCurrency || "MXN" : null),
+          costCurrency: hasErpProduct && !item.localProductId ? "MXN" as const : item.costCurrency || "MXN",
+          erpSaleCurrency: item.erpSaleCurrency ?? (hasErpProduct && !item.localProductId ? item.costCurrency || "MXN" : null),
         };
       }),
     };

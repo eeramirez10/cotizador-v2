@@ -9,7 +9,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Send,
   Trash2,
   X,
 } from "lucide-react";
@@ -387,7 +386,7 @@ const ProductModal = ({
               <div><StatusBadge status={product.procurementStatus} /><p className="mt-2 text-xs text-slate-500">Último cambio: {product.procurementUpdatedBy?.fullName || "Sin registro"} · {dateTime(product.procurementUpdatedAt)}</p>{product.procurementNotes && <p className="mt-2 text-sm text-rose-700">{product.procurementNotes}</p>}</div>
               <div className="flex flex-wrap gap-2">
                 {(product.procurementStatus === "PENDING_REVIEW" || product.procurementStatus === "REJECTED") && <button type="button" disabled={busy} onClick={() => void onStatus("QUOTING")} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Iniciar cotización</button>}
-                {product.procurementStatus === "COSTED" && <button type="button" disabled={busy} onClick={() => void onStatus("PENDING_ERP")} className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white"><Send className="h-3.5 w-3.5" />Enviar a alta ERP</button>}
+
                 {(product.procurementStatus === "COSTED" || product.procurementStatus === "PENDING_ERP") && <button type="button" disabled={busy} onClick={() => void onStatus("QUOTING")} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Recotizar</button>}
                 {product.procurementStatus !== "ERP_LINKED" && product.procurementStatus !== "REJECTED" && <button type="button" disabled={busy} onClick={onReject} className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700">Rechazar</button>}
               </div>
@@ -396,8 +395,8 @@ const ProductModal = ({
             <section className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Ficha técnica para alta en Proscai</h3>
-                  <p className="mt-1 text-xs text-slate-500">Datos capturados por Ventas que Compras puede validar y completar.</p>
+                  <h3 className="text-sm font-semibold text-slate-900">Ficha técnica del producto local</h3>
+                  <p className="mt-1 text-xs text-slate-500">El alta en Proscai se prepara desde una partida de requisición. Este expediente solo conserva datos del producto local.</p>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${product.costStatus === "CONFIRMED" ? "bg-emerald-100 text-emerald-800" : product.costStatus === "ESTIMATED" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
                   {product.costStatus === "CONFIRMED" ? "Costo confirmado" : product.costStatus === "ESTIMATED" ? "Costo estimado" : "Costo pendiente"}

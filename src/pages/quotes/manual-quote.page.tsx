@@ -6,6 +6,7 @@ import { QuoteItemLoadingStatus } from "../../shared/components/quotes/quote-ite
 import { LocalProductsService } from "../../modules/products/services/local-products.service";
 import { useNavigate, useSearchParams } from "react-router";
 import { QuotesService } from "../../modules/quotes/services/quotes.service";
+import { ProductErpLinksDialog } from "../../modules/products/components/product-erp-links.dialog";
 import { AddErpProductsModal } from "../../shared/components/modals/add-erp-products.modal";
 import { SelectClientModal } from "../../shared/components/modals/select-client.modal";
 import { CustomerContactsModal } from "../../shared/components/modals/customer-contacts.modal";
@@ -146,6 +147,7 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   const [openModal, setOpenModal] = useState(false);
   const [openClientModal, setOpenClientModal] = useState(false);
   const [openContactSelector, setOpenContactSelector] = useState(false);
+  const [localErpLinkItemId, setLocalErpLinkItemId] = useState<string | null>(null);
   const [erpTargetItemId, setErpTargetItemId] = useState<string | null>(null);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
@@ -236,6 +238,9 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
   }, [navigate, openExtractionParam]);
 
   const draft = useManualQuoteStore((state) => state.draft);
+  const localErpLinkItem = draft.items.find(item => item.id === localErpLinkItemId);
+  const quoteBranchId = draft.branchId || user?.branchId;
+  const applyLocalProductErpLink = useManualQuoteStore(state => state.applyLocalProductErpLink);
   const requisitionQuoteId = quoteIdFromQuery || draft.savedQuoteId;
   const requisitionsQuery = useQuotePurchaseRequisition(
     requisitionQuoteId || undefined,
@@ -968,6 +973,11 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             "Agregar local"
           )}
         </button>
+      )}
+      {!item.erpCode.trim() && item.localProductId && quoteBranchId && draft.captureMethod === "SYSTEM" && (
+        <button type="button" disabled={saving || requisitions.some(req => req.items.some(line => line.quoteClientItemId === item.id))}
+          className="rounded-md border border-blue-300 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          onClick={() => setLocalErpLinkItemId(item.id)}>Código ERP de sucursal</button>
       )}
       {!item.erpCode.trim() && (item.localProductId || "").trim() && (
         <span className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">
@@ -2377,6 +2387,19 @@ export const ManualQuotePage = ({ entryMode = "SYSTEM" }: { entryMode?: "SYSTEM"
             </div>
           </div>
         </div>
+      )}
+
+      {localErpLinkItem?.localProductId && quoteBranchId && (
+        <ProductErpLinksDialog
+          productId={localErpLinkItem.localProductId}
+          description={localErpLinkItem.customerDescription}
+          quote={{ branchId: quoteBranchId, unit: localErpLinkItem.unit, onSelect: (link) => {
+            if (!localErpLinkItem.localProductId) return;
+            applyLocalProductErpLink(localErpLinkItem.id, localErpLinkItem.localProductId, link);
+            setLocalErpLinkItemId(null);
+          } }}
+          onClose={() => setLocalErpLinkItemId(null)}
+        />
       )}
 
       <AddErpProductsModal

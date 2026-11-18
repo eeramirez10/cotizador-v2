@@ -8,6 +8,7 @@ export const canUnlinkQuoteErpProduct = (
   && ["BORRADOR", "PENDIENTE", "CAMBIOS_SOLICITADOS"].includes(draft.status);
 
 export const clearQuoteErpLink = (item: ManualQuoteItem): ManualQuoteItem => {
+  if (item.localProductId) return { ...item, erpCode: "", ean: "", erpDescription: "", erpSaleCurrency: null };
   const description = item.customerDescription.trim() ? item.customerDescription : item.erpDescription;
   const customerUnit = item.customerUnit.trim();
   const hasSupplierCost = (item.sellerQuotedUnitCost ?? 0) > 0;

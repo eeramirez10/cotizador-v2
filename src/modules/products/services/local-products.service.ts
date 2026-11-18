@@ -86,7 +86,6 @@ export interface PaginatedLocalProducts {
 }
 
 export interface UpdateLocalProductInput {
-  code?: string | null;
   ean?: string | null;
   description?: string;
   commercialDescription?: string | null;
@@ -144,7 +143,26 @@ const requireAuthHeaders = (): Record<string, string> => {
   };
 };
 
+export interface LocalProductErpLink {
+  branch: { id: string; code: string; name: string };
+  erpCode: string;
+  erpEan: string | null;
+  erpDescription: string;
+  erpUnit: string;
+  verifiedAt: string;
+}
+
 export class LocalProductsService {
+  static async getErpLinks(id: string, includeRequisitions: boolean, signal?: AbortSignal) {
+    const { data } = await coreHttpClient.get<{
+      links: LocalProductErpLink[];
+      requisitions: Array<{ id: string; itemId: string; number: string; branchName: string; quoteStatus: string }>;
+    }>(`/api/local-products/${encodeURIComponent(id)}/erp-links`, {
+      params: { includeRequisitions }, signal, headers: requireAuthHeaders(),
+    });
+    return data;
+  }
+
   private static readonly similarCacheTtlMs = 30_000;
   private static readonly similarCache = new Map<
     string,

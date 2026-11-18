@@ -97,7 +97,9 @@ export const usePurchaseRequisitionMutations = () => {
   const linkItemToErp = useMutation({
     mutationFn: ({ id, itemId, erpCode, erpEan }: { id: string; itemId: string; erpCode: string; erpEan: string }) =>
       PurchaseRequisitionsService.linkItemToErp(id, itemId, { erpCode, erpEan }),
-    onSuccess: refresh,
+    onSuccess: async () => {
+      await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["local-products", "erp-links"] }), client.invalidateQueries({ queryKey: ["quotes"] })]);
+    },
   });
   const assign = useMutation({
     mutationFn: ({ id, buyerUserId }: { id: string; buyerUserId: string }) =>

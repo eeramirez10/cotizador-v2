@@ -41,10 +41,12 @@ const branchDefaults = (branchCode: string, branchName: string): Partial<ErpProd
 
 const draftDefaults = (item: RequisitionItem): ErpProductDraftData => {
   const selected = item.offers.find((offer) => offer.isSelected);
-  const requisitionDescription = item.customerDescription?.trim() || item.description.trim();
+  const technical = { ...item.productTechnicalAttributes, ...item.technicalAttributes };
+  const extended = [...new Set([item.customerDescription, item.productDescription, item.description, ...Object.values(technical)]
+    .flatMap(value => value?.trim() ? [value.trim()] : []))].join("\n");
   return {
-    description: item.description.trim().slice(0, 60),
-    extendedDescription: requisitionDescription.slice(0, 4800),
+    description: (item.productDescription?.trim() || item.description.trim()).slice(0, 60),
+    extendedDescription: extended.slice(0, 4800),
     unitCode: item.unit,
     ean: item.erpEan || undefined,
     productType: 1,
@@ -102,7 +104,7 @@ export const ErpProductDraftDialog = ({ requisitionId, item, branchCode, branchN
         {isPending ? <CircularProgress size={22} /> : error ? <Alert severity="error">No se pudo cargar la ficha ERP. Intenta de nuevo.</Alert> : (
           <ErpProductDraftFields
             key={`${item.id}:${draft?.updatedAt || "new"}`}
-            initial={{ ...initialData, ...draft?.data, extendedDescription: draft?.data.extendedDescription?.trim() || initialData.extendedDescription, ...fixedValues, productType: 1 }}
+            initial={{ ...initialData, ...draft?.data, ...fixedValues, productType: 1 }}
             catalogs={catalogs.data}
             catalogsLoading={catalogs.isPending}
             catalogsError={catalogs.isError}

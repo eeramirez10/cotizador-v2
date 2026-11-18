@@ -631,7 +631,7 @@ const mapApiQuoteToSavedRecord = (apiQuote: ApiQuote): SavedQuoteRecord => {
     items: apiQuote.items.map((item) => ({
       id: item.clientItemId || item.id,
       quoteItemId: item.id,
-      localProductId: item.productId || item.product?.id || null,
+      localProductId: item.product?.source === "LOCAL_TEMP" ? item.product.id : null,
       erpCode: item.externalProductCode?.trim() || (item.product?.source === "ERP" ? item.product.code?.trim() : "") || "",
       ean: item.ean || item.product?.ean || "",
       customerDescription: item.customerDescription || "",
@@ -796,7 +796,7 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
   const safeCost = Number.isFinite(item.costUsd) && item.costUsd >= 0 ? item.costUsd : 0;
   const erpCode = item.erpCode?.trim() ? item.erpCode.trim() : null;
   const localProductId =
-    !erpCode && item.localProductId?.trim() ? item.localProductId.trim() : null;
+    item.localProductId?.trim() || null;
   const hasLinkedProduct = Boolean(erpCode || localProductId);
   const normalizedErpDescription = item.erpDescription?.trim() || null;
   const erpDescriptionForPayload = hasLinkedProduct ? normalizedErpDescription : null;
@@ -841,8 +841,8 @@ const mapDraftItemToPayload = (item: ManualQuoteItem) => {
     technicalFamily: item.technicalFamily?.trim() || null,
     technicalAttributes: item.technicalAttributes || {},
     cost: safeCost,
-    costCurrency: item.erpCode ? "MXN" : item.costCurrency || "MXN",
-    erpSaleCurrency: item.erpCode ? item.erpSaleCurrency || "MXN" : null,
+    costCurrency: item.erpCode && !item.localProductId ? "MXN" : item.costCurrency || "MXN",
+    erpSaleCurrency: item.erpCode ? item.erpSaleCurrency ?? (localProductId ? null : "MXN") : null,
     marginPct: Number.isFinite(item.marginPct) ? item.marginPct : 0,
     sourceCurrency: item.sourceCurrency || null,
     sourceUnitPrice: Number.isFinite(item.sourceUnitPrice) ? item.sourceUnitPrice : null,

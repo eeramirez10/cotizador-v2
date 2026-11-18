@@ -151,3 +151,25 @@ test("editable states allow unlinking and relinking to the correct ERP product",
     assert.equal(store.getState().draft.items[0].customerDescription, draft.items[0].customerDescription);
   }
 });
+
+test("a verified branch code is applied explicitly without replacing the local product or commercial values", () => {
+  const draft = seed();
+  const id = draft.items[1].id;
+  store.getState().assignLocalProductToItem(id, { id: "local", unit: "PZ", description: "TUBO" });
+  store.getState().setItemUnitPrice(id, 120);
+  store.setState(state => ({ draft: { ...state.draft, branchId: "mexico" } }));
+  const before = store.getState().draft.items[1];
+  const link = { branch: { id: "monterrey" }, erpCode: "02300938", erpUnit: "PZ", erpEan: "TSC480", erpDescription: "TUBO" };
+  store.getState().applyLocalProductErpLink(id, "local", link);
+  assert.equal(store.getState().draft.items[1], before);
+  store.getState().applyLocalProductErpLink(id, "local", { ...link, branch: { id: "mexico" }, erpCode: "01300938" });
+  const linked = store.getState().draft.items[1];
+  assert.equal(linked.localProductId, "local");
+  assert.equal(linked.erpCode, "01300938");
+  for (const key of ["qty", "unit", "stock", "costCurrency", "unitPrice", "customerDescription"]) {
+    assert.equal(linked[key], before[key], key);
+  }
+  store.getState().unlinkErpProductFromItem(id);
+  assert.equal(store.getState().draft.items[1].localProductId, "local");
+  assert.equal(store.getState().draft.items[1].erpCode, "");
+});
