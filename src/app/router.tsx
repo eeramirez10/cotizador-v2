@@ -166,6 +166,15 @@ export const appRouter = createBrowserRouter([
         Component: ErpWarehousesPage,
       },
       {
+        path: "reports",
+        loader: requireRolesLoader(["admin", "manager", "seller"]),
+        handle: { title: "Reportes" },
+        lazy: async () => {
+          const { CommercialReportsPage } = await import("../pages/reports/commercial-reports.page");
+          return { Component: CommercialReportsPage };
+        },
+      },
+      {
         path: "report-subscriptions",
         loader: requireRolesLoader(["admin"]),
         handle: { title: "Reportes programados" },
